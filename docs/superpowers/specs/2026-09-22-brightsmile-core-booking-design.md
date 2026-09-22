@@ -1,11 +1,11 @@
-# Ngiti v1: Core Booking Loop
+# BrightSmile v1: Core Booking Loop
 
 - **Date:** 2026-09-22
 - **Status:** Design approved in brainstorming, awaiting spec review
 - **Scope:** Piece 1 of 4 (see Roadmap)
-- **Working name:** Ngiti (Filipino for "smile"). Placeholder domain in examples: `ngiti.ph`.
+- **Name:** BrightSmile. Repo: [Kaizweeen/BrightSmile](https://github.com/Kaizweeen/BrightSmile). Placeholder domain in examples: `brightsmile.ph`.
 
-Ngiti is an appointment booking product for dental clinics in the Philippines, sold as a subscription. This spec covers the core booking loop only. Ngiti uses its own brand, copy, and code. Nothing is copied from Odonto.
+BrightSmile is an appointment booking product for dental clinics in the Philippines, sold as a subscription. This spec covers the core booking loop only. BrightSmile uses its own brand, copy, and code. Nothing is copied from Odonto.
 
 ---
 
@@ -65,7 +65,7 @@ URL: `/{clinic-slug}`. The page doubles as the clinic's booking website: name, a
 
 1. **What:** choose one or more procedures (searchable list, at least one). The estimated duration is the sum of their durations and is shown. Choose a dentist only if the clinic has 2 or more active dentists. If the total duration fits in no working block, show "No single opening fits all of these. Choose fewer procedures or call {clinic phone}."
 2. **When:** a month grid where closed and fully booked days are disabled. Open start times for the selected day are listed directly below the grid.
-3. **Who:** first name (required, up to 50 characters), last name (required, up to 50), mobile (required), birthday (optional, not in the future, not before 1900), HMO provider (optional, free text with suggestions: Maxicare, Intellicare, MediCard, PhilCare, Cocolife, Avega, ValuCare, Insular Health Care, EastWest Healthcare, Kaiser), and a required consent checkbox: "I agree to {clinic} and Ngiti using my details to manage this appointment, as described in the Privacy Notice."
+3. **Who:** first name (required, up to 50 characters), last name (required, up to 50), mobile (required), birthday (optional, not in the future, not before 1900), HMO provider (optional, free text with suggestions: Maxicare, Intellicare, MediCard, PhilCare, Cocolife, Avega, ValuCare, Insular Health Care, EastWest Healthcare, Kaiser), and a required consent checkbox: "I agree to {clinic} and BrightSmile using my details to manage this appointment, as described in the Privacy Notice."
 4. **Code:** a 6 digit code by SMS (see 10.3), skipped when this device already verified this mobile.
 5. **Request sent:** summary, "The clinic will confirm by text," and "No reply within a day? Call {clinic phone}."
 
@@ -77,8 +77,8 @@ URL: `/a/{token}`, sent in confirmation, moved, and reminder texts. Shows status
 
 ### 5.3 Clinic dashboard (installable PWA, under `/app`)
 
-- **Requests** (`/app/requests`): pending requests, soonest first. Each shows patient name, mobile (tap to call or text), procedures, dentist, time, when requested, and a New or Returning badge. Approve, or Decline with an optional reason (up to 40 characters, quick picks "Dentist unavailable" and "Please call the clinic").
-- **Schedule** (`/app/schedule`): day view, dentist filter when there are 2 or more, previous and next day, native date input to jump. Each appointment shows time range, patient, procedures, status, and flags ("outside hours", "text not delivered"). Actions: Move, Cancel (optional reason up to 40 characters, patient is texted), and Completed or No-show once the start time has passed. Pending requests also appear here, marked Pending, with Approve and Decline, because they hold their time.
+- **Requests** (`/app/requests`): pending requests, soonest first. Each shows patient name, mobile (tap to call or text), procedures, dentist, time, when requested, and a New or Returning badge. Approve, or Decline with an optional reason (up to 36 characters, quick picks "Dentist unavailable" and "Please call the clinic").
+- **Schedule** (`/app/schedule`): day view, dentist filter when there are 2 or more, previous and next day, native date input to jump. Each appointment shows time range, patient, procedures, status, and flags ("outside hours", "text not delivered"). Actions: Move, Cancel (optional reason up to 36 characters, patient is texted), and Completed or No-show once the start time has passed. Pending requests also appear here, marked Pending, with Approve and Decline, because they hold their time.
 - **New appointment** (`/app/new`): for walk-ins, phone and Messenger bookings, seniors and PWDs. Find or create the patient (mobile optional here; no mobile means no texts). Choose dentist and procedures, then an open time or a custom time. Custom times may fall outside working hours (flagged) but can never overlap. Confirmed immediately. "Send confirmation text" is on by default when a mobile is present.
 - **Patients** (`/app/patients`): search by name or mobile. Detail page: editable details, appointment history, no-show count, and Delete (anonymizes, see 12).
 - **Settings** (`/app/settings`): clinic profile (name, short name for texts, booking link, mobile, address, map link), dentists (add, edit, deactivate, weekly hours with multiple blocks per day, time off), procedures (add, edit, archive), booking rules (slot spacing 15, 30, or 60 minutes; minimum notice; booking window), alerts (push or text, enable push on this device), account (change password, sign out). Changing the booking link warns that the old link stops working.
@@ -87,7 +87,7 @@ URL: `/a/{token}`, sent in confirmation, moved, and reminder texts. Shows status
 
 1. **Account:** email and password (Supabase Auth, email confirmation required).
 2. **Clinic:** name, short name for texts (prefilled, up to 20 characters), booking link (prefilled from name), clinic mobile (shown to patients and used for text alerts), address.
-3. **Dentist and hours:** first dentist's display name (for example "Dr. Ana Reyes") and short name for texts ("Dr. Reyes"). Hours preset Monday to Saturday, 9:00 AM to 12:00 PM and 1:00 PM to 5:00 PM, editable.
+3. **Dentist and hours:** first dentist's display name (for example "Dr. Ana Reyes") and short name for texts ("Dr. Reyes", up to 16 characters). Hours preset Monday to Saturday, 9:00 AM to 12:00 PM and 1:00 PM to 5:00 PM, editable.
 4. **Procedures:** prefilled list, editable, then "Your link is ready" with copy and share buttons and a prompt to enable push notifications.
 
 Default procedures (clinic edits durations):
@@ -107,7 +107,7 @@ Default procedures (clinic edits durations):
 
 ### 5.5 Other pages
 
-- `/` : one screen landing page. What Ngiti does, a link to a demo clinic's booking page, Sign up, Log in.
+- `/` : one screen landing page. What BrightSmile does, a link to a demo clinic's booking page, Sign up, Log in.
 - `/privacy`, `/terms`.
 
 ### 5.6 Out of scope for v1
@@ -143,12 +143,12 @@ All times are `timestamptz`. Every clinic-owned table carries `clinic_id` so one
 |---|---|
 | `clinics` | `name` (up to 80), `sms_name` (up to 20), `slug` (unique, 3 to 24 of `[a-z0-9-]`, not reserved; capped so rebooking links fit in texts), `mobile`, `address`, `maps_url`, `slot_minutes` (15, 30, 60; default 30), `min_notice_minutes` (default 120), `max_days_ahead` (default 60), `alert_channel` (`push` or `sms`, default `push`) |
 | `clinic_members` | `clinic_id`, `user_id`, `role` (default `owner`); primary key on both ids |
-| `dentists` | `name`, `sms_name` (up to 20), `active` |
+| `dentists` | `name`, `sms_name` (up to 16), `active` |
 | `working_hours` | `dentist_id`, `weekday` (0 Sunday to 6 Saturday), `start_time`, `end_time`; several blocks per weekday; blocks may not overlap (validated on save) |
 | `time_off` | `dentist_id`, `starts_at`, `ends_at`, `note` |
 | `procedures` | `name` (up to 60), `duration_minutes` (5 to 480), `active` |
 | `patients` | `first_name`, `last_name`, `mobile` (nullable for manual bookings), `birthday`, `hmo`, `consent_at`, `anonymized_at`; unique on (`clinic_id`, `mobile`, lower first name, lower last name) while not anonymized, so a parent can book several children with one number |
-| `appointments` | `dentist_id`, `patient_id`, `starts_at`, `ends_at`, `status`, `procedure_names` (text array copied at booking), `source` (`online` or `manual`), `status_reason` (up to 40), `manage_token` (unique, 12 random base62 characters), `confirmed_at`, `reminder_sent_at` |
+| `appointments` | `dentist_id`, `patient_id`, `starts_at`, `ends_at`, `status`, `procedure_names` (text array copied at booking), `source` (`online` or `manual`), `status_reason` (up to 36), `manage_token` (unique, 12 random base62 characters), `confirmed_at`, `reminder_sent_at` |
 | `appointment_events` | `appointment_id`, `from_status`, `to_status`, `actor` (`patient`, `staff`, `system`), `user_id`, `reason` |
 | `sms_log` | `clinic_id` (null for texts to the operator), `appointment_id`, `to_mobile`, `kind`, `body` (wiped after 90 days), `credits`, `status` (`logged`, `sent`, `failed`), `provider_message_id`, `error` |
 | `otp_requests` | `mobile`, `ip`, `code_hash`, `booking` (jsonb: the pending booking), `attempts`, `expires_at`, `verified_at` |
@@ -216,7 +216,7 @@ Any other change is rejected. Confirming or moving sets `confirmed_at` to now; m
 
 ### 10.1 Templates
 
-Texts use the clinic's `sms_name`, the dentist's `sms_name` only when the clinic has 2 or more active dentists, and the patient's first name cut to 12 characters. Links are full URLs, never shorteners (Smart blocks shorteners): `{link}` is `https://{domain}/a/{token}` and `{bookLink}` is `https://{domain}/{slug}`. The wording below is a draft; the final strings must pass the length test. The field limits (20 character names, 40 character reasons, 24 character slugs) assume an 8 character domain like `ngiti.ph`; a longer final domain fails the test and the limits shrink to match.
+Texts use the clinic's `sms_name`, the dentist's `sms_name` only when the clinic has 2 or more active dentists, and the patient's first name cut to 12 characters. Links are full URLs, never shorteners (Smart blocks shorteners): `{link}` is `https://{domain}/a/{token}` and `{bookLink}` is `https://{domain}/{slug}`. The wording below is a draft; the final strings must pass the length test. The field limits (20 character clinic names, 16 character dentist names, 12 character first names, 36 character reasons, 24 character slugs) fit domains up to 17 characters, like `brightsmile.ph` (14); a longer final domain fails the test and the limits shrink to match.
 
 | Kind | To | Route | Draft |
 |---|---|---|---|
@@ -226,22 +226,22 @@ Texts use the clinic's `sms_name`, the dentist's `sms_name` only when the clinic
 | `declined` | patient | standard | "{clinic} can't take {date}, {time}. {reason} Rebook: {bookLink}" |
 | `moved` | patient | standard | "{clinic}: {first}'s visit moved to {date}, {time}. View or cancel: {link}" |
 | `cancelled` | patient | standard | "{clinic} cancelled the {date}, {time} visit. {reason} Rebook: {bookLink}" |
-| `reminder` | patient | standard | "{clinic}: Reminder, {first}'s visit is tomorrow at {time}. Can't make it? Cancel: {link}" |
+| `reminder` | patient | standard | "{clinic}: Reminder, {first}'s visit is tomorrow at {time}. Can't come? Cancel: {link}" |
 | `patient_cancel_alert` | clinic | standard | "{first} {last initial}. cancelled {date}, {time}." |
-| `low_credit` | operator | standard | "Ngiti: Semaphore balance is {credits} credits. Top up before reminders fail." |
+| `low_credit` | operator | standard | "BrightSmile: Semaphore balance is {credits} credits. Top up before reminders fail." |
 
 When the dentist is shown (clinics with 2 or more active dentists), "with {dentist}" goes right after the time in `request_alert`, `confirmed`, `moved`, `reminder`, and `patient_cancel_alert`. `declined` and `cancelled` never include it. Dates render as "Thu Sep 24", times as "10:00 AM".
 
 ### 10.2 Encoding and length
 
 - Characters outside the GSM-7 basic set are replaced before sending (for example `ñ` to `n`, curly quotes to straight quotes, `₱` to `PHP`). One stray character would switch the text to UCS-2, cutting a part to 70 characters and doubling or tripling the cost.
-- A unit test renders every template with worst-case values (20 character clinic name, 20 character dentist name included, 12 character first name, 40 character reason, 24 character slug, longest date and time, the configured domain) and asserts at most 160 GSM-7 characters. Worked worst cases with `ngiti.ph`: reminder 158, confirmed 154, cancelled 153, moved 147, declined 144.
+- A unit test renders every template with worst-case values (20 character clinic name, 16 character dentist name included, 12 character first name, 36 character reason, 24 character slug, longest date and time, the configured domain) and asserts at most 160 GSM-7 characters. Worked worst cases with `brightsmile.ph`: reminder 157, confirmed 156, cancelled 155, moved 149, declined 146.
 - Messages must not start with "TEST" (Semaphore silently drops them).
 
 ### 10.3 Verification codes
 
 - Philippine mobiles only (`+639XXXXXXXXX`).
-- 6 digits from a cryptographic random source, generated by Ngiti and sent through Semaphore's OTP route with the `code` parameter. Stored as an HMAC hash, never logged.
+- 6 digits from a cryptographic random source, generated by BrightSmile and sent through Semaphore's OTP route with the `code` parameter. Stored as an HMAC hash, never logged.
 - Valid 5 minutes, 5 wrong attempts per code, resend allowed after 60 seconds.
 - At most 3 codes per mobile and 10 per IP address in any rolling hour. This protects against bots draining SMS credits (each code costs ₱1.12).
 - On success, a signed, httpOnly, Secure, SameSite=Lax cookie remembers up to 5 verified mobiles on that device for 180 days. A booking for a remembered mobile skips the code.
@@ -280,7 +280,7 @@ Vercel Cron, `0 1 * * *` (01:00 UTC = 9:00 AM Manila), calling `/api/cron/daily`
 
 ## 12. Privacy and security
 
-- **Roles under the Data Privacy Act (RA 10173):** the clinic is the personal information controller; Ngiti is its processor. Health details are sensitive personal information.
+- **Roles under the Data Privacy Act (RA 10173):** the clinic is the personal information controller; BrightSmile is its processor. Health details are sensitive personal information.
 - **Consent:** required checkbox at booking; `consent_at` stored on the patient.
 - **Minimization:** no gender; birthday and HMO optional; push payloads carry no names; the self-service link shows the first name only.
 - **Isolation:** RLS as in section 7; tested.
@@ -318,7 +318,7 @@ Vercel Cron, `0 1 * * *` (01:00 UTC = 9:00 AM Manila), calling `/api/cron/daily`
 
 ## 15. Project setup
 
-- Folder `C:\Users\User\ngiti`, git repo committing with the GitHub no-reply email.
+- Folder `C:\Users\User\brightsmile`, remote [Kaizweeen/BrightSmile](https://github.com/Kaizweeen/BrightSmile), commits use the GitHub no-reply email.
 - Next.js App Router, TypeScript, Tailwind. Dev server on port **3600**, recorded in `.claude/launch.json`.
 - First implementation step: `/impeccable init` to write `PRODUCT.md` and `DESIGN.md`, giving the booking page and dashboard their own identity.
 - Docker isn't installed, so there is no local Supabase. Development and database tests use one free Supabase project; production gets its own Pro project.
@@ -327,19 +327,19 @@ Vercel Cron, `0 1 * * *` (01:00 UTC = 9:00 AM Manila), calling `/api/cron/daily`
 
 ## 16. Launch checklist (outside the code)
 
-- [ ] Apply for the Semaphore sender name early (free, 2 to 4 weeks). Real texts can't be sent without it.
+- [ ] Apply for the Semaphore sender name `BrightSmile` early (free, 2 to 4 weeks; 11 characters, the maximum for a sender name). Real texts can't be sent without it.
 - [ ] Vercel Pro (the free plan is non-commercial only) and Supabase Pro (daily backups).
 - [ ] Custom SMTP for auth emails (Supabase's built-in email is rate-limited and meant for testing).
 - [ ] Terms of Service including a data processing agreement with clinics, and a Privacy Notice.
 - [ ] Check whether NPC registration applies (likely once sensitive data on 1,000+ individuals is held).
-- [ ] Final name and domain, with a trademark check.
+- [ ] Domain, plus a trademark check on BrightSmile ("Bright Smile" is a common clinic name, so check for conflicts and for patients mistaking the sender for a clinic).
 - [ ] Business registration before charging clinics (needed for receipts and payment gateways in piece 2).
 
 ## 17. Deferred decisions
 
 | Decision | Deferred to |
 |---|---|
-| Final brand name and domain | Before launch |
+| Domain | Before launch |
 | Prices and monthly text allowance | Piece 2 |
 | Staff invites and roles | Piece 3 |
 | Play Store listing | Piece 4 |
