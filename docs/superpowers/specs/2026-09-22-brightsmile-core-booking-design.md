@@ -1,7 +1,7 @@
 # BrightSmile v1: Core Booking Loop
 
 - **Date:** 2026-09-22
-- **Status:** Design approved in brainstorming, awaiting spec review
+- **Status:** Approved 2026-09-22, with corrections found while planning (see Revisions at the end)
 - **Scope:** Piece 1 of 4 (see Roadmap)
 - **Name:** BrightSmile. Repo: [Kaizweeen/BrightSmile](https://github.com/Kaizweeen/BrightSmile). Placeholder domain in examples: `brightsmile.ph`.
 
@@ -85,7 +85,7 @@ URL: `/a/{token}`, sent in confirmation, moved, and reminder texts. Shows status
 
 ### 5.4 Onboarding (4 screens)
 
-1. **Account:** email and password (Supabase Auth, email confirmation required).
+1. **Account:** email and password (Supabase Auth, email confirmation required). The log in page has "Forgot password", which emails a reset link.
 2. **Clinic:** name, short name for texts (prefilled, up to 20 characters), booking link (prefilled from name), clinic mobile (shown to patients and used for text alerts), address.
 3. **Dentist and hours:** first dentist's display name (for example "Dr. Ana Reyes") and short name for texts ("Dr. Reyes", up to 16 characters). Hours preset Monday to Saturday, 9:00 AM to 12:00 PM and 1:00 PM to 5:00 PM, editable.
 4. **Procedures:** prefilled list, editable, then "Your link is ready" with copy and share buttons and a prompt to enable push notifications.
@@ -107,7 +107,7 @@ Default procedures (clinic edits durations):
 
 ### 5.5 Other pages
 
-- `/` : one screen landing page. What BrightSmile does, a link to a demo clinic's booking page, Sign up, Log in.
+- `/` : one screen landing page. What BrightSmile does, a link to the demo clinic at `/demo` (a real clinic Kai creates through normal onboarding), Sign up, Log in.
 - `/privacy`, `/terms`.
 
 ### 5.6 Out of scope for v1
@@ -116,7 +116,7 @@ Billing, staff invites and roles (v1 is one login per clinic), analytics dashboa
 
 ## 6. Architecture
 
-- **Next.js App Router** on Vercel. Public pages are Server Components so they load fast on mobile data and produce link previews when shared on Facebook. Mutations are Server Actions; the only Route Handler is the cron endpoint.
+- **Next.js App Router** on Vercel. Public pages are Server Components so they load fast on mobile data and produce link previews when shared on Facebook. Mutations are Server Actions. Route Handlers exist only where Next.js requires them: the cron endpoint and the `/auth/confirm` email link callback (pages can't set cookies).
 - **Supabase:** Postgres, Auth (email and password), RLS. Migrations live in `supabase/migrations` and are applied with the Supabase CLI via `npx`.
 - **Semaphore** for SMS, **web-push** (VAPID) for push notifications, **Vercel Cron** for the daily job.
 - No calendar library: the month grid is a small custom component. Native inputs where they fit (`type="date"`, `datalist`, `autocomplete="one-time-code"`).
@@ -137,11 +137,11 @@ Public pages never receive patient data or busy intervals. The server computes o
 
 ## 7. Data model
 
-All times are `timestamptz`. Every clinic-owned table carries `clinic_id` so one RLS rule covers all of them.
+All times are `timestamptz`. Every clinic-owned table carries `clinic_id` so one RLS rule covers all of them. Composite foreign keys (for example `appointments (dentist_id, clinic_id)` to `dentists (id, clinic_id)`) make it impossible to attach a row to another clinic's dentist or patient.
 
 | Table | Key columns |
 |---|---|
-| `clinics` | `name` (up to 80), `sms_name` (up to 20), `slug` (unique, 3 to 24 of `[a-z0-9-]`, not reserved; capped so rebooking links fit in texts), `mobile`, `address`, `maps_url`, `slot_minutes` (15, 30, 60; default 30), `min_notice_minutes` (default 120), `max_days_ahead` (default 60), `alert_channel` (`push` or `sms`, default `push`) |
+| `clinics` | `name` (up to 80), `sms_name` (up to 20, must not start with "test" in any case), `slug` (unique, 3 to 24 of `[a-z0-9-]`, not reserved; capped so rebooking links fit in texts), `mobile`, `address`, `maps_url`, `slot_minutes` (15, 30, 60; default 30), `min_notice_minutes` (default 120), `max_days_ahead` (default 60), `alert_channel` (`push` or `sms`, default `push`) |
 | `clinic_members` | `clinic_id`, `user_id`, `role` (default `owner`); primary key on both ids |
 | `dentists` | `name`, `sms_name` (up to 16), `active` |
 | `working_hours` | `dentist_id`, `weekday` (0 Sunday to 6 Saturday), `start_time`, `end_time`; several blocks per weekday; blocks may not overlap (validated on save) |
@@ -154,7 +154,7 @@ All times are `timestamptz`. Every clinic-owned table carries `clinic_id` so one
 | `otp_requests` | `mobile`, `ip`, `code_hash`, `booking` (jsonb: the pending booking), `attempts`, `expires_at`, `verified_at` |
 | `push_subscriptions` | `user_id`, `endpoint` (unique), `p256dh`, `auth` |
 
-Reserved slugs: `a`, `app`, `api`, `auth`, `login`, `signup`, `onboarding`, `privacy`, `terms`, `admin`, `demo`, `static`, `_next`.
+Reserved slugs: `a`, `app`, `api`, `auth`, `login`, `signup`, `onboarding`, `forgot`, `reset-password`, `privacy`, `terms`, `admin`, `static`, `_next`.
 
 **Double booking guard:**
 
@@ -166,7 +166,7 @@ alter table appointments add constraint no_overlap
   where (status in ('pending', 'confirmed'));
 ```
 
-**RLS:** enabled on every table. Clinic-owned tables allow authenticated users whose `clinic_members` row matches `clinic_id` (the `clinics` row itself matches on `id`), through a `security definer` helper `is_clinic_member(clinic_id)` to avoid policy recursion. No `anon` policies. `otp_requests` has RLS enabled and no policies, so only the server (service role) touches it. The service role key exists only on the server.
+**RLS:** enabled on every table. Clinic-owned tables allow authenticated users whose `clinic_members` row matches `clinic_id` (the `clinics` row itself matches on `id`), through a `security definer` helper `is_clinic_member(clinic_id)` to avoid policy recursion. No `anon` policies, and `anon` has no table privileges at all. `otp_requests` has RLS enabled and no policies, so only the server (secret key) touches it. The secret key exists only on the server.
 
 ## 8. Scheduling rules
 
@@ -227,21 +227,21 @@ Texts use the clinic's `sms_name`, the dentist's `sms_name` only when the clinic
 | `moved` | patient | standard | "{clinic}: {first}'s visit moved to {date}, {time}. View or cancel: {link}" |
 | `cancelled` | patient | standard | "{clinic} cancelled the {date}, {time} visit. {reason} Rebook: {bookLink}" |
 | `reminder` | patient | standard | "{clinic}: Reminder, {first}'s visit is tomorrow at {time}. Can't come? Cancel: {link}" |
-| `patient_cancel_alert` | clinic | standard | "{first} {last initial}. cancelled {date}, {time}." |
+| `patient_cancel_alert` | clinic | standard | "Cancelled: {first} {last initial}., {date}, {time}." |
 | `low_credit` | operator | standard | "BrightSmile: Semaphore balance is {credits} credits. Top up before reminders fail." |
 
 When the dentist is shown (clinics with 2 or more active dentists), "with {dentist}" goes right after the time in `request_alert`, `confirmed`, `moved`, `reminder`, and `patient_cancel_alert`. `declined` and `cancelled` never include it. Dates render as "Thu Sep 24", times as "10:00 AM".
 
 ### 10.2 Encoding and length
 
-- Characters outside the GSM-7 basic set are replaced before sending (for example `ñ` to `n`, curly quotes to straight quotes, `₱` to `PHP`). One stray character would switch the text to UCS-2, cutting a part to 70 characters and doubling or tripling the cost.
-- A unit test renders every template with worst-case values (20 character clinic name, 16 character dentist name included, 12 character first name, 36 character reason, 24 character slug, longest date and time, the configured domain) and asserts at most 160 GSM-7 characters. Worked worst cases with `brightsmile.ph`: reminder 157, confirmed 156, cancelled 155, moved 149, declined 146.
-- Messages must not start with "TEST" (Semaphore silently drops them).
+- Texts are reduced to printable ASCII before sending, minus the GSM-7 extension characters (square brackets, backslash, caret, backtick, curly braces, pipe, tilde), which cost double: accents are stripped (`ñ` becomes `n`), curly quotes become straight, `₱` becomes `PHP`. `ñ` is technically in the GSM-7 alphabet, but gateways differ in how they encode accented letters, and a switch to UCS-2 cuts a part to 70 characters and doubles or triples the cost. Plain ASCII is safe on every gateway. Reasons get a trailing period when they lack one.
+- A unit test renders every template with worst-case values (20 character clinic name, 16 character dentist name included, 12 character first name, 36 character reason, 24 character slug, longest date and time, the configured domain) and asserts at most 160 GSM-7 characters. Worked worst cases with `brightsmile.ph`: reminder 157, confirmed 156, cancelled 156, moved 149, declined 147.
+- Messages must not start with "TEST" (Semaphore silently drops them). Guaranteed by construction: clinic short names can't start with "test", and no template starts with a patient's name.
 
 ### 10.3 Verification codes
 
 - Philippine mobiles only (`+639XXXXXXXXX`).
-- 6 digits from a cryptographic random source, generated by BrightSmile and sent through Semaphore's OTP route with the `code` parameter. Stored as an HMAC hash, never logged.
+- 6 digits from a cryptographic random source, generated by BrightSmile and sent through Semaphore's OTP route with the `code` parameter and the `{otp}` placeholder (without the placeholder Semaphore appends the code to the end). Stored as an HMAC hash. In live mode the code never reaches a log (see 10.6).
 - Valid 5 minutes, 5 wrong attempts per code, resend allowed after 60 seconds.
 - At most 3 codes per mobile and 10 per IP address in any rolling hour. This protects against bots draining SMS credits (each code costs ₱1.12).
 - On success, a signed, httpOnly, Secure, SameSite=Lax cookie remembers up to 5 verified mobiles on that device for 180 days. A booking for a remembered mobile skips the code.
@@ -267,7 +267,7 @@ A clinic with 100 online bookings a month costs roughly ₱150 to ₱300 in text
 
 ### 10.6 Development mode
 
-`SMS_MODE=log` writes texts to `sms_log` with status `logged` and prints them to the server console instead of calling Semaphore. `SMS_MODE=live` sends. Tests and local development always use `log`.
+`SMS_MODE=log` writes texts to `sms_log` with status `logged` and prints them to the server console instead of calling Semaphore. `SMS_MODE=live` sends. Tests and local development always use `log`. In log mode the verification code is stored in the body so the end-to-end test can read it; in live mode the stored body shows `******` in its place.
 
 ## 11. Daily job
 
@@ -287,7 +287,7 @@ Vercel Cron, `0 1 * * *` (01:00 UTC = 9:00 AM Manila), calling `/api/cron/daily`
 - **Deletion:** "Delete patient" anonymizes: names become "Deleted patient", mobile, birthday, and HMO are cleared, `anonymized_at` is set, appointments stay for counts.
 - **Retention:** codes deleted after 24 hours, text bodies wiped after 90 days, cost records kept. Clinic account deletion is a manual, documented procedure in v1.
 - **Backups:** Supabase Pro daily backups before real patient data.
-- **Secrets:** one `APP_SECRET` for HMAC (code hashes, device cookie); service role key server-only; `CRON_SECRET` on the cron route.
+- **Secrets:** one `APP_SECRET` for HMAC (code hashes, device cookie); Supabase secret key server-only; `CRON_SECRET` on the cron route.
 - **Tokens:** manage tokens are 12 base62 characters from a cryptographic source (about 71 bits).
 - **Validation:** every input is validated on the server, whatever the client did.
 - **Logs:** never log codes or full patient details.
@@ -323,7 +323,7 @@ Vercel Cron, `0 1 * * *` (01:00 UTC = 9:00 AM Manila), calling `/api/cron/daily`
 - First implementation step: `/impeccable init` to write `PRODUCT.md` and `DESIGN.md`, giving the booking page and dashboard their own identity.
 - Docker isn't installed, so there is no local Supabase. Development and database tests use one free Supabase project; production gets its own Pro project.
 - **Accounts Kai creates** (Claude can't create accounts): Supabase, Semaphore (API key and sender name application), Vercel.
-- **Environment variables:** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `APP_URL`, `APP_SECRET`, `CRON_SECRET`, `SMS_MODE`, `SEMAPHORE_API_KEY`, `SEMAPHORE_SENDER_NAME`, `SMS_LOW_CREDIT_THRESHOLD`, `OPERATOR_MOBILE`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`.
+- **Environment variables:** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, `NEXT_PUBLIC_CONTACT_EMAIL`, `APP_URL`, `APP_SECRET`, `CRON_SECRET`, `SMS_MODE`, `SEMAPHORE_API_KEY`, `SEMAPHORE_SENDER_NAME`, `SMS_LOW_CREDIT_THRESHOLD`, `OPERATOR_MOBILE`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`.
 
 ## 16. Launch checklist (outside the code)
 
@@ -343,6 +343,17 @@ Vercel Cron, `0 1 * * *` (01:00 UTC = 9:00 AM Manila), calling `/api/cron/daily`
 | Prices and monthly text allowance | Piece 2 |
 | Staff invites and roles | Piece 3 |
 | Play Store listing | Piece 4 |
+
+## Revisions
+
+2026-09-22, while writing Plan 1:
+
+- Supabase renamed its API keys: the environment uses `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY`.
+- Next.js requires a Route Handler for the auth email link callback, so there are two Route Handlers, not one. Forgot password was added to log in.
+- The SMS encoding rule is now plain ASCII. The earlier text said `ñ` is outside GSM-7; it is inside it, but gateways differ, so ASCII is the safe rule.
+- The patient-cancel alert starts with "Cancelled:" and clinic short names can't start with "test", so no text can start with "TEST".
+- `demo` is no longer reserved (the demo clinic lives at `/demo`); `forgot` and `reset-password` are.
+- Composite foreign keys keep rows inside their clinic, and `anon` has no table privileges.
 
 ## Sources
 
