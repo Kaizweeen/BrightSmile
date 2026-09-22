@@ -52,6 +52,10 @@ describe("openStarts", () => {
     const base = { blocks: day, busy: [], durationMinutes: 30, rules, now: lateUtc };
     expect(openStarts({ ...base, date: "2026-09-22" })).toEqual([]);
     expect(openStarts({ ...base, date: "2026-09-23" })).toHaveLength(14);
+    // Manila today is Sep 23, so the 60-day window's last valid date is Nov 22, not Nov 21.
+    // A mutant that computes today from the UTC date would return [] here instead of 14.
+    expect(openStarts({ ...base, date: "2026-11-22" })).toHaveLength(14);
+    expect(openStarts({ ...base, date: "2026-11-23" })).toEqual([]);
   });
 
   it("ignores the appointment being moved", () => {
@@ -81,6 +85,12 @@ describe("withinHours", () => {
     expect(withinHours(manilaInstant("2026-09-24", 9 * 60), manilaInstant("2026-09-24", 10 * 60), blocks)).toBe(true);
     expect(withinHours(manilaInstant("2026-09-24", 11 * 60 + 30), manilaInstant("2026-09-24", 12 * 60 + 30), blocks)).toBe(false);
     expect(withinHours(manilaInstant("2026-09-27", 9 * 60), manilaInstant("2026-09-27", 10 * 60), blocks)).toBe(false);
+  });
+
+  it("uses the Manila weekday even when it differs from the UTC weekday", () => {
+    // Mon 7:00-8:00 AM Manila is Sun 23:00Z-00:00Z UTC, so a UTC-weekday bug would look Sunday and find no block.
+    const mondayMorning: Block[][] = [[], [{ start: 7 * 60, end: 12 * 60 }], [], [], [], [], []];
+    expect(withinHours(manilaInstant("2026-09-28", 7 * 60), manilaInstant("2026-09-28", 8 * 60), mondayMorning)).toBe(true);
   });
 });
 
