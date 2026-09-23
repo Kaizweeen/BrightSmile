@@ -32,6 +32,10 @@ describe("smsNameProblem", () => {
     expect(smsNameProblem("A".repeat(21), 20)).not.toBeNull();
   });
 
+  it("accepts a name exactly at the limit", () => {
+    expect(smsNameProblem("A".repeat(20), 20)).toBeNull();
+  });
+
   it("rejects names the SMS provider would drop", () => {
     expect(smsNameProblem("Test Dental", 20)).toMatch(/test/i);
   });
@@ -45,6 +49,10 @@ describe("cleanText", () => {
     expect(cleanText("x".repeat(37), 36, true)).toBeNull();
     expect(cleanText(42, 50)).toBeNull();
   });
+
+  it("accepts text exactly at the limit", () => {
+    expect(cleanText("x".repeat(36), 36)).toBe("x".repeat(36));
+  });
 });
 
 describe("cleanBirthday", () => {
@@ -53,6 +61,11 @@ describe("cleanBirthday", () => {
   it("accepts an empty or real past date", () => {
     expect(cleanBirthday("", today)).toBe("");
     expect(cleanBirthday("1990-05-17", today)).toBe("1990-05-17");
+  });
+
+  it("accepts both boundary dates: today and 1900-01-01", () => {
+    expect(cleanBirthday(today, today)).toBe(today);
+    expect(cleanBirthday("1900-01-01", today)).toBe("1900-01-01");
   });
 
   it("rejects future, ancient, malformed, and impossible dates", () => {
