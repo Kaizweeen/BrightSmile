@@ -248,6 +248,17 @@ describe("moveAppointment", () => {
     expect((await times(id)).start).toEqual(manilaInstant(day, 1110));
   });
 
+  it("refuses a custom time that has already passed", async () => {
+    const id = await bookAt(a, day, 990, "confirmed");
+    const now = new Date();
+    const past = { dentistId: a.seed.dentist.id, startsAt: new Date(Math.floor((now.getTime() - 120_000) / 60_000) * 60_000).toISOString(), custom: true };
+    expect(await moveAppointment(a.staff, id, past, now)).toEqual({
+      ok: false,
+      error: "This time has already passed. Pick a later time.",
+    });
+    expect((await times(id)).start).toEqual(manilaInstant(day, 990));
+  });
+
   it("moves only confirmed visits that have not started", async () => {
     const pending = await bookAt(a, addDays(today, 22), 540, "pending");
     expect(await moveAppointment(a.staff, pending, slotAt(a, addDays(today, 22), 600), new Date())).toEqual({ ok: false, error: MESSAGES.notNow });

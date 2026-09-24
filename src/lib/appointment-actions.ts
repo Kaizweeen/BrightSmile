@@ -183,11 +183,24 @@ async function activeDentist(staff: Staff, id: string): Promise<{ id: string; sm
 
 /**
  * Null when the time can be saved, otherwise why not. An open time must still be open; a custom time
- * only needs to be today or later, because the database refuses any overlap (spec 5.3).
+ * only needs to be today or later, because the database refuses any overlap (spec 5.3). Moving to a
+ * custom time additionally requires it to still be ahead of now: manual New appointment keeps allowing
+ * an earlier time today (e.g. logging a walk-in), but moving a visit to a time that already passed
+ * would silently no-show it.
  */
-async function timeProblem(staff: Staff, slot: SlotChoice, duration: number, now: Date, ignoreId?: string): Promise<string | null> {
+async function timeProblem(
+  staff: Staff,
+  slot: SlotChoice,
+  duration: number,
+  now: Date,
+  ignoreId?: string,
+  requireFuture = false,
+): Promise<string | null> {
   if (manilaDate(slot.startsAt) < manilaDate(now)) return "Pick today or a later date.";
-  if (slot.custom) return null;
+  if (slot.custom) {
+    if (requireFuture && slot.startsAt <= now) return "This time has already passed. Pick a later time.";
+    return null;
+  }
   const open = await staffOpenStarts(staff, { dentistId: slot.dentistId, date: manilaDate(slot.startsAt), duration, ignoreId }, now);
   return open.some((s) => s.getTime() === slot.startsAt.getTime()) ? null : NOT_OPEN;
 }
@@ -208,7 +221,7 @@ export async function moveAppointment(staff: Staff, id: string, slotInput: unkno
       return { ok: false, error: "That is the current time. Pick a different one." };
     }
     const duration = (new Date(row.ends_at).getTime() - oldStart.getTime()) / 60_000;
-    const problem = await timeProblem(staff, slot, duration, now, row.id);
+    const problem = await timeProblem(staff, slot, duration, now, row.id, true);
     if (problem) return { ok: false, error: problem };
 
     const { data: moved, error } = await staff.db.rpc("move_appointment", {
