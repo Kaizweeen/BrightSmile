@@ -162,6 +162,7 @@ a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-height: 44px;
   gap: 8px;
   font-weight: 600;
   border-radius: 10px;
@@ -752,6 +753,164 @@ a {
   color: var(--text-2);
   font-size: 13px;
   margin-top: 4px;
+}
+
+/* ---------- dashboard shell ---------- */
+.app-shell {
+  min-height: 100dvh;
+  padding-bottom: calc(64px + env(safe-area-inset-bottom));
+}
+.app-top {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 14px 16px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.app-clinic {
+  font-weight: 700;
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Phones: a bottom tab bar within thumb reach. Wider screens: a sticky top bar (media query below). */
+.app-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  background: #fff;
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 56px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.nav-item.on {
+  color: var(--primary-strong);
+  box-shadow: inset 0 3px 0 var(--primary);
+}
+.nav-badge {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-grid;
+  place-items: center;
+  font-variant-numeric: tabular-nums;
+}
+.app-main {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 10px 16px 32px;
+}
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.page-head h1 {
+  font-size: 21px;
+  font-weight: 700;
+}
+.appt {
+  padding: 16px 18px;
+  margin-bottom: 12px;
+}
+.appt .when {
+  font-family: var(--font-poppins), "Poppins", sans-serif;
+  font-weight: 700;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.appt .who {
+  font-weight: 600;
+  font-size: 15px;
+  margin-top: 2px;
+}
+.appt .what {
+  color: var(--text-2);
+  font-size: 13px;
+  margin-top: 2px;
+}
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.btn-danger {
+  border: 1px solid #f1c4bf;
+  background: #fff;
+  color: var(--red-deep);
+}
+.btn-danger:hover {
+  background: var(--red-soft);
+}
+.settings-section {
+  margin-bottom: 16px;
+}
+.settings-section h2 {
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+@media (min-width: 768px) {
+  .app-shell {
+    padding-bottom: 0;
+  }
+  .app-nav {
+    position: sticky;
+    top: 0;
+    bottom: auto;
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    border-top: none;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0;
+  }
+  .nav-item {
+    padding: 0 18px;
+    min-height: 48px;
+    font-size: 13.5px;
+  }
+  .nav-item.on {
+    box-shadow: inset 0 -3px 0 var(--primary);
+  }
+  .nav-badge {
+    position: static;
+  }
 }
 
 .screen-in {
