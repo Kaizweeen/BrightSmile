@@ -8,6 +8,7 @@ import { redirect } from "next/navigation";
 export async function serverClient() {
   const store = await cookies();
   return createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!, {
+    cookieOptions: { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax" },
     cookies: {
       getAll: () => store.getAll(),
       setAll(cookiesToSet) {
