@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Scratch space for the plan's task workspace: briefs, reports, probes.
+    ".superpowers/**",
   ]),
 ]);
 

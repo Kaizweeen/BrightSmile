@@ -20,6 +20,11 @@
   --warn: #9a5b00;
   --pending: #1d4e89;
   --gold: #a8791f;
+  /* The printed panel at the head of the sheet stays dark in both themes,
+     the way ink on a calendar does not become paper at night. */
+  --panel: #14120f;
+  --on-panel: #f6f2e8;
+  --panel-gold: #d9ab4f;
 }
 
 /* The sheet at night: a patient booking from bed at 11pm. */
@@ -37,6 +42,9 @@
     --warn: #e0a758;
     --pending: #8fb4e8;
     --gold: #d8b25c;
+    --panel: #0e0d0a;
+    --on-panel: #f2efe6;
+    --panel-gold: #d8b25c;
   }
 }
 
@@ -53,6 +61,9 @@
   --color-warn: var(--warn);
   --color-pending: var(--pending);
   --color-gold: var(--gold);
+  --color-panel: var(--panel);
+  --color-on-panel: var(--on-panel);
+  --color-panel-gold: var(--panel-gold);
   --font-sans: var(--font-body);
   --font-display: var(--font-body);
   --radius-card: 2px;
@@ -84,4 +95,58 @@ body {
 /* The tear line between the sheet and the pad below it. */
 @utility tear-rule {
   border-top: 1px dashed var(--line);
+}
+
+/* Faint printing stock fibres. Low enough to read as paper, not as a grid. */
+@utility paper {
+  background-image:
+    repeating-linear-gradient(90deg, color-mix(in oklab, var(--ink) 2%, transparent) 0 1px, transparent 1px 5px),
+    repeating-linear-gradient(0deg, color-mix(in oklab, var(--ink) 1.5%, transparent) 0 1px, transparent 1px 9px);
+}
+
+/* A printer's proof stamp, used to mark anything that is not live data. */
+@utility stamp {
+  border: 2px solid var(--danger);
+  color: var(--danger);
+  transform: rotate(-7deg);
+  letter-spacing: 0.2em;
+}
+
+/* Form lines: a printed box you write inside. */
+@utility field {
+  width: 100%;
+  min-height: 3rem;
+  border: 1px solid var(--line);
+  background-color: var(--surface);
+  padding-inline: 0.75rem;
+  color: var(--ink);
+  &:focus-visible {
+    outline: 2px solid var(--pending);
+    outline-offset: 2px;
+  }
+  &::placeholder {
+    color: var(--muted);
+  }
+}
+
+/* Tearing the day off the pad reveals the times printed underneath. */
+@keyframes tear-open {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@utility tear-open {
+  animation: tear-open 240ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tear-open {
+    animation: none;
+  }
 }
