@@ -74,6 +74,41 @@ describe("create_booking", () => {
     expect(data.map((p: { first_name: string }) => p.first_name)).toEqual(["Junior", "Maria"]);
   });
 
+  it("treats two mobile-less walk-ins with the same name as different patients", async () => {
+    await db
+      .rpc("create_booking", args({ p_starts_at: at("17:00"), p_ends_at: at("17:30"), p_first_name: "Noel", p_last_name: "Walker", p_mobile: null }))
+      .throwOnError();
+    await db
+      .rpc("create_booking", args({ p_starts_at: at("17:30"), p_ends_at: at("18:00"), p_first_name: "Noel", p_last_name: "Walker", p_mobile: null }))
+      .throwOnError();
+    const { data } = await db
+      .from("patients")
+      .select("id")
+      .eq("clinic_id", seed.clinic.id)
+      .eq("first_name", "Noel")
+      .eq("last_name", "Walker")
+      .throwOnError();
+    expect(data.length).toBe(2);
+  });
+
+  it("updates hmo to the latest non-empty value on a reused patient", async () => {
+    await db
+      .rpc("create_booking", args({ p_starts_at: at("18:00"), p_ends_at: at("18:30"), p_first_name: "Hmo", p_last_name: "Case", p_hmo: "Maxicare" }))
+      .throwOnError();
+    await db
+      .rpc("create_booking", args({ p_starts_at: at("18:30"), p_ends_at: at("19:00"), p_first_name: "Hmo", p_last_name: "Case", p_hmo: "Intellicare" }))
+      .throwOnError();
+    const { data } = await db
+      .from("patients")
+      .select("hmo")
+      .eq("clinic_id", seed.clinic.id)
+      .eq("mobile", "+639181234567")
+      .eq("first_name", "Hmo")
+      .single()
+      .throwOnError();
+    expect(data.hmo).toBe("Intellicare");
+  });
+
   it("rolls back a new patient when the time is taken", async () => {
     const { error } = await db.rpc("create_booking", args({ p_first_name: "Late", p_last_name: "Comer" }));
     expect(error?.code).toBe("23P01");

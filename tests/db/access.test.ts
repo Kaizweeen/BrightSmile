@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { newToken } from "@/lib/codes";
 import { adminDb, anonDb, deleteClinic, deleteUser, rand, signedInUser } from "./helpers";
 
 type User = Awaited<ReturnType<typeof signedInUser>>;
@@ -86,9 +87,51 @@ describe("clinic isolation", () => {
   });
 
   it("gives strangers nothing", async () => {
-    const { data } = await anonDb().from("patients").select("id");
-    expect(data ?? []).toEqual([]);
+    const { error: selectError } = await anonDb().from("patients").select("id");
+    expect(selectError?.code).toBe("42501");
     const { error } = await anonDb().rpc("create_clinic", { p: payload(`c-${rand()}`) });
-    expect(error).not.toBeNull();
+    expect(error?.code).toBe("42501");
+  });
+
+  it("cannot insert their own membership into another clinic", async () => {
+    const { error } = await a.db.from("clinic_members").insert({ clinic_id: clinicB, user_id: a.userId });
+    expect(error?.code).toBe("42501");
+  });
+
+  it("cannot delete their own clinic", async () => {
+    const { data, error } = await a.db.from("clinics").delete().eq("id", clinicA).select();
+    if (!error) expect(data).toEqual([]);
+    const { data: stillThere } = await adminDb().from("clinics").select("id").eq("id", clinicA).single().throwOnError();
+    expect(stillThere.id).toBe(clinicA);
+  });
+
+  it("blocks attaching an event to another clinic's appointment", async () => {
+    const { data: apptB } = await adminDb()
+      .from("appointments")
+      .insert({
+        clinic_id: clinicB,
+        dentist_id: (await adminDb().from("dentists").select("id").eq("clinic_id", clinicB).single().throwOnError()).data.id,
+        patient_id: (
+          await adminDb()
+            .from("patients")
+            .insert({ clinic_id: clinicB, first_name: "Cross", last_name: "Clinic", mobile: "+639175559999" })
+            .select()
+            .single()
+            .throwOnError()
+        ).data.id,
+        starts_at: "2030-02-01T09:00:00+08:00",
+        ends_at: "2030-02-01T09:30:00+08:00",
+        status: "confirmed",
+        procedure_names: ["Consultation"],
+        source: "manual",
+        manage_token: newToken(),
+      })
+      .select()
+      .single()
+      .throwOnError();
+    const { error } = await a.db
+      .from("appointment_events")
+      .insert({ clinic_id: clinicA, appointment_id: apptB.id, to_status: "confirmed", actor: "staff" });
+    expect(error?.code).toBe("23503");
   });
 });

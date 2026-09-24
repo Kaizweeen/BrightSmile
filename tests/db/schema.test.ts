@@ -57,6 +57,11 @@ describe("integrity checks", () => {
     expect(error?.code).toBe("23514");
   });
 
+  it("refuses a reserved slug", async () => {
+    const { error } = await db.from("clinics").insert({ name: "X", sms_name: "X", slug: "admin", mobile: "+639170000000" });
+    expect(error?.code).toBe("23514");
+  });
+
   it("refuses badly formed mobiles and booking links", async () => {
     for (const bad of [{ mobile: "09170000000", slug: `t-${rand()}` }, { mobile: "+639170000000", slug: "Bad Slug" }]) {
       const { error } = await db.from("clinics").insert({ name: "X", sms_name: "X", ...bad });
