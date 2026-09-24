@@ -13,7 +13,16 @@ export const LIMITS = {
   procedureName: 60,
   hmo: 60,
   address: 200,
+  mapsUrl: 300,
+  timeOffNote: 100,
 } as const;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Checked before an id reaches a query, so a bad id reads as "not found" instead of a database error. */
+export function isUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID.test(value);
+}
 
 /** Why a booking link can't be used, or null when it can. */
 export function slugProblem(slug: string): string | null {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanBirthday, cleanEmail, cleanText, passwordProblem, slugFromName, slugProblem, smsNameProblem } from "@/lib/validate";
+import { cleanBirthday, cleanEmail, cleanText, isUuid, passwordProblem, slugFromName, slugProblem, smsNameProblem } from "@/lib/validate";
 
 describe("slugProblem", () => {
   it.each(["elite-dental", "abc", "a1b", "smile-studio-dental-mkt1"])("accepts %s", (slug) => {
@@ -98,5 +98,20 @@ describe("passwordProblem", () => {
     expect(passwordProblem("a".repeat(73))).toBe("Use at most 72 characters.");
     expect(passwordProblem("a".repeat(8))).toBeNull();
     expect(passwordProblem("a".repeat(72))).toBeNull();
+  });
+});
+
+describe("isUuid", () => {
+  it("accepts uuids in either case", () => {
+    expect(isUuid("3f2b8c1e-9a4d-4e2f-8b1a-0c9d8e7f6a5b")).toBe(true);
+    expect(isUuid("3F2B8C1E-9A4D-4E2F-8B1A-0C9D8E7F6A5B")).toBe(true);
+  });
+
+  it("rejects anything else", () => {
+    expect(isUuid("")).toBe(false);
+    expect(isUuid("not-a-uuid")).toBe(false);
+    expect(isUuid("3f2b8c1e-9a4d-4e2f-8b1a-0c9d8e7f6a5b,x")).toBe(false);
+    expect(isUuid(42)).toBe(false);
+    expect(isUuid(null)).toBe(false);
   });
 });
