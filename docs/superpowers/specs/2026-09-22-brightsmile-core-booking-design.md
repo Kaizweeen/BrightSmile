@@ -318,7 +318,7 @@ Vercel Cron, `0 1 * * *` (01:00 UTC = 9:00 AM Manila), calling `/api/cron/daily`
 
 ## 15. Project setup
 
-- Folder `D:\brightsmile` (C: is full; npm's cache for this project is `D:\npm-cache`), remote [Kaizweeen/BrightSmile](https://github.com/Kaizweeen/BrightSmile), commits use the GitHub no-reply email.
+- The project lives in its own folder on a drive with room to spare, with npm's cache pointed at the same drive through a gitignored `.npmrc` (the system drive ran out of space). Remote: [Kaizweeen/BrightSmile](https://github.com/Kaizweeen/BrightSmile). Commits use the GitHub no-reply email.
 - Next.js App Router, TypeScript, Tailwind. Dev server on port **3600**, recorded in `.claude/launch.json`.
 - First implementation step: `/impeccable init` to write `PRODUCT.md` and `DESIGN.md`, giving the booking page and dashboard their own identity.
 - Docker isn't installed, so there is no local Supabase. Development and database tests use one free Supabase project; production gets its own Pro project.

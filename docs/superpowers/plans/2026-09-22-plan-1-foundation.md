@@ -264,7 +264,7 @@ Authentication > Sign In / Providers > Email: switch off "Confirm email". Produc
 
 - [ ] **Step 4 (Kai): Link the CLI**
 
-In a terminal at `D:\brightsmile`:
+In a terminal at the repo root:
 
 ```powershell
 npx supabase init
