@@ -4,11 +4,16 @@ export type Status = "pending" | "confirmed" | "declined" | "cancelled" | "compl
 export type Actor = "patient" | "staff" | "system";
 
 // Spec section 9.2. Key is "from>to"; value is who may make that change.
+// "confirmed>confirmed" is the moved row: status stays confirmed, only the time or
+// dentist changes. Task 12's public.move_appointment writes its own event directly
+// and does not call canTransition, so this entry exists for any other caller (for
+// example, deciding whether to show a Move action) that wants the spec 9.2 answer.
 const ALLOWED: Record<string, Actor[]> = {
   "pending>confirmed": ["staff"],
   "pending>declined": ["staff"],
   "pending>cancelled": ["patient"],
   "pending>expired": ["system"],
+  "confirmed>confirmed": ["staff"],
   "confirmed>cancelled": ["staff", "patient"],
   "confirmed>completed": ["staff"],
   "confirmed>no_show": ["staff"],

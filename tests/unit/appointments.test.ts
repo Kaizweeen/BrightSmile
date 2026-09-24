@@ -12,6 +12,7 @@ describe("canTransition", () => {
     ["confirmed", "cancelled", "patient"],
     ["confirmed", "completed", "staff"],
     ["confirmed", "no_show", "staff"],
+    ["confirmed", "confirmed", "staff"],
     ["completed", "no_show", "staff"],
     ["no_show", "completed", "staff"],
   ] as const)("allows %s to %s by %s", (from, to, actor) => {
@@ -50,6 +51,7 @@ describe("needsReminder", () => {
 
   it("skips visits confirmed today, already reminded, not tomorrow, or not confirmed", () => {
     expect(needsReminder({ ...base, confirmed_at: earlier }, now)).toBe(false);
+    expect(needsReminder({ ...base, confirmed_at: manilaInstant("2026-09-22", 60) }, now)).toBe(false);
     expect(needsReminder({ ...base, reminder_sent_at: now }, now)).toBe(false);
     expect(needsReminder({ ...base, starts_at: manilaInstant("2026-09-24", 10 * 60) }, now)).toBe(false);
     expect(needsReminder({ ...base, status: "pending" }, now)).toBe(false);
