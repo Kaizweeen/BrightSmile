@@ -9,8 +9,8 @@ import { getOpenDates, getOpenStarts, requestBooking, resendBookingCode, verifyB
 import type { BookingOutcome } from "@/lib/booking";
 import { detailErrors, HMO_SUGGESTIONS, type Details, type PublicClinic } from "@/lib/booking-input";
 import { localMobile, normalizeMobile } from "@/lib/phone";
-import { fitsAnyBlock, mergeWeeks, type Block } from "@/lib/slots";
-import { addDays, formatDate, formatMinutes, formatTime, manilaDate } from "@/lib/time";
+import { fitsAnyBlock, mergeWeeks, openStarts, type Block } from "@/lib/slots";
+import { addDays, formatDate, formatMinutes, formatTime, manilaDate, weekday } from "@/lib/time";
 import { LIMITS } from "@/lib/validate";
 
 type Props = { clinic: PublicClinic; nowIso: string };
@@ -85,6 +85,12 @@ export default function BookingSheet({ clinic, nowIso }: Props) {
   const tooLong = duration > 0 && !fitsAnyBlock(duration, dentistId ? dentist.hours : week);
   const selection = { dentistId: dentist?.id ?? "", procedureIds };
   const closedWeekdays = dentist ? [0, 1, 2, 3, 4, 5, 6].filter((d) => dentist.hours[d].length === 0) : [];
+  // Ignoring bookings: would any slot for today still fit before hours or minimum notice run out?
+  const todayOutOfTime =
+    !dentist ||
+    duration === 0 ||
+    openStarts({ date: today, blocks: dentist.hours[weekday(today)], busy: [], durationMinutes: duration, rules: clinic.rules, now })
+      .length === 0;
   const search = query.trim().toLowerCase();
   const listed = search ? clinic.procedures.filter((p) => p.name.toLowerCase().includes(search)) : clinic.procedures;
   const start = startIso ? new Date(startIso) : null;
@@ -469,6 +475,7 @@ export default function BookingSheet({ clinic, nowIso }: Props) {
                   openDates={monthOpen ?? []}
                   loading={monthOpen === null}
                   closedWeekdays={closedWeekdays}
+                  todayOutOfTime={todayOutOfTime}
                   selected={date}
                   onSelect={(d) => void loadDay(d)}
                   onMonth={(delta) => void loadMonth(addDays(`${month}-01`, delta > 0 ? 31 : -1).slice(0, 7))}

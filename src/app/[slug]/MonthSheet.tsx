@@ -15,6 +15,8 @@ type Props = {
   loading: boolean;
   /** Weekdays (0 Sunday) the chosen dentist doesn't work, so their days read "closed", not "fully booked". */
   closedWeekdays: number[];
+  /** True when today has no slot left only because the day's hours or minimum notice have passed, not because every slot is taken. */
+  todayOutOfTime: boolean;
   selected: string | null;
   onSelect: (date: string) => void;
   onMonth: (delta: number) => void;
@@ -30,7 +32,18 @@ function monthLabel(month: string) {
  * on today. Days with nothing open are struck through and say why in their accessible name, so the
  * mark never rests on colour. While the month loads, every day is muted and unpickable.
  */
-export default function MonthSheet({ month, today, lastBookable, openDates, loading, closedWeekdays, selected, onSelect, onMonth }: Props) {
+export default function MonthSheet({
+  month,
+  today,
+  lastBookable,
+  openDates,
+  loading,
+  closedWeekdays,
+  todayOutOfTime,
+  selected,
+  onSelect,
+  onMonth,
+}: Props) {
   const dates = monthDates(month);
   const open = new Set(openDates);
   const blanks = weekday(dates[0]);
@@ -78,7 +91,7 @@ export default function MonthSheet({ month, today, lastBookable, openDates, load
                       type="button"
                       disabled={loading || !open.has(date)}
                       aria-pressed={date === selected}
-                      aria-label={dayLabel(date, month, open.has(date), loading, today, lastBookable, closedWeekdays)}
+                      aria-label={dayLabel(date, month, open.has(date), loading, today, lastBookable, closedWeekdays, todayOutOfTime)}
                       onClick={() => onSelect(date)}
                       className={[
                         "mini-day",
@@ -148,11 +161,20 @@ function dayLabel(
   today: string,
   lastBookable: string,
   closedWeekdays: number[],
+  todayOutOfTime: boolean,
 ) {
   const day = Number(date.slice(8));
   const monthName = monthLabel(month).split(" ")[0];
   const why =
-    date < today ? "past" : date > lastBookable ? "too far ahead" : closedWeekdays.includes(weekday(date)) ? "closed" : "fully booked";
+    date < today
+      ? "past"
+      : date > lastBookable
+        ? "too far ahead"
+        : closedWeekdays.includes(weekday(date))
+          ? "closed"
+          : date === today && todayOutOfTime
+            ? "no more openings today"
+            : "fully booked";
   const parts = [`${DAY_NAMES[weekday(date)]}, ${monthName} ${day}`];
   if (!isOpen && !loading) parts.push(why);
   if (date === today) parts.push("today");
