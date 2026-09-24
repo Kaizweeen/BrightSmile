@@ -1,5 +1,6 @@
 import "server-only";
 import { appUrl } from "@/lib/app-url";
+import { logError } from "@/lib/log";
 import { pushPayload, sendPush, type AlertKind } from "@/lib/push";
 import { sendSms } from "@/lib/sms/send";
 import { adminClient } from "@/lib/supabase/admin";
@@ -47,7 +48,7 @@ export async function alertClinic(alert: ClinicAlert): Promise<"push" | "sms" | 
     });
     return status === "failed" ? "failed" : "sms";
   } catch (e) {
-    console.error("alertClinic failed", e instanceof Error ? e.message : e);
+    logError("alertClinic", e);
     return "failed";
   }
 }

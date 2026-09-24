@@ -5,7 +5,7 @@ let client: SupabaseClient | undefined;
 
 /**
  * Secret-key client: bypasses RLS. Only for the public booking flow, verification codes,
- * sms_log, and patient links. Staff pages use serverClient() so RLS applies.
+ * sms_log, patient links, sendPush, and the daily job. Staff pages use serverClient() so RLS applies.
  */
 export function adminClient(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
