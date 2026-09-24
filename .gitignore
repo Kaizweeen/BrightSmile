@@ -50,3 +50,6 @@ supabase/.branches/
 
 # Impeccable design workspace (review packets, decision logs)
 .impeccable/
+
+# Task workspace for the superpowers plan runner
+.superpowers/
