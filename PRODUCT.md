@@ -42,7 +42,8 @@ Full product truth, including the SMS templates and booking rules, lives in `doc
 ## Brand Commitments
 
 - Name: BrightSmile. Repository: github.com/Kaizweeen/BrightSmile.
-- **Logo: Kai will provide one.** Until it arrives the interface uses a typographic placeholder that the real file can replace without any layout change. Do not treat an invented mark as final.
+- **Logo: provided by Kai.** A deep teal and navy tooth with a gold swoosh and a white sparkle, above a smile arc, on a cream circle; wordmark "BRIGHT SMILE" in heavy navy caps over "DENTAL CLINIC" in letterspaced teal caps. The image file still needs to be added at `public/brand/logo.png`; until it is, the interface uses a small placeholder mark drawn in the logo's own colours, which the real file replaces without layout change.
+- **Interface style: pinned by Kai to his Planorama project.** Structure, spacing, radii, shadow, component classes and the Inter with Poppins pairing come from `C:\Users\User\Planorama\app\globals.css`. The colour comes from the logo: teal `#12727E` as the working colour, navy `#0F3A52` as ink, gold `#C9A24B` as accent, cream `#F7F3EA` as the canvas, white cards. Light only, as Planorama is. This pinned style outranks any generated design direction.
 - The SMS sender name is `BrightSmile`, exactly 11 characters, which is the maximum a sender name allows.
 - Voice: plain, direct, honest. No em dashes or en dashes in any copy. Say what a screen does, and never imply a capability the product lacks.
 

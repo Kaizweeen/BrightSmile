@@ -22,9 +22,9 @@ function monthLabel(month: string) {
 }
 
 /**
- * The month as a printed calendar sheet. Closed and full days are struck
- * through in red and say so in their accessible name, so the mark never
- * depends on color alone.
+ * The month as Planorama's mini calendar: circular days, purple for the one
+ * you chose, an outline on today. Days with nothing open are struck through
+ * and say why in their accessible name, so the mark never rests on color.
  */
 export default function MonthSheet({ month, today, lastBookable, openDates, selected, onSelect, onMonth }: Props) {
   const dates = monthDates(month);
@@ -33,96 +33,92 @@ export default function MonthSheet({ month, today, lastBookable, openDates, sele
   const canGoBack = month > today.slice(0, 7);
   const canGoForward = month < lastBookable.slice(0, 7);
 
+  const cells: (string | null)[] = [...Array.from({ length: blanks }, () => null), ...dates];
+  while (cells.length % 7 !== 0) cells.push(null);
+  const weeks = Array.from({ length: cells.length / 7 }, (_, w) => cells.slice(w * 7, w * 7 + 7));
+
   return (
     <section aria-label="Choose a day">
-      <header className="flex items-center justify-between gap-2 border-b border-line pb-3">
-        <button
-          type="button"
-          onClick={() => onMonth(-1)}
-          disabled={!canGoBack}
-          aria-label="Previous month"
-          className="grid size-11 place-items-center border border-line text-ink transition-colors hover:bg-canvas focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pending disabled:opacity-30"
-        >
-          <span aria-hidden="true">&#8592;</span>
-        </button>
-        <h3 className="display-type text-xl" aria-live="polite">
-          {monthLabel(month)}
-        </h3>
-        <button
-          type="button"
-          onClick={() => onMonth(1)}
-          disabled={!canGoForward}
-          aria-label="Next month"
-          className="grid size-11 place-items-center border border-line text-ink transition-colors hover:bg-canvas focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pending disabled:opacity-30"
-        >
-          <span aria-hidden="true">&#8594;</span>
-        </button>
-      </header>
-
-      <div className="mt-3 grid grid-cols-7 gap-px" role="group" aria-label={`Days in ${monthLabel(month)}`}>
-        {DAY_HEADS.map((head, i) => (
-          <div key={head} className={`label-type pb-2 text-center ${i === 0 ? "text-danger" : "text-muted"}`}>
-            {head}
-          </div>
-        ))}
-
-        {Array.from({ length: blanks }, (_, i) => (
-          <div key={`blank-${i}`} aria-hidden="true" />
-        ))}
-
-        {dates.map((date) => {
-          const day = Number(date.slice(8));
-          const isOpen = open.has(date);
-          const isSunday = weekday(date) === 0;
-          const isToday = date === today;
-          const isSelected = date === selected;
-          const beyond = date > lastBookable;
-          const past = date < today;
-          const why = past ? "past" : beyond ? "too far ahead" : isSunday ? "closed" : "fully booked";
-
-          return (
-            <button
-              key={date}
-              type="button"
-              disabled={!isOpen}
-              aria-pressed={isSelected}
-              aria-label={`${DAY_NAMES[weekday(date)]}, ${monthLabel(month).split(" ")[0]} ${day}${isOpen ? "" : `, ${why}`}${isToday ? ", today" : ""}`}
-              onClick={() => onSelect(date)}
-              className={[
-                "relative grid h-12 place-items-center border border-line text-base transition-colors",
-                "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pending",
-                isSelected ? "bg-ink text-surface" : "bg-surface",
-                isOpen ? "hover:bg-canvas" : "cursor-not-allowed text-danger/70 line-through",
-                !isOpen && !isSunday ? "text-muted line-through" : "",
-                isToday && !isSelected ? "ring-2 ring-pending ring-offset-0" : "",
-              ].join(" ")}
-            >
-              <span className={isSelected ? "display-type" : isSunday && isOpen ? "text-danger" : ""}>{day}</span>
-            </button>
-          );
-        })}
+      <div className="mini-head">
+        <p className="m font-display">{monthLabel(month)}</p>
+        <div className="mini-nav">
+          <button type="button" onClick={() => onMonth(-1)} disabled={!canGoBack} aria-label="Previous month">
+            <span aria-hidden="true">&#8249;</span>
+          </button>
+          <button type="button" onClick={() => onMonth(1)} disabled={!canGoForward} aria-label="Next month">
+            <span aria-hidden="true">&#8250;</span>
+          </button>
+        </div>
       </div>
 
-      <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted">
-        <span className="inline-flex items-center gap-2">
-          <span aria-hidden="true" className="inline-block size-3 border-2 border-pending" />
-          Today
-        </span>
-        <span className="inline-flex items-center gap-2">
-          <span aria-hidden="true" className="inline-block size-3 bg-ink" />
+      <table className="mini-cal">
+        <caption className="sr-only">{`Days in ${monthLabel(month)}. Days with no openings are struck through.`}</caption>
+        <thead>
+          <tr>
+            {DAY_HEADS.map((head) => (
+              <th key={head} scope="col">
+                {head}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {weeks.map((week, i) => (
+            <tr key={i}>
+              {week.map((date, j) =>
+                date === null ? (
+                  <td key={`blank-${i}-${j}`} />
+                ) : (
+                  <td key={date}>
+                    <button
+                      type="button"
+                      disabled={!open.has(date)}
+                      aria-pressed={date === selected}
+                      aria-label={dayLabel(date, month, open.has(date), today, lastBookable)}
+                      onClick={() => onSelect(date)}
+                      className={[
+                        "mini-day",
+                        date === selected ? "sel" : "",
+                        date === today && date !== selected ? "today" : "",
+                        open.has(date) ? "" : date >= today && date <= lastBookable ? "off" : "muted",
+                      ].join(" ")}
+                    >
+                      {Number(date.slice(8))}
+                    </button>
+                  </td>
+                ),
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div className="legend">
+        <span className="key">
+          <span aria-hidden="true" className="dot" style={{ background: "var(--primary)" }} />
           Chosen
         </span>
-        <span className="inline-flex items-center gap-2">
-          <span aria-hidden="true" className="inline-block w-3 border-t-2 border-danger" />
+        <span className="key">
+          <span
+            aria-hidden="true"
+            className="dot"
+            style={{ background: "#fff", border: "2px solid var(--primary-mid)", width: 11, height: 11 }}
+          />
+          Today
+        </span>
+        <span className="key">
+          <span aria-hidden="true" style={{ width: 14, borderTop: "2px solid var(--text-3)" }} />
           Closed or full
         </span>
-      </p>
+      </div>
+
       <p className="sr-only">{`${openDates.length} days are open in ${monthLabel(month)}.`}</p>
+
       {openDates.length === 0 && (
-        <p className="mt-4 border border-line bg-canvas p-4 text-sm">
+        <p className="note-box mt-3">
           Nothing open in {monthLabel(month)}.{" "}
           {canGoForward ? (
-            <button type="button" onClick={() => onMonth(1)} className="text-pending underline underline-offset-2">
+            <button type="button" onClick={() => onMonth(1)} className="link">
               Try {monthLabel(addDays(`${month}-01`, 31).slice(0, 7))}
             </button>
           ) : (
@@ -132,4 +128,14 @@ export default function MonthSheet({ month, today, lastBookable, openDates, sele
       )}
     </section>
   );
+}
+
+function dayLabel(date: string, month: string, isOpen: boolean, today: string, lastBookable: string) {
+  const day = Number(date.slice(8));
+  const monthName = monthLabel(month).split(" ")[0];
+  const why = date < today ? "past" : date > lastBookable ? "too far ahead" : weekday(date) === 0 ? "closed" : "fully booked";
+  const parts = [`${DAY_NAMES[weekday(date)]}, ${monthName} ${day}`];
+  if (!isOpen) parts.push(why);
+  if (date === today) parts.push("today");
+  return parts.join(", ");
 }
