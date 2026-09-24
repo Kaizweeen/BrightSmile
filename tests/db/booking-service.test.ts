@@ -163,6 +163,16 @@ describe("verification code rules", () => {
     expect((await verifyCode(requestId, code, new Date())).outcome).toEqual({ status: "locked" });
   });
 
+  it("never lets parallel wrong guesses spend more than 5 attempts", async () => {
+    const mobile = newMobile();
+    const requestId = await codeRequest(690, mobile);
+    const code = await lastCode(mobile);
+    const wrong = code === "000000" ? "111111" : "000000";
+    await Promise.all(Array.from({ length: 10 }, () => verifyCode(requestId, wrong, new Date())));
+    const { data } = await db.from("otp_requests").select("attempts").eq("id", requestId).single().throwOnError();
+    expect(data.attempts).toBeLessThanOrEqual(5);
+  });
+
   it("expires a code after 5 minutes", async () => {
     const mobile = newMobile();
     const requestId = await codeRequest(750, mobile);
@@ -199,5 +209,41 @@ describe("verification code rules", () => {
     const ip = newIp();
     for (let i = 0; i < 10; i++) await codeRequest(840, newMobile(), ip);
     expect((await requestBooking(seed.clinic.slug, input(840, newMobile()), ctx([], ip))).status).toBe("limited");
+  });
+
+  it("still caps parallel requests at 3 codes per mobile", async () => {
+    const mobile = newMobile();
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () => requestBooking(seed.clinic.slug, input(870, mobile), ctx())),
+    );
+    const codeCount = results.filter((r) => r.status === "code").length;
+    expect(codeCount).toBeLessThanOrEqual(3);
+    const { count } = await db.from("otp_requests").select("id", { count: "exact", head: true }).eq("mobile", mobile);
+    expect(count).toBeLessThanOrEqual(3);
+  });
+
+  it("lets only one of two parallel resends through, and rejects reuse of a retired id", async () => {
+    const mobile = newMobile();
+    const oldId = await codeRequest(900, mobile);
+
+    const [first, second] = await Promise.all([
+      resendCode(oldId, { ip: newIp(), now: later(61_000) }),
+      resendCode(oldId, { ip: newIp(), now: later(61_000) }),
+    ]);
+    const codeResults = [first, second].filter((r) => r.status === "code");
+    expect(codeResults.length).toBe(1);
+
+    // The other racer sees the row already retired by the winner.
+    const other = codeResults[0] === first ? second : first;
+    expect(["gone", "wait"]).toContain(other.status);
+
+    // Reusing the now-retired original id is unusable.
+    expect((await resendCode(oldId, { ip: newIp(), now: later(62_000) })).status).toBe("gone");
+  });
+
+  it("rejects a resend before 60 seconds", async () => {
+    const mobile = newMobile();
+    const oldId = await codeRequest(930, mobile);
+    expect((await resendCode(oldId, { ip: newIp(), now: new Date() })).status).toBe("wait");
   });
 });

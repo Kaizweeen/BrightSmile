@@ -2,7 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { dayOpenStarts, loadClinic } from "@/lib/availability";
 import { parseBookingInput, type BookingPayload, type PublicClinic } from "@/lib/booking-input";
-import { checkCode, hashCode, isRateLimited, newCode, newToken, OTP } from "@/lib/codes";
+import { checkCode, hashCode, newCode, newToken, OTP } from "@/lib/codes";
 import { alertClinic } from "@/lib/notify";
 import { sendSms } from "@/lib/sms/send";
 import { adminClient } from "@/lib/supabase/admin";
@@ -101,41 +101,57 @@ async function finalize(clinic: PublicClinic, p: BookingPayload, now: Date): Pro
   return { status: "sent", token };
 }
 
+type IssueResult =
+  | { status: "ok" }
+  | { status: "limited" }
+  | { status: "wait"; seconds: number }
+  | { status: "gone" };
+
+/**
+ * Calls the issue_otp SQL function (spec 10.3), which locks per mobile then per IP and does the
+ * rolling-hour count, the resend wait check, and the insert inside one transaction: a burst of
+ * parallel calls can no longer all read the same stale count/row and all send a paid text.
+ * resendOf null means a brand-new request, so the function can only answer "ok" or "limited".
+ */
+async function callIssueOtp(
+  mobile: string,
+  ip: string,
+  id: string,
+  codeHash: string,
+  booking: BookingPayload,
+  now: Date,
+  resendOf: string | null,
+): Promise<IssueResult> {
+  const { data, error } = await adminClient().rpc("issue_otp", {
+    p_id: id,
+    p_mobile: mobile,
+    p_ip: ip,
+    p_code_hash: codeHash,
+    // Stamped with the app's clock, not the database default, so the resend wait and the
+    // rolling-hour limits compare times from one clock even if server clocks drift.
+    p_now: now.toISOString(),
+    p_expires_at: new Date(now.getTime() + OTP.ttlMs).toISOString(),
+    p_booking: booking,
+    p_resend_of: resendOf,
+  });
+  if (error) throw error;
+  const result = data as { status: "ok" | "limited" | "wait" | "gone"; wait_seconds?: number };
+  return result.status === "wait" ? { status: "wait", seconds: result.wait_seconds ?? OTP.resendMs / 1000 } : (result as IssueResult);
+}
+
+async function sendCode(clinic: PublicClinic, mobile: string, code: string, id: string): Promise<CodeIssued> {
+  const sent = await sendSms({ kind: "otp", to: mobile, vars: { clinic: clinic.smsName, code }, clinicId: clinic.id });
+  return sent === "failed" ? { status: "sms_failed" } : { status: "code", requestId: id };
+}
+
 /** Spec 10.3: rolling-hour limits, then a stored request holding the payload and the code hash, then the text. */
 async function issueCode(clinic: PublicClinic, booking: BookingPayload, { ip, now }: Ctx): Promise<CodeIssued> {
-  const db = adminClient();
-  const since = new Date(now.getTime() - 3_600_000).toISOString();
-  const countSince = async (column: "mobile" | "ip", value: string) => {
-    const { count, error } = await db
-      .from("otp_requests")
-      .select("id", { count: "exact", head: true })
-      .eq(column, value)
-      .gte("created_at", since);
-    if (error) throw error;
-    return count ?? 0;
-  };
-  // ponytail: count-then-insert is not atomic, so a burst of parallel requests can slip a few codes past
-  // the limit. Move this into a locking SQL function if sms_log ever shows that abuse.
-  if (isRateLimited(await countSince("mobile", booking.mobile), await countSince("ip", ip))) return { status: "limited" };
-
   const id = randomUUID();
   const code = newCode();
-  await db
-    .from("otp_requests")
-    .insert({
-      id,
-      mobile: booking.mobile,
-      ip,
-      code_hash: hashCode(id, code),
-      booking,
-      // Stamped with the app's clock, not the database default, so the resend wait and the
-      // rolling-hour limits compare times from one clock even if server clocks drift.
-      created_at: now.toISOString(),
-      expires_at: new Date(now.getTime() + OTP.ttlMs).toISOString(),
-    })
-    .throwOnError();
-  const sent = await sendSms({ kind: "otp", to: booking.mobile, vars: { clinic: clinic.smsName, code }, clinicId: clinic.id });
-  return sent === "failed" ? { status: "sms_failed" } : { status: "code", requestId: id };
+  const result = await callIssueOtp(booking.mobile, ip, id, hashCode(id, code), booking, now, null);
+  if (result.status === "limited") return { status: "limited" };
+  if (result.status !== "ok") throw new Error(`unexpected issue_otp status for a new request: ${result.status}`);
+  return sendCode(clinic, booking.mobile, code, id);
 }
 
 /** Spec 9.1 step 3: validate, then book straight away for a verified device, or send a code. */
@@ -232,23 +248,25 @@ export async function resendCode(requestId: string, ctx: Ctx): Promise<ResendOut
     const db = adminClient();
     const { data, error } = await db
       .from("otp_requests")
-      .select("id, mobile, booking, created_at, verified_at")
+      .select("id, mobile, booking, verified_at")
       .eq("id", requestId)
       .maybeSingle();
     if (error) throw error;
-    const row = data as Pick<OtpRow, "id" | "mobile" | "booking" | "created_at" | "verified_at"> | null;
+    const row = data as Pick<OtpRow, "id" | "mobile" | "booking" | "verified_at"> | null;
     if (!row || row.verified_at) return { status: "gone" };
 
-    const waitMs = new Date(row.created_at).getTime() + OTP.resendMs - ctx.now.getTime();
-    if (waitMs > 0) return { status: "wait", seconds: Math.ceil(waitMs / 1000) };
+    const id = randomUUID();
+    const code = newCode();
+    // issue_otp checks the old row is still usable, enforces the 60 second wait from the newest
+    // code for this mobile, and retires the old row, all inside its own lock (spec 10.3).
+    const result = await callIssueOtp(row.mobile, ctx.ip, id, hashCode(id, code), row.booking, ctx.now, row.id);
+    if (result.status === "wait") return { status: "wait", seconds: result.seconds };
+    if (result.status === "limited") return { status: "limited" };
+    if (result.status === "gone") return { status: "gone" };
 
     const clinic = await loadClinic({ id: row.booking.clinicId });
     if (!clinic) return { status: "gone" };
-    const issued = await issueCode(clinic, row.booking, ctx);
-    if (issued.status === "code") {
-      await db.from("otp_requests").update({ expires_at: ctx.now.toISOString() }).eq("id", row.id).throwOnError();
-    }
-    return issued;
+    return sendCode(clinic, row.mobile, code, id);
   } catch (e) {
     logFailure("resendCode", e);
     return { status: "unavailable" };
