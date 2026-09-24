@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { checkCode, hashCode, isRateLimited, newCode, newToken, OTP, readDevice, signDevice } from "@/lib/codes";
+import { checkCode, DEVICE_COOKIE, hashCode, isRateLimited, newCode, newToken, OTP, readDevice, signDevice } from "@/lib/codes";
 
 beforeAll(() => {
   process.env.APP_SECRET ??= "unit-test-secret";
@@ -8,6 +8,17 @@ beforeAll(() => {
 const now = new Date("2026-09-22T01:00:00Z");
 
 describe("verification codes", () => {
+  it("pins the spec 10.3 constants", () => {
+    expect(OTP).toEqual({
+      ttlMs: 300_000,
+      maxAttempts: 5,
+      resendMs: 60_000,
+      perMobilePerHour: 3,
+      perIpPerHour: 10,
+    });
+    expect(DEVICE_COOKIE).toBe("bs_verified");
+  });
+
   it("makes 6 digit codes", () => {
     for (let i = 0; i < 50; i++) expect(newCode()).toMatch(/^\d{6}$/);
   });
@@ -69,5 +80,11 @@ describe("verified-device cookie", () => {
     expect(readDevice(value, new Date(now.getTime() + 181 * 86_400_000))).toEqual([]);
     expect(readDevice("garbage", now)).toEqual([]);
     expect(readDevice(undefined, now)).toEqual([]);
+  });
+
+  it("pins the 180 day expiry at the boundary", () => {
+    const value = signDevice(["+639171234567"], now);
+    expect(readDevice(value, new Date(now.getTime() + 180 * 86_400_000 - 1))).toEqual(["+639171234567"]);
+    expect(readDevice(value, new Date(now.getTime() + 180 * 86_400_000))).toEqual([]);
   });
 });
