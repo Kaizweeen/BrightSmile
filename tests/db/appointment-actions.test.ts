@@ -250,8 +250,9 @@ describe("moveAppointment", () => {
 
   it("refuses a custom time that has already passed", async () => {
     const id = await bookAt(a, day, 990, "confirmed");
-    const now = new Date();
-    const past = { dentistId: a.seed.dentist.id, startsAt: new Date(Math.floor((now.getTime() - 120_000) / 60_000) * 60_000).toISOString(), custom: true };
+    // Noon Manila today, so "two minutes earlier" is still today even when the suite runs just after midnight.
+    const now = manilaInstant(today, 720);
+    const past = { dentistId: a.seed.dentist.id, startsAt: manilaInstant(today, 718).toISOString(), custom: true };
     expect(await moveAppointment(a.staff, id, past, now)).toEqual({
       ok: false,
       error: "This time has already passed. Pick a later time.",

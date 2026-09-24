@@ -52,7 +52,8 @@ export async function sendSms({ kind, to, vars, clinicId, appointmentId = null }
     status = "failed";
   } else if (mode === "log") {
     // Never the destination mobile: this line is a log-mode convenience, not a delivery record.
-    console.log(`[sms ${kind}] ${sms.stored}`);
+    // On Vercel (previews may hold real data) print only the kind and length: bodies carry names and links.
+    console.log(process.env.VERCEL_ENV ? `[sms ${kind}] ${sms.stored.length} chars` : `[sms ${kind}] ${sms.stored}`);
   } else {
     const key = process.env.SEMAPHORE_API_KEY;
     if (!key) {

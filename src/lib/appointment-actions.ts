@@ -78,7 +78,10 @@ export type PatientText = {
   reason: string;
 };
 
-/** One patient text (spec 10.1). No mobile means no text. sendSms never throws, so a text never fails the action. */
+/**
+ * One patient text (spec 10.1). No mobile means no text. sendSms never throws, so a failed text never fails
+ * the action; only a missing APP_URL in production (appUrl throws) does, on purpose, as a misconfiguration.
+ */
 export async function textPatient(staff: Staff, t: PatientText): Promise<SmsStatus | "none"> {
   if (!t.mobile) return "none";
   const app = appUrl();
