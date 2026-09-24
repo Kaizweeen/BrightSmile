@@ -47,3 +47,6 @@ supabase/.branches/
 
 # machine-specific npm cache location
 .npmrc
+
+# Impeccable design workspace (review packets, decision logs)
+.impeccable/
