@@ -13,6 +13,7 @@ import {
 import { busyBetween } from "@/lib/availability";
 import { openStarts, type Busy } from "@/lib/slots";
 import type { Staff } from "@/lib/supabase/server";
+import { isUuid } from "@/lib/validate";
 import { addDays, manilaInstant, parseClock, weekday } from "@/lib/time";
 
 export type RequestItem = {
@@ -143,6 +144,10 @@ export async function staffOpenStarts(
   q: { dentistId: string; date: string; duration: number; ignoreId?: string },
   now: Date,
 ): Promise<Date[]> {
+  // Values can come straight from a form, so check them before they reach a query.
+  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(q.date) && addDays(q.date, 0) === q.date;
+  const validDuration = Number.isInteger(q.duration) && q.duration >= 5 && q.duration <= 9600;
+  if (!isUuid(q.dentistId) || !validDate || !validDuration || (q.ignoreId !== undefined && !isUuid(q.ignoreId))) return [];
   const [clinic, hours, busy] = await Promise.all([
     staff.db.from("clinics").select("slot_minutes").eq("id", staff.clinicId).single().throwOnError(),
     staff.db
