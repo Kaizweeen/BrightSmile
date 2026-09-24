@@ -19,7 +19,11 @@ const worst = {
   credits: 99999,
 };
 
-const appUrls = [...new Set(["https://brightsmile.ph", process.env.APP_URL].filter((u): u is string => !!u))];
+// Spec 10.2: the field limits fit domains up to 17 characters, like "brightsmile.ph" (14). Fixed here
+// so the one text guarantee does not depend on whatever APP_URL happens to be set in the environment.
+const maxDomainAppUrl = "https://brightsmile-demos";
+
+const appUrls = [...new Set(["https://brightsmile.ph", maxDomainAppUrl, process.env.APP_URL].filter((u): u is string => !!u))];
 
 describe.each(appUrls)("worst case with %s", (appUrl) => {
   const vars = { ...worst, appUrl, link: `${appUrl}/a/${"t".repeat(12)}`, bookLink: `${appUrl}/${"s".repeat(24)}` };
@@ -48,6 +52,24 @@ describe("renderSms", () => {
     expect(text).toBe("Elite Dental: Reminder, Juan's visit is tomorrow at 10:00 AM with Dr. Reyes. Can't come? Cancel: https://x.ph/a/1");
   });
 
+  it("places the dentist right after the time in confirmed, moved, request_alert and patient_cancel_alert", () => {
+    expect(renderSms("confirmed", {
+      clinic: "Elite Dental", first: "Juan", date: "Thu Sep 24", time: "10:00 AM", dentist: "Dr. Reyes", link: "l",
+    })).toContain("10:00 AM with Dr. Reyes is confirmed");
+
+    expect(renderSms("moved", {
+      clinic: "Elite Dental", first: "Juan", date: "Thu Sep 24", time: "10:00 AM", dentist: "Dr. Reyes", link: "l",
+    })).toContain("10:00 AM with Dr. Reyes. View or cancel");
+
+    expect(renderSms("request_alert", {
+      first: "Juan", lastInitial: "D", date: "Thu Sep 24", time: "10:00 AM", dentist: "Dr. Reyes", appUrl: "https://x.ph",
+    })).toContain("10:00 AM with Dr. Reyes. Approve at");
+
+    expect(renderSms("patient_cancel_alert", {
+      first: "Juan", lastInitial: "D", date: "Thu Sep 24", time: "10:00 AM", dentist: "Dr. Reyes",
+    })).toBe("Cancelled: Juan D., Thu Sep 24, 10:00 AM with Dr. Reyes.");
+  });
+
   it("ends a reason with a period", () => {
     const text = renderSms("declined", {
       clinic: "Elite Dental", date: "Thu Sep 24", time: "10:00 AM", reason: "Dentist unavailable", bookLink: "https://x.ph/elite",
@@ -64,11 +86,16 @@ describe("renderSms", () => {
     const text = renderSms("confirmed", { clinic: "X", first: "Maximilianoooo", date: "d", time: "t", link: "l" });
     expect(text).toContain("Maximilianoo's");
   });
+
+  it("keeps the Semaphore {otp} placeholder instead of stripping its braces", () => {
+    const text = renderSms("otp", { clinic: "X", code: "{otp}" });
+    expect(text).toBe("Your code for X is {otp}. It expires in 5 minutes. Don't share it with anyone.");
+  });
 });
 
 describe("toSmsText", () => {
   it("keeps texts in plain ASCII without GSM-7 extension characters", () => {
-    expect(toSmsText("Ngiti ng Parañaque ‘Dental’ ₱500 — ok {x}")).toBe("Ngiti ng Paranaque 'Dental' PHP500 - ok x");
+    expect(toSmsText("Ngiti ng Parañaque \u2018Dental\u2019 \u20B1500 \u2014 ok {x}")).toBe("Ngiti ng Paranaque 'Dental' PHP500 - ok x");
   });
 });
 
