@@ -23,6 +23,7 @@ export type PatientDetail = {
 
 const GONE = "This patient no longer exists.";
 const GENERIC = "Something went wrong. Please try again.";
+const HAS_UPCOMING = "Cancel this patient's upcoming visits first.";
 
 type HitRow = { id: string; first_name: string; last_name: string; mobile: string | null };
 
@@ -119,6 +120,16 @@ export async function updatePatient(staff: Staff, id: string, input: unknown, no
 export async function deletePatient(staff: Staff, id: string, now: Date): Promise<Saved> {
   if (!isUuid(id)) return { ok: false, error: GONE };
   try {
+    const { count, error: countError } = await staff.db
+      .from("appointments")
+      .select("id", { count: "exact", head: true })
+      .eq("clinic_id", staff.clinicId)
+      .eq("patient_id", id)
+      .in("status", ["pending", "confirmed"])
+      .gt("starts_at", now.toISOString());
+    if (countError) throw countError;
+    if ((count ?? 0) > 0) return { ok: false, error: HAS_UPCOMING };
+
     const { data, error } = await staff.db
       .from("patients")
       .update({

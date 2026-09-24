@@ -111,6 +111,18 @@ describe("updatePatient", () => {
 });
 
 describe("deletePatient", () => {
+  it("refuses while the patient has an upcoming pending or confirmed visit", async () => {
+    const id = await addPatient(a, "Rosa", "Santos", "+639187779999");
+    await visit(a, id, addDays(today, 6), "pending");
+    expect(await deletePatient(a.staff, id, new Date())).toEqual({
+      ok: false,
+      error: "Cancel this patient's upcoming visits first.",
+    });
+
+    await db.from("appointments").update({ status: "cancelled" }).eq("patient_id", id).throwOnError();
+    expect(await deletePatient(a.staff, id, new Date())).toEqual({ ok: true });
+  });
+
   it("anonymizes the patient and keeps the appointments", async () => {
     const id = await addPatient(a, "Juan", "Delacruz", "+639187770000");
     await visit(a, id, addDays(today, -2), "completed");
