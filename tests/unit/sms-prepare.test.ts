@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { prepareSms, productionModeError, readSemaphoreReply, smsMode } from "@/lib/sms/prepare";
+import { prepareSms, productionModeError, readBalance, readSemaphoreReply, smsMode } from "@/lib/sms/prepare";
 
 const otp = { clinic: "Bright Dental", code: "123456" };
 
@@ -76,5 +76,22 @@ describe("readSemaphoreReply", () => {
   it("keeps errors to 300 characters", () => {
     const reply = readSemaphoreReply(500, "x".repeat(1000));
     expect(reply.ok === false && reply.error.length).toBe(300);
+  });
+});
+
+describe("readBalance", () => {
+  it("reads credit_balance from Semaphore's account reply, as a number or a numeric string", () => {
+    expect(readBalance({ account_id: 1, account_name: "BrightSmile", status: "Active", credit_balance: 1234 })).toBe(1234);
+    expect(readBalance({ credit_balance: "99" })).toBe(99);
+    expect(readBalance({ credit_balance: 0 })).toBe(0);
+  });
+
+  it("gives null for anything it can't read", () => {
+    expect(readBalance({})).toBeNull();
+    expect(readBalance({ credit_balance: "" })).toBeNull();
+    expect(readBalance({ credit_balance: "lots" })).toBeNull();
+    expect(readBalance("Unauthorized")).toBeNull();
+    expect(readBalance(null)).toBeNull();
+    expect(readBalance([{ credit_balance: 5 }])).toBeNull();
   });
 });

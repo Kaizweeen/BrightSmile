@@ -1,6 +1,6 @@
 import "server-only";
 import { localMobile } from "@/lib/phone";
-import { prepareSms, productionModeError, readSemaphoreReply, smsMode, type SemaphoreReply } from "@/lib/sms/prepare";
+import { prepareSms, productionModeError, readBalance, readSemaphoreReply, smsMode, type SemaphoreReply } from "@/lib/sms/prepare";
 import type { SmsKind, SmsVars } from "@/lib/sms/templates";
 import { adminClient } from "@/lib/supabase/admin";
 
@@ -33,6 +33,19 @@ async function semaphore(route: "messages" | "otp", fields: Record<string, strin
     return readSemaphoreReply(res.status, body);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Network error" };
+  }
+}
+
+/** The Semaphore credit balance (spec 11 credit check), or null when it can't be read. Never throws. */
+export async function semaphoreBalance(): Promise<number | null> {
+  const key = process.env.SEMAPHORE_API_KEY;
+  if (!key) return null;
+  try {
+    const res = await fetch(`${SEMAPHORE}/account?${new URLSearchParams({ apikey: key })}`, { signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) return null;
+    return readBalance(await res.json());
+  } catch {
+    return null;
   }
 }
 

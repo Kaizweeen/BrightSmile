@@ -41,3 +41,11 @@ export function readSemaphoreReply(status: number, body: unknown): SemaphoreRepl
   const detail = typeof body === "string" ? body : JSON.stringify(body);
   return { ok: false, error: `Semaphore ${status}: ${detail}`.slice(0, 300) };
 }
+
+/** Semaphore's GET /account reply: credit_balance as a number or a numeric string, or null for anything else. */
+export function readBalance(body: unknown): number | null {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
+  const value = (body as { credit_balance?: unknown }).credit_balance;
+  const credits = typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value) : NaN;
+  return Number.isFinite(credits) ? credits : null;
+}
