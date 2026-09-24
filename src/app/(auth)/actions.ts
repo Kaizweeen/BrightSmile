@@ -2,10 +2,11 @@
 
 import { redirect } from "next/navigation";
 import { appUrl } from "@/lib/app-url";
+import { hasRecentRecoverySession } from "@/lib/reset-session";
 import { serverClient } from "@/lib/supabase/server";
 import { cleanEmail, passwordProblem } from "@/lib/validate";
 
-export type AuthState = { error?: string; sent?: string; email?: string };
+export type AuthState = { error?: string; sent?: string; email?: string; expired?: boolean };
 
 const GENERIC = "Something went wrong. Please try again.";
 const TOO_MANY_EMAILS = "Too many emails were sent. Wait a few minutes and try again.";
@@ -70,7 +71,9 @@ export async function setNewPassword(_state: AuthState, form: FormData): Promise
 
   const db = await serverClient();
   const { data } = await db.auth.getClaims();
-  if (!data?.claims?.sub) return { error: "This reset link has expired. Ask for a new one from the log in page." };
+  if (!data?.claims?.sub || !hasRecentRecoverySession(data.claims, new Date())) {
+    return { error: "This reset link has expired.", expired: true };
+  }
   const { error } = await db.auth.updateUser({ password });
   if (error) return { error: error.code === "same_password" ? "Choose a password you have not used here before." : GENERIC };
   redirect("/app");

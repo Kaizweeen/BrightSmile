@@ -68,6 +68,14 @@ export default function AuthForm({ mode, action, notice }: Props) {
             {state.error && (
               <p className="field-err mt-3" role="alert">
                 {state.error}
+                {state.expired && (
+                  <>
+                    {" "}
+                    <Link href="/forgot" className="link">
+                      Ask for a new one.
+                    </Link>
+                  </>
+                )}
               </p>
             )}
             <button type="submit" className="btn btn-primary wide-btn mt-6" disabled={pending}>
