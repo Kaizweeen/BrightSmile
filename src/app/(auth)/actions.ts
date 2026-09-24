@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { appUrl } from "@/lib/app-url";
 import { serverClient } from "@/lib/supabase/server";
 import { cleanEmail, passwordProblem } from "@/lib/validate";
 
@@ -8,7 +9,6 @@ export type AuthState = { error?: string; sent?: string; email?: string };
 
 const GENERIC = "Something went wrong. Please try again.";
 const TOO_MANY_EMAILS = "Too many emails were sent. Wait a few minutes and try again.";
-const appUrl = () => process.env.APP_URL ?? "http://localhost:3600";
 
 export async function signUp(_state: AuthState, form: FormData): Promise<AuthState> {
   const email = cleanEmail(form.get("email"));

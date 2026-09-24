@@ -1,4 +1,5 @@
 import "server-only";
+import { appUrl } from "@/lib/app-url";
 import { canMarkAttendance, canTransition, type Status } from "@/lib/appointments";
 import { newToken } from "@/lib/codes";
 import { staffOpenStarts } from "@/lib/dashboard";
@@ -80,7 +81,7 @@ export type PatientText = {
 /** One patient text (spec 10.1). No mobile means no text. sendSms never throws, so a text never fails the action. */
 export async function textPatient(staff: Staff, t: PatientText): Promise<SmsStatus | "none"> {
   if (!t.mobile) return "none";
-  const app = process.env.APP_URL ?? "http://localhost:3600";
+  const app = appUrl();
   return sendSms({
     kind: t.kind,
     to: t.mobile,

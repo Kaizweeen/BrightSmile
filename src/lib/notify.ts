@@ -1,4 +1,5 @@
 import "server-only";
+import { appUrl } from "@/lib/app-url";
 import { pushPayload, sendPush, type AlertKind } from "@/lib/push";
 import { sendSms } from "@/lib/sms/send";
 import { adminClient } from "@/lib/supabase/admin";
@@ -41,7 +42,7 @@ export async function alertClinic(alert: ClinicAlert): Promise<"push" | "sms" | 
         date: formatDate(alert.startsAt),
         time: formatTime(alert.startsAt),
         dentist: alert.dentist ?? undefined,
-        appUrl: process.env.APP_URL,
+        appUrl: appUrl(),
       },
     });
     return status === "failed" ? "failed" : "sms";
