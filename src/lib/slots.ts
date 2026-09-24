@@ -53,3 +53,16 @@ export function withinHours(start: Date, end: Date, blocksByWeekday: Block[][]):
 export function fitsAnyBlock(durationMinutes: number, blocksByWeekday: Block[][]): boolean {
   return blocksByWeekday.some((blocks) => blocks.some((b) => b.end - b.start >= durationMinutes));
 }
+
+/** The clinic's opening hours: every dentist's blocks per weekday, with overlapping or touching blocks merged. */
+export function mergeWeeks(weeks: Block[][][]): Block[][] {
+  return Array.from({ length: 7 }, (_, day) => {
+    const merged: Block[] = [];
+    for (const block of weeks.flatMap((w) => w[day] ?? []).sort((x, y) => x.start - y.start)) {
+      const last = merged.at(-1);
+      if (last && block.start <= last.end) last.end = Math.max(last.end, block.end);
+      else merged.push({ ...block });
+    }
+    return merged;
+  });
+}
