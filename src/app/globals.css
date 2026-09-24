@@ -449,8 +449,8 @@ a {
   border-radius: 9px;
   color: var(--text-2);
   border: 1px solid var(--border);
-  min-width: 36px;
-  min-height: 36px;
+  min-width: 44px;
+  min-height: 44px;
   display: grid;
   place-items: center;
 }
