@@ -60,3 +60,16 @@ export function cleanBirthday(value: unknown, today: string): string | null {
   if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== trimmed) return null;
   return trimmed >= "1900-01-01" && trimmed <= today ? trimmed : null;
 }
+
+/** A trimmed, lowercased email address, or null. */
+export function cleanEmail(value: unknown): string | null {
+  const email = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
+}
+
+/** Why a password can't be used, or null. 72 is bcrypt's limit, which Supabase Auth uses. */
+export function passwordProblem(password: string): string | null {
+  if (password.length < 8) return "Use at least 8 characters.";
+  if (password.length > 72) return "Use at most 72 characters.";
+  return null;
+}
