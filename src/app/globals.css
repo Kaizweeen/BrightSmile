@@ -6,8 +6,8 @@
   14px, soft status chips, circular calendar days, 11px rounded fields with a
   3px focus ring) and its colour from the BrightSmile logo: a deep teal and
   navy tooth with a gold swoosh on a cream ground. Component classes are
-  carried over from C:\Users\User\Planorama\app\globals.css so both projects
-  speak one language. Light only, as Planorama is.
+  carried over from the Planorama project's own app/globals.css so both
+  projects speak one language. Light only, as Planorama is.
 */
 
 :root {
