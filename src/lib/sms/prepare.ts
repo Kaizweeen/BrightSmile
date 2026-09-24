@@ -10,6 +10,11 @@ export function smsMode(value: string | undefined = process.env.SMS_MODE): SmsMo
   return value === "live" ? "live" : "log";
 }
 
+/** In production, texts must go out live: a misconfigured SMS_MODE would otherwise silently log real patient texts. */
+export function productionModeError(vercelEnv: string | undefined, mode: SmsMode): string | null {
+  return vercelEnv === "production" && mode !== "live" ? "SMS_MODE is not live in production" : null;
+}
+
 /**
  * Spec 10.3 and 10.6: codes go out through Semaphore's OTP route with the {otp} placeholder and the
  * code as a separate field. The stored body keeps the real code in log mode (tests read it) and

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { prepareSms, readSemaphoreReply, smsMode } from "@/lib/sms/prepare";
+import { prepareSms, productionModeError, readSemaphoreReply, smsMode } from "@/lib/sms/prepare";
 
 const otp = { clinic: "Bright Dental", code: "123456" };
 
@@ -9,6 +9,21 @@ describe("smsMode", () => {
     expect(smsMode("log")).toBe("log");
     expect(smsMode(undefined)).toBe("log");
     expect(smsMode("LIVE")).toBe("log");
+  });
+});
+
+describe("productionModeError", () => {
+  it("refuses a non-live mode in production", () => {
+    expect(productionModeError("production", "log")).toBe("SMS_MODE is not live in production");
+  });
+
+  it("allows live mode in production", () => {
+    expect(productionModeError("production", "live")).toBeNull();
+  });
+
+  it("allows log mode outside production", () => {
+    expect(productionModeError("preview", "log")).toBeNull();
+    expect(productionModeError(undefined, "log")).toBeNull();
   });
 });
 

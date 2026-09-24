@@ -1,6 +1,6 @@
 import "server-only";
 import { localMobile } from "@/lib/phone";
-import { prepareSms, readSemaphoreReply, smsMode, type SemaphoreReply } from "@/lib/sms/prepare";
+import { prepareSms, productionModeError, readSemaphoreReply, smsMode, type SemaphoreReply } from "@/lib/sms/prepare";
 import type { SmsKind, SmsVars } from "@/lib/sms/templates";
 import { adminClient } from "@/lib/supabase/admin";
 
@@ -45,10 +45,14 @@ export async function sendSms({ kind, to, vars, clinicId, appointmentId = null }
   const sms = prepareSms(kind, vars, mode);
   let status: SmsStatus = "logged";
   let providerId: string | null = null;
-  let error: string | null = null;
+  let error: string | null = productionModeError(process.env.VERCEL_ENV, mode);
+  if (error) console.error(error);
 
-  if (mode === "log") {
-    console.log(`[sms ${kind}] to ${to}: ${sms.stored}`);
+  if (error) {
+    status = "failed";
+  } else if (mode === "log") {
+    // Never the destination mobile: this line is a log-mode convenience, not a delivery record.
+    console.log(`[sms ${kind}] ${sms.stored}`);
   } else {
     const key = process.env.SEMAPHORE_API_KEY;
     if (!key) {
