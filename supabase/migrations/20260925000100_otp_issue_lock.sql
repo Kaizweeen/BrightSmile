@@ -53,7 +53,6 @@ begin
       );
     end if;
 
-    update public.otp_requests set expires_at = p_now where id = p_resend_of;
   end if;
 
   -- Rolling-hour limits (OTP.perMobilePerHour = 3, OTP.perIpPerHour = 10 in src/lib/codes.ts).
@@ -69,6 +68,11 @@ begin
   where ip = p_ip and created_at > p_now - interval '1 hour';
   if v_ip_count >= 10 then
     return jsonb_build_object('status', 'limited');
+  end if;
+
+  -- Retire the old code only once the new one is certain, so a limited resend keeps it usable.
+  if p_resend_of is not null then
+    update public.otp_requests set expires_at = p_now where id = p_resend_of;
   end if;
 
   insert into public.otp_requests (id, mobile, ip, code_hash, booking, created_at, expires_at)
