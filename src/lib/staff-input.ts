@@ -69,3 +69,30 @@ export function parseManualBooking(value: unknown, today: string): Parsed<Manual
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   return { ok: true, value: { patientId, patient, procedureIds: ids as string[], slot: slot!, sendText: v.sendText === true } };
 }
+
+export type PatientQuery = { kind: "mobile"; prefix: string } | { kind: "name"; words: string[] };
+
+/**
+ * Search terms from what staff typed (spec 5.3). Three or more digits search mobiles by prefix in the
+ * stored +639 form ("0918 123" finds +63918123...). Anything else searches names by word; only letters,
+ * digits, apostrophes, and hyphens are kept, so nothing typed can change the database filter.
+ */
+export function patientSearch(input: unknown): PatientQuery | null {
+  const text = typeof input === "string" ? input.trim().slice(0, 60) : "";
+  const digits = text.replace(/[\s().+-]/g, "");
+  if (/^\d{3,}$/.test(digits)) return { kind: "mobile", prefix: `+63${digits.replace(/^(63|0)/, "")}` };
+  const words = text
+    .normalize("NFC")
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => w.replace(/[^\p{L}\p{N}'-]/gu, ""))
+    .filter((w) => w.length > 0)
+    .slice(0, 4);
+  return words.length > 0 ? { kind: "name", words } : null;
+}
+
+/** True when every search word appears in the patient's full name. */
+export function matchesWords(p: { first: string; last: string }, words: string[]): boolean {
+  const name = `${p.first} ${p.last}`.normalize("NFC").toLowerCase();
+  return words.every((w) => name.includes(w));
+}
