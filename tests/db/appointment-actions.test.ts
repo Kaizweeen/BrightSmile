@@ -117,7 +117,10 @@ describe("changeStatus", () => {
       changeStatus(a.staff, id, "confirmed", "", new Date()),
     ]);
     expect(results.filter((r) => r.ok)).toHaveLength(1);
-    expect(results.filter((r) => !r.ok)).toEqual([{ ok: false, error: MESSAGES.changed }]);
+    const losers = results.filter((r) => !r.ok);
+    expect(losers).toHaveLength(1);
+    // The loser either lost the compare-and-set (changed) or loaded the row after the winner committed (notNow).
+    expect([MESSAGES.changed, MESSAGES.notNow]).toContain((losers[0] as { error: string }).error);
     expect(await texts(id)).toHaveLength(1);
   });
 
