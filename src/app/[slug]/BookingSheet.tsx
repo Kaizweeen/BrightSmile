@@ -109,12 +109,14 @@ export default function BookingSheet({ clinic, nowIso }: Props) {
 
   function toggleProcedure(id: string) {
     setProcedureIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+    loads.current++; // drop any month or day answer still in flight for the old choice
     setMonthOpen(null);
     clearTime();
   }
 
   function chooseDentist(id: string) {
     setDentistId(id);
+    loads.current++; // drop any month or day answer still in flight for the old choice
     setMonthOpen(null);
     clearTime();
   }
@@ -298,6 +300,7 @@ export default function BookingSheet({ clinic, nowIso }: Props) {
     setProcedureIds([]);
     setDentistId(clinic.dentists.length === 1 ? clinic.dentists[0].id : "");
     setQuery("");
+    loads.current++; // drop any month or day answer still in flight for the old choice
     setMonthOpen(null);
     clearTime();
     setForm(EMPTY_FORM);
@@ -745,7 +748,7 @@ export default function BookingSheet({ clinic, nowIso }: Props) {
 
       <p className="mt-5 text-center">
         <span className="brand-lockup">
-          <Image src="/brand/logo.png" alt="BrightSmile" width={22} height={22} />
+          <Image src="/brand/logo.png" alt="" width={22} height={22} />
           <span className="wm">BrightSmile</span>
           <span className="tag">Booking</span>
         </span>
