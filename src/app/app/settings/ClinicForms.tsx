@@ -173,7 +173,13 @@ export function RulesForm({ clinic }: { clinic: Clinic }) {
           <input type="radio" name="alertChannel" checked={form.alertChannel === "sms"} onChange={() => setForm({ ...form, alertChannel: "sms" })} />
           <span className="nm">Text to the clinic mobile</span>
         </label>
-        <p className="f-hint">Push needs the installable app, which comes in a later update. Until a device turns push on, alerts arrive by text.</p>
+        <p className="f-hint">
+          Turn push on for each phone or computer under{" "}
+          <a href="#alerts" className="link">
+            Alerts on this device
+          </a>
+          . Until a device has it on, or when no device gets the push, alerts arrive by text.
+        </p>
       </fieldset>
       <Feedback result={result} inline={[]} />
       <button type="submit" className="btn btn-primary mt-4" disabled={pending}>

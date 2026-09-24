@@ -18,6 +18,12 @@ describe("guardRedirect", () => {
     expect(guardRedirect("/apple-icon.png", out)).toBeNull();
   });
 
+  it("never guards the cron route, the service worker, or the manifest", () => {
+    for (const path of ["/api/cron/daily", "/sw.js", "/manifest.webmanifest"]) {
+      for (const visitor of [out, noClinic, staff]) expect(guardRedirect(path, visitor)).toBeNull();
+    }
+  });
+
   it("sends signed-in users without a clinic to onboarding", () => {
     expect(guardRedirect("/app", noClinic)).toBe("/onboarding");
     expect(guardRedirect("/login", noClinic)).toBe("/onboarding");

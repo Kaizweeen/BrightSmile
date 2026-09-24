@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { AccountForms, ProfileForm, RulesForm } from "./ClinicForms";
 import DentistEditor from "./DentistEditor";
 import ProcedureEditor from "./ProcedureEditor";
+import PushSetup from "@/components/PushSetup";
 import { appUrl } from "@/lib/app-url";
 import { loadSettings } from "@/lib/clinic-settings";
 import { requireStaff } from "@/lib/supabase/server";
@@ -20,6 +21,7 @@ export default async function SettingsPage() {
       </div>
       <ProfileForm clinic={settings.clinic} appUrl={appUrl()} />
       <RulesForm clinic={settings.clinic} />
+      <PushSetup />
       <section className="card card-pad settings-section">
         <h2 className="font-display">Dentists</h2>
         <p className="f-hint">Patients choose a dentist only when 2 or more are active.</p>

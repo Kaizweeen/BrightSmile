@@ -2,6 +2,7 @@
 
 import { refresh } from "next/cache";
 import * as settings from "@/lib/clinic-settings";
+import { deleteSubscription, saveSubscription } from "@/lib/push";
 import type { Saved } from "@/lib/staff-input";
 import { requireStaff, type Staff } from "@/lib/supabase/server";
 import { passwordProblem } from "@/lib/validate";
@@ -67,4 +68,15 @@ export async function changePassword(current: unknown, next: unknown): Promise<S
     };
   }
   return { ok: true };
+}
+
+/** This device's push subscription (spec 10.4). No refresh: nothing on the page reads it from the server. */
+export async function enablePush(subscription: unknown): Promise<Saved> {
+  const staff = await requireStaff();
+  return saveSubscription(staff, subscription);
+}
+
+export async function disablePush(endpoint: unknown): Promise<Saved> {
+  const staff = await requireStaff();
+  return deleteSubscription(staff, endpoint);
 }

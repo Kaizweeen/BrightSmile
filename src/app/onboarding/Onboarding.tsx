@@ -364,6 +364,15 @@ export default function Onboarding({ appUrl }: { appUrl: string }) {
                 Open your booking page
               </Link>
             </p>
+            <div className="note-box mt-6">
+              <p className="font-semibold">Get new requests on this phone</p>
+              <p className="mt-1">
+                Turn on push alerts to see a request the moment a patient sends it.{" "}
+                <Link href="/app/settings#alerts" className="link">
+                  Turn on alerts
+                </Link>
+              </p>
+            </div>
             <Link href="/app" className="btn btn-soft wide-btn mt-6">
               Go to your requests
             </Link>
