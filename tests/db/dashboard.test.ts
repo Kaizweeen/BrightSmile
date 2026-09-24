@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { loadDay, loadRequests } from "@/lib/dashboard";
+import { loadBookingOptions, loadDay, loadMoveTarget, loadRequests } from "@/lib/dashboard";
 import { addDays, manilaDate, manilaInstant } from "@/lib/time";
 import { adminDb, appointmentRow, dropStaffClinic, staffClinic, type StaffSeed } from "./helpers";
 
@@ -120,5 +120,41 @@ describe("loadDay", () => {
     const view = await loadDay(b.staff, day, null, new Date());
     expect(view.items).toEqual([]);
     expect(view.dentists.map((d) => d.id)).toEqual([b.seed.dentist.id]);
+  });
+});
+
+describe("loadBookingOptions", () => {
+  it("offers active dentists and procedures only, of this clinic only", async () => {
+    const { data: archived } = await db
+      .from("procedures")
+      .insert({ clinic_id: a.staff.clinicId, name: "Archived thing", duration_minutes: 30, active: false })
+      .select("id")
+      .single()
+      .throwOnError();
+    const options = await loadBookingOptions(a.staff);
+    expect(options.dentists).toEqual([{ id: a.seed.dentist.id, name: "Dr. Ana Reyes" }]);
+    expect(options.procedures.map((p) => [p.name, p.minutes])).toEqual([
+      ["Cleaning", 60],
+      ["Consultation", 30],
+    ]);
+    expect(options.procedures.map((p) => p.id)).not.toContain(archived.id);
+    expect((await loadBookingOptions(b.staff)).dentists).toEqual([{ id: b.seed.dentist.id, name: "Dr. Ana Reyes" }]);
+  });
+});
+
+describe("loadMoveTarget", () => {
+  it("returns the visit with its length, and nothing for another clinic", async () => {
+    const id = await book(a, addDays(today, 7), 600, "confirmed");
+    expect(await loadMoveTarget(a.staff, id)).toEqual({
+      id,
+      status: "confirmed",
+      startsAt: expect.any(String),
+      duration: 30,
+      dentistId: a.seed.dentist.id,
+      patientName: "Ana Cruz",
+      procedures: ["Consultation"],
+    });
+    expect(await loadMoveTarget(b.staff, id)).toBeNull();
+    expect(await loadMoveTarget(a.staff, "nope")).toBeNull();
   });
 });

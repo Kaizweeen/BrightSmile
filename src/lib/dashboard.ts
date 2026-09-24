@@ -1,4 +1,5 @@
 import "server-only";
+import type { Status } from "@/lib/appointments";
 import {
   actionsFor,
   assembleDay,
@@ -172,4 +173,66 @@ export async function staffOpenStarts(
     now,
     ignoreId: q.ignoreId,
   });
+}
+
+export type BookingOptions = {
+  dentists: { id: string; name: string }[];
+  procedures: { id: string; name: string; minutes: number }[];
+};
+
+/** What New appointment offers: active dentists and active procedures. */
+export async function loadBookingOptions(staff: Staff): Promise<BookingOptions> {
+  const [dentists, procedures] = await Promise.all([
+    staff.db.from("dentists").select("id, name").eq("clinic_id", staff.clinicId).eq("active", true).order("created_at").order("name").throwOnError(),
+    staff.db.from("procedures").select("id, name, duration_minutes").eq("clinic_id", staff.clinicId).eq("active", true).order("name").throwOnError(),
+  ]);
+  return {
+    dentists: dentists.data as BookingOptions["dentists"],
+    procedures: (procedures.data as { id: string; name: string; duration_minutes: number }[]).map((p) => ({
+      id: p.id,
+      name: p.name,
+      minutes: p.duration_minutes,
+    })),
+  };
+}
+
+export type MoveTarget = {
+  id: string;
+  status: Status;
+  startsAt: string;
+  duration: number;
+  dentistId: string;
+  patientName: string;
+  procedures: string[];
+};
+
+/** The visit the Move screen works on, or null for a malformed id or another clinic's visit. */
+export async function loadMoveTarget(staff: Staff, id: string): Promise<MoveTarget | null> {
+  if (!isUuid(id)) return null;
+  const { data } = await staff.db
+    .from("appointments")
+    .select("id, status, starts_at, ends_at, dentist_id, procedure_names, patient:patients(first_name, last_name)")
+    .eq("id", id)
+    .eq("clinic_id", staff.clinicId)
+    .maybeSingle()
+    .throwOnError();
+  const row = data as unknown as {
+    id: string;
+    status: Status;
+    starts_at: string;
+    ends_at: string;
+    dentist_id: string;
+    procedure_names: string[];
+    patient: { first_name: string; last_name: string };
+  } | null;
+  if (!row) return null;
+  return {
+    id: row.id,
+    status: row.status,
+    startsAt: row.starts_at,
+    duration: (new Date(row.ends_at).getTime() - new Date(row.starts_at).getTime()) / 60_000,
+    dentistId: row.dentist_id,
+    patientName: `${row.patient.first_name} ${row.patient.last_name}`,
+    procedures: row.procedure_names,
+  };
 }
