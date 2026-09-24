@@ -53,3 +53,5 @@ supabase/.branches/
 
 # Task workspace for the superpowers plan runner
 .superpowers/
+supabase/telemetry.json
+supabase/traces/
