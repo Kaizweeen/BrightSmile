@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { signOut } from "@/app/(auth)/actions";
 import Field from "@/components/Field";
+import HoursEditor from "@/components/HoursEditor";
 import { createClinic } from "./actions";
 import {
   clinicProblems,
@@ -12,7 +13,6 @@ import {
   dentistProblems,
   dentistShortName,
   procedureProblems,
-  type Clock,
   type OnboardingField,
   type OnboardingInput,
   type ProcedureDraft,
@@ -29,7 +29,6 @@ const STEPS: { id: Screen | "account"; label: string }[] = [
   { id: "dentist", label: "Dentist" },
   { id: "procedures", label: "Procedures" },
 ];
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const SCREEN_OF: Record<OnboardingField, Screen> = {
   name: "clinic",
   smsName: "clinic",
@@ -86,10 +85,6 @@ export default function Onboarding({ appUrl }: { appUrl: string }) {
 
   function setDentistName(name: string) {
     setInput((i) => ({ ...i, dentistName: name, dentistSmsName: edited.dentistSmsName ? i.dentistSmsName : dentistShortName(name) }));
-  }
-
-  function setDay(day: number, blocks: Clock[]) {
-    setInput((i) => ({ ...i, hours: i.hours.map((b, d) => (d === day ? blocks : b)) }));
   }
 
   function setProcedure(index: number, change: Partial<ProcedureDraft>) {
@@ -274,53 +269,7 @@ export default function Onboarding({ appUrl }: { appUrl: string }) {
               />
             </Field>
 
-            <fieldset className="mt-5">
-              <legend className="f-label">Working hours</legend>
-              {input.hours.map((blocks, day) => (
-                <div key={day} className="py-3" style={{ borderBottom: "1px solid var(--border)" }}>
-                  <p className="font-semibold">
-                    {DAYS[day]}
-                    {blocks.length === 0 && <span className="meta"> (closed)</span>}
-                  </p>
-                  {blocks.map((b, k) => (
-                    <div key={k} className="mt-2 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-                      <input
-                        type="time"
-                        step={900}
-                        className="f-input"
-                        aria-label={`${DAYS[day]}, block ${k + 1}, starts`}
-                        value={b.start}
-                        onChange={(e) => setDay(day, blocks.map((x, j) => (j === k ? { ...x, start: e.target.value } : x)))}
-                      />
-                      <span className="meta">to</span>
-                      <input
-                        type="time"
-                        step={900}
-                        className="f-input"
-                        aria-label={`${DAYS[day]}, block ${k + 1}, ends`}
-                        value={b.end}
-                        onChange={(e) => setDay(day, blocks.map((x, j) => (j === k ? { ...x, end: e.target.value } : x)))}
-                      />
-                    </div>
-                  ))}
-                  <div className="flex gap-5">
-                    <button
-                      type="button"
-                      className="link py-3"
-                      onClick={() => setDay(day, [...blocks, blocks.length === 0 ? { start: "09:00", end: "12:00" } : { start: "13:00", end: "17:00" }])}
-                    >
-                      Add hours
-                    </button>
-                    {blocks.length > 0 && (
-                      <button type="button" className="link py-3" onClick={() => setDay(day, blocks.slice(0, -1))}>
-                        {blocks.length === 1 ? "Mark closed" : "Remove last"}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {errors.hours && <p className="field-err">{errors.hours}</p>}
-            </fieldset>
+            <HoursEditor hours={input.hours} onChange={(hours) => set("hours", hours)} error={errors.hours} />
 
             <div className="mt-6 flex gap-3">
               <button type="button" className="btn btn-ghost" onClick={() => setScreen("clinic")}>
