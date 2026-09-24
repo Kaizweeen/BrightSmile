@@ -1,4 +1,5 @@
 import "server-only";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PublicClinic, PublicDentist } from "@/lib/booking-input";
 import { openDates, openStarts, type Block, type Busy } from "@/lib/slots";
 import { adminClient } from "@/lib/supabase/admin";
@@ -68,13 +69,16 @@ export async function loadClinic(by: { slug: string } | { id: string }): Promise
   };
 }
 
-/** Pending and confirmed appointments plus time off for one dentist, overlapping [from, to). Never leaves the server. */
-async function busyBetween(dentistId: string, from: Date, to: Date): Promise<Busy[]> {
-  const db = adminClient();
+/**
+ * Pending and confirmed appointments (with their ids, so a move can ignore its own) plus time off for one
+ * dentist, overlapping [from, to). The public flow passes the secret-key client; staff pass their RLS
+ * client, which only sees their own clinic. Never leaves the server.
+ */
+export async function busyBetween(db: SupabaseClient, dentistId: string, from: Date, to: Date): Promise<Busy[]> {
   const [appointments, timeOff] = await Promise.all([
     db
       .from("appointments")
-      .select("starts_at, ends_at")
+      .select("id, starts_at, ends_at")
       .eq("dentist_id", dentistId)
       .in("status", ["pending", "confirmed"])
       .lt("starts_at", to.toISOString())
@@ -88,8 +92,16 @@ async function busyBetween(dentistId: string, from: Date, to: Date): Promise<Bus
       .gt("ends_at", from.toISOString())
       .throwOnError(),
   ]);
-  const rows = [...appointments.data, ...timeOff.data] as { starts_at: string; ends_at: string }[];
-  return rows.map((r) => ({ start: new Date(r.starts_at), end: new Date(r.ends_at) }));
+  const booked = (appointments.data as { id: string; starts_at: string; ends_at: string }[]).map((r) => ({
+    id: r.id,
+    start: new Date(r.starts_at),
+    end: new Date(r.ends_at),
+  }));
+  const off = (timeOff.data as { starts_at: string; ends_at: string }[]).map((r) => ({
+    start: new Date(r.starts_at),
+    end: new Date(r.ends_at),
+  }));
+  return [...booked, ...off];
 }
 
 /** Dates of a "YYYY-MM" month with at least one open start for this dentist and duration (spec 8.3). */
@@ -105,7 +117,7 @@ export async function monthOpenDates(
   const first = dates[0];
   const last = dates[dates.length - 1];
   if (last < today || first > addDays(today, clinic.rules.maxDaysAhead)) return [];
-  const busy = await busyBetween(dentist.id, manilaInstant(first, 0), manilaInstant(addDays(last, 1), 0));
+  const busy = await busyBetween(adminClient(), dentist.id, manilaInstant(first, 0), manilaInstant(addDays(last, 1), 0));
   return openDates({ dates, blocksByWeekday: dentist.hours, busy, durationMinutes, rules: clinic.rules, now });
 }
 
@@ -119,6 +131,6 @@ export async function dayOpenStarts(
 ): Promise<Date[]> {
   const today = manilaDate(now);
   if (date < today || date > addDays(today, clinic.rules.maxDaysAhead)) return [];
-  const busy = await busyBetween(dentist.id, manilaInstant(date, 0), manilaInstant(addDays(date, 1), 0));
+  const busy = await busyBetween(adminClient(), dentist.id, manilaInstant(date, 0), manilaInstant(addDays(date, 1), 0));
   return openStarts({ date, blocks: dentist.hours[weekday(date)], busy, durationMinutes, rules: clinic.rules, now });
 }

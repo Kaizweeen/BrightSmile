@@ -10,9 +10,10 @@ import {
   type SmsLogRow,
   type StaffAction,
 } from "@/lib/schedule";
-import type { Busy } from "@/lib/slots";
+import { busyBetween } from "@/lib/availability";
+import { openStarts, type Busy } from "@/lib/slots";
 import type { Staff } from "@/lib/supabase/server";
-import { addDays, manilaInstant } from "@/lib/time";
+import { addDays, manilaInstant, parseClock, weekday } from "@/lib/time";
 
 export type RequestItem = {
   id: string;
@@ -130,4 +131,40 @@ export async function loadDay(staff: Staff, date: string, dentistId: string | nu
     dentists: dentists.data as DayView["dentists"],
     items: assembleDay(rows, { hours: hoursByDentist(hours.data as HoursRow[]), timeOff: off, failed: failedTexts(logs), now }),
   };
+}
+
+/**
+ * Open start times for staff (New and Move): the clinic's slot spacing inside the dentist's hours, minus
+ * appointments and time off. No minimum notice and a 365 day window, since those rules protect the public
+ * page. Move passes ignoreId so the visit's own time counts as free (spec 8.4).
+ */
+export async function staffOpenStarts(
+  staff: Staff,
+  q: { dentistId: string; date: string; duration: number; ignoreId?: string },
+  now: Date,
+): Promise<Date[]> {
+  const [clinic, hours, busy] = await Promise.all([
+    staff.db.from("clinics").select("slot_minutes").eq("id", staff.clinicId).single().throwOnError(),
+    staff.db
+      .from("working_hours")
+      .select("start_time, end_time")
+      .eq("clinic_id", staff.clinicId)
+      .eq("dentist_id", q.dentistId)
+      .eq("weekday", weekday(q.date))
+      .throwOnError(),
+    busyBetween(staff.db, q.dentistId, manilaInstant(q.date, 0), manilaInstant(addDays(q.date, 1), 0)),
+  ]);
+  const blocks = (hours.data as { start_time: string; end_time: string }[]).map((h) => ({
+    start: parseClock(h.start_time),
+    end: parseClock(h.end_time),
+  }));
+  return openStarts({
+    date: q.date,
+    blocks,
+    busy,
+    durationMinutes: q.duration,
+    rules: { slotMinutes: (clinic.data as { slot_minutes: number }).slot_minutes, minNoticeMinutes: 0, maxDaysAhead: 365 },
+    now,
+    ignoreId: q.ignoreId,
+  });
 }
