@@ -98,6 +98,9 @@ describe("create_booking", () => {
     await db
       .rpc("create_booking", args({ p_starts_at: at("18:30"), p_ends_at: at("19:00"), p_first_name: "Hmo", p_last_name: "Case", p_hmo: "Intellicare" }))
       .throwOnError();
+    await db
+      .rpc("create_booking", args({ p_starts_at: at("19:00"), p_ends_at: at("19:30"), p_first_name: "Hmo", p_last_name: "Case", p_hmo: "" }))
+      .throwOnError();
     const { data } = await db
       .from("patients")
       .select("hmo")

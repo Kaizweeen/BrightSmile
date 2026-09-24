@@ -99,8 +99,8 @@ describe("clinic isolation", () => {
   });
 
   it("cannot delete their own clinic", async () => {
-    const { data, error } = await a.db.from("clinics").delete().eq("id", clinicA).select();
-    if (!error) expect(data).toEqual([]);
+    const { error } = await a.db.from("clinics").delete().eq("id", clinicA);
+    expect(error?.code).toBe("42501");
     const { data: stillThere } = await adminDb().from("clinics").select("id").eq("id", clinicA).single().throwOnError();
     expect(stillThere.id).toBe(clinicA);
   });
