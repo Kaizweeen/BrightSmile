@@ -141,6 +141,18 @@ describe("online booking", () => {
     expect(outcome).toEqual({ status: "invalid", errors: { slot: "This booking link doesn't exist." } });
   });
 
+  it("books at most 3 pending requests per clinic for one mobile, then refuses a 4th", async () => {
+    const day = addDays(date, 1);
+    const at2 = (minutes: number) => manilaInstant(day, minutes).toISOString();
+    const mobile = newMobile();
+    const build = (minutes: number) => ({ ...input(0, mobile), startsAt: at2(minutes) });
+    for (const minutes of [540, 570, 600]) {
+      expect((await requestBooking(seed.clinic.slug, build(minutes), ctx([mobile]))).status).toBe("sent");
+    }
+    expect(await requestBooking(seed.clinic.slug, build(630), ctx([mobile]))).toEqual({ status: "too_many" });
+    await db.from("appointments").delete().eq("clinic_id", seed.clinic.id).gte("starts_at", manilaInstant(day, 0).toISOString());
+  });
+
   it("never books a time that stopped being open while the code was out", async () => {
     const mobile = newMobile();
     const requestId = await codeRequest(660, mobile);

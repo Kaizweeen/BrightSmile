@@ -196,6 +196,9 @@ export default function BookingSheet({ clinic, nowIso }: Props) {
       case "sms_failed":
         setNotice(`We couldn't send the code. Try again, or call ${phone}.`);
         return;
+      case "too_many":
+        setNotice(`You already have requests waiting. Please call the clinic at ${phone}.`);
+        return;
       case "unavailable":
         setNotice(UNAVAILABLE);
         return;
@@ -254,6 +257,9 @@ export default function BookingSheet({ clinic, nowIso }: Props) {
           setStartIso(null);
           setNotice("That time was just taken. Your number is verified, so pick another time and send again.");
           setStep("when");
+          break;
+        case "too_many":
+          setNotice(`You already have requests waiting. Please call the clinic at ${phone}.`);
           break;
         case "unavailable":
           setNotice(UNAVAILABLE);

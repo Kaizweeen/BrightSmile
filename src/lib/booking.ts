@@ -2,13 +2,13 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { dayOpenStarts, loadClinic } from "@/lib/availability";
 import { parseBookingInput, type BookingPayload, type PublicClinic } from "@/lib/booking-input";
-import { checkCode, hashCode, newCode, newToken, OTP } from "@/lib/codes";
+import { BOOKING_CAPS, checkCode, hashCode, newCode, newToken, OTP } from "@/lib/codes";
 import { alertClinic } from "@/lib/notify";
 import { sendSms } from "@/lib/sms/send";
 import { adminClient } from "@/lib/supabase/admin";
 import { manilaDate } from "@/lib/time";
 
-type Finalized = { status: "sent"; token: string } | { status: "taken"; starts: string[] };
+type Finalized = { status: "sent"; token: string } | { status: "taken"; starts: string[] } | { status: "too_many" };
 type CodeIssued = { status: "code"; requestId: string } | { status: "limited" } | { status: "sms_failed" };
 
 export type BookingOutcome =
@@ -59,8 +59,29 @@ async function takenStarts(clinic: PublicClinic, p: BookingPayload, now: Date): 
   return starts.some((s) => s.getTime() === start.getTime()) ? null : starts.map((s) => s.toISOString());
 }
 
+/** This mobile's future pending requests, joined through patients since appointments hold no mobile of their own. */
+async function pendingCount(mobile: string, now: Date, clinicId?: string): Promise<number> {
+  let query = adminClient()
+    .from("appointments")
+    .select("id, patients!inner(mobile)", { count: "exact", head: true })
+    .eq("patients.mobile", mobile)
+    .eq("status", "pending")
+    .gt("starts_at", now.toISOString());
+  if (clinicId) query = query.eq("clinic_id", clinicId);
+  const { count, error } = await query;
+  if (error) throw error;
+  return count ?? 0;
+}
+
+/** Caps one mobile's pending online requests, so it can't flood a clinic's (or the platform's) queue. */
+async function overBookingCap(clinicId: string, mobile: string, now: Date): Promise<boolean> {
+  const [atClinic, total] = await Promise.all([pendingCount(mobile, now, clinicId), pendingCount(mobile, now)]);
+  return atClinic >= BOOKING_CAPS.perClinic || total >= BOOKING_CAPS.total;
+}
+
 /** Spec 9.1 steps 5 and 6: one transaction creates the request, then the clinic is alerted. */
 async function finalize(clinic: PublicClinic, p: BookingPayload, now: Date): Promise<Finalized> {
+  if (await overBookingCap(clinic.id, p.mobile, now)) return { status: "too_many" };
   const fresh = await takenStarts(clinic, p, now);
   if (fresh) return { status: "taken", starts: fresh };
 
