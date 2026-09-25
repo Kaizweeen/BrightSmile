@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { appUrl } from "@/lib/app-url";
 import { amountCentavos, parseMonths, tierFor } from "@/lib/billing";
 import { activeDentists } from "@/lib/billing-data";
+import { logError } from "@/lib/log";
 import { createCheckout, paymongoKeys } from "@/lib/paymongo";
 import { requireStaff } from "@/lib/supabase/server";
 
@@ -21,14 +22,23 @@ export async function payOnline(_state: PayState, form: FormData): Promise<PaySt
   if (!months) return { error: "Choose how many months to pay for." };
   const keys = paymongoKeys();
   if (!keys) return { error: UNAVAILABLE };
-  const [dentists, clinic] = await Promise.all([
-    activeDentists(staff.db, staff.clinicId),
-    staff.db.from("clinics").select("slug").eq("id", staff.clinicId).single().throwOnError(),
-  ]);
+  let dentists: number;
+  let slug: string;
+  try {
+    const [count, clinic] = await Promise.all([
+      activeDentists(staff.db, staff.clinicId),
+      staff.db.from("clinics").select("slug").eq("id", staff.clinicId).single().throwOnError(),
+    ]);
+    dentists = count;
+    slug = (clinic.data as { slug: string }).slug;
+  } catch (e) {
+    logError("payOnline", e);
+    return { error: UNAVAILABLE };
+  }
   const checkoutUrl = await createCheckout(
     {
       clinicId: staff.clinicId,
-      slug: (clinic.data as { slug: string }).slug,
+      slug,
       tier: tierFor(dentists).name,
       months,
       amountCentavos: amountCentavos(dentists, months),

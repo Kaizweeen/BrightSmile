@@ -36,7 +36,7 @@ export default async function SettingsPage() {
       <ProcedureEditor procedures={settings.procedures} />
       <section className="card card-pad settings-section">
         <h2 className="font-display">Plan and billing</h2>
-        <p className="f-hint">See when your plan ends, pay by GCash or online, and see past payments.</p>
+        <p className="f-hint">See when your plan ends, how to pay, and past payments.</p>
         <Link href="/app/billing" className="btn btn-soft mt-3">
           Open Billing
         </Link>
