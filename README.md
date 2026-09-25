@@ -68,7 +68,7 @@ Do these in order. Kai creates the accounts; nothing here can be done from code.
 4. **Authentication > Email Templates:**
    - Confirm signup: link `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next=/onboarding`
    - Reset password: link `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/reset-password`
-5. **Authentication > Emails > SMTP Settings:** set up custom SMTP. Supabase's built-in sender is rate limited and meant for testing.
+5. **Authentication > Emails > SMTP Settings:** set up custom SMTP; it is required. Supabase's built-in sender only delivers to members of your Supabase team, at most 2 emails an hour, so clinics would never get their sign-up email. Without a domain of your own, a Gmail account works: host `smtp.gmail.com`, port `465`, username and sender email = the Gmail address, password = a Google App Password (needs 2-Step Verification).
 6. Keep email confirmation on (**Authentication > Sign In / Providers > Email**).
 
 ### 3. Keys
@@ -85,7 +85,7 @@ The first prints the VAPID public and private keys. Run the second twice, once f
 The Vercel project `bright-smile` already exists and is Git-connected: pushes to `main` deploy to production automatically. There is no import step.
 
 1. The framework is set to Next.js in `vercel.json` (`"framework": "nextjs"`), which overrides the project's Framework Preset; without it Vercel served every page as a 404. No build settings change. Functions run in Singapore (`regions` in `vercel.json`), next to the database.
-2. **Settings > Environment Variables**, for the **Production** environment. Production refuses to start until `APP_URL` is your custom domain (a `*.vercel.app` host is too long for the texts), so attach the domain (step 4) before the first production deploy. If the site shows errors, check **Logs** for "BrightSmile environment check failed"; it names each missing or wrong variable.
+2. **Settings > Environment Variables**, for the **Production** environment. Production refuses to start until `APP_URL` has a host of at most 17 characters (the default `bright-smile.vercel.app` is 23, too long for the texts; a short one like `bsmile.vercel.app` or a bought domain works), so attach it (step 4) before the first production deploy. If the site shows errors, check **Logs** for "BrightSmile environment check failed"; it names each missing or wrong variable.
 
    | Variable | Value |
    |---|---|
