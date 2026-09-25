@@ -84,7 +84,7 @@ The first prints the VAPID public and private keys. Run the second twice, once f
 
 The Vercel project `bright-smile` already exists and is Git-connected: pushes to `main` deploy to production automatically. There is no import step.
 
-1. Confirm **Settings > General > Framework Preset** is `Next.js`; no build settings change. Functions run in Singapore (`regions` in `vercel.json`), next to the database.
+1. The framework is set to Next.js in `vercel.json` (`"framework": "nextjs"`), which overrides the project's Framework Preset; without it Vercel served every page as a 404. No build settings change. Functions run in Singapore (`regions` in `vercel.json`), next to the database.
 2. **Settings > Environment Variables**, for the **Production** environment. Production refuses to start until `APP_URL` is your custom domain (a `*.vercel.app` host is too long for the texts), so attach the domain (step 4) before the first production deploy. If the site shows errors, check **Logs** for "BrightSmile environment check failed"; it names each missing or wrong variable.
 
    | Variable | Value |
