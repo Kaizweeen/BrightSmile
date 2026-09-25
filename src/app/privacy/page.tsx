@@ -57,7 +57,7 @@ export default function PrivacyPage() {
         <h2>Who else handles it</h2>
         <p>BrightSmile uses these service providers, each only for the job described:</p>
         <ul>
-          <li>Supabase: database and staff logins. [Confirm the server region of the production project.]</li>
+          <li>Supabase: database and staff logins, hosted in Singapore.</li>
           <li>Vercel: hosting of the website.</li>
           <li>Semaphore: delivery of text messages in the Philippines.</li>
           <li>

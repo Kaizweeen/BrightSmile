@@ -149,9 +149,10 @@ async function step<T>(name: string, run: () => Promise<T>): Promise<T | Failed>
 
 /** Spec 11, in order. Counts only: the summary carries no patient details. */
 export async function runDailyJob(now: Date): Promise<DailySummary> {
-  const sent = await step("reminders", () => sendReminders(now));
+  // Database steps first: a slow SMS gateway can use up the time limit, and these must still run.
   const expired = await step("expiry", () => expirePending());
   const cleaned = await step("cleanup", () => cleanup(now));
+  const sent = await step("reminders", () => sendReminders(now));
   const credit = await step("credit check", () => checkCredit(now));
   const failed = [sent, expired, cleaned, credit].includes("failed") || (credit !== "failed" && credit.status === "unknown");
   return { ok: !failed, reminders: sent, expired, cleaned, credit };

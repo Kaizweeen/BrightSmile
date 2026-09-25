@@ -27,6 +27,9 @@ function parseUrl(value: string): URL | null {
   }
 }
 
+/** The development Supabase project, where the database and e2e tests create and delete data. */
+const DEV_PROJECT_REF = "fmvqwojzsklinbdmfjkn";
+
 /** What is wrong with the environment, by variable name and rule only: a value never appears, not even in part. */
 export function envProblems(env: Env): string[] {
   const production = env.VERCEL_ENV === "production";
@@ -43,6 +46,9 @@ export function envProblems(env: Env): string[] {
       }
       if (production && url.protocol !== "https:") problems.push("APP_URL must use https in production");
     }
+  }
+  if (production && env.NEXT_PUBLIC_SUPABASE_URL?.includes(DEV_PROJECT_REF)) {
+    problems.push("NEXT_PUBLIC_SUPABASE_URL points at the development project; production needs its own");
   }
   const smsError = productionModeError(env.VERCEL_ENV, smsMode(env.SMS_MODE));
   if (smsError) problems.push(smsError);

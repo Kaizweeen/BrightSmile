@@ -29,13 +29,13 @@ Online booking for dental clinics in the Philippines. Patients request a time fr
 One Playwright test walks the whole booking loop: a patient books on a clinic's page, the code is read from `sms_log`, the clinic approves in the dashboard, and the visit shows on the schedule.
 
 1. Once: put `PLAYWRIGHT_BROWSERS_PATH=D:\playwright-browsers` (or any folder on a drive with space) in `.env.local`, then run `npm run test:e2e:install`.
-2. Run `npm run test:e2e`. It uses the dev server on port 3600, starting it if needed, with `SMS_MODE=log`.
+2. Run `npm run test:e2e`. It uses the dev server on port 3600, starting it if needed, with `SMS_MODE=log`. If a dev server is already running, it must be in log mode too (the test reads the code from `sms_log`).
 
 The test creates its own clinic and staff login in the development Supabase project and deletes them afterwards. Like `npm run test:db`, it refuses to run against any other project, because it uses the secret key.
 
 ## Deploy to production
 
-Do these in order. Kai creates the accounts; nothing here can be done from code.
+Do these in order. Kai creates the accounts; nothing here can be done from code. Merge a release branch to `main` only after steps 2 to 4 are done: every merge to `main` deploys production straight away.
 
 ### 1. Accounts
 
@@ -84,8 +84,8 @@ The first prints the VAPID public and private keys. Run the second twice, once f
 
 The Vercel project `bright-smile` already exists and is Git-connected: pushes to `main` deploy to production automatically. There is no import step.
 
-1. Confirm **Settings > General > Framework Preset** is `Next.js`; no build settings change.
-2. **Settings > Environment Variables**, for the **Production** environment:
+1. Confirm **Settings > General > Framework Preset** is `Next.js`; no build settings change. Functions run in Singapore (`regions` in `vercel.json`), next to the database.
+2. **Settings > Environment Variables**, for the **Production** environment. Production refuses to start until `APP_URL` is your custom domain (a `*.vercel.app` host is too long for the texts), so attach the domain (step 4) before the first production deploy. If the site shows errors, check **Logs** for "BrightSmile environment check failed"; it names each missing or wrong variable.
 
    | Variable | Value |
    |---|---|
@@ -101,7 +101,7 @@ The Vercel project `bright-smile` already exists and is Git-connected: pushes to
    | `VAPID_SUBJECT` | `mailto:` plus a monitored address |
    | `NEXT_PUBLIC_CONTACT_EMAIL` | The address on the Privacy Notice and Terms |
 
-   For **Preview**, use the development Supabase keys, `SMS_MODE=log`, and set `APP_URL` to the project's preview branch alias (shown on any preview deployment). Previews never text anyone and never run the cron job.
+   For **Preview**, use the development Supabase keys, `SMS_MODE=log`, and set `APP_URL` to any fixed preview URL of the project (for example the `main` branch alias shown on a preview deployment); previews only log texts, so the exact value matters little, but it must be set or previews fail to start. Previews never text anyone and never run the cron job.
 
    The server checks these at start and refuses to run, listing the variable names, when one is missing or malformed (`src/lib/env.ts`). Redeploy after changing any of them: `NEXT_PUBLIC_` values are built into the pages.
 3. **Settings > Deployment Protection:** must be off for the production domain, or patients can't open booking links. Use a custom domain (Deployment Protection only ever applies to the `*.vercel.app` deployment URL, never to an attached custom domain) or turn Vercel Authentication off entirely; never leave "All Deployments" protection on the domain patients use. Check with `curl.exe -s -o NUL -w "%{http_code}" https://brightsmile.ph/`, which must print `200`.
@@ -120,3 +120,5 @@ The Vercel project `bright-smile` already exists and is Git-connected: pushes to
 3. Book a visit on `/demo` with your own mobile: the code text arrives from `BrightSmile`. Approve it in the dashboard: the confirmation text arrives.
 4. On a phone, add the dashboard to the home screen (iPhone: Safari, Share, Add to Home Screen), open it, and in Settings press "Enable push on this device". Book another visit: the push arrives and opens Requests.
 5. Have a lawyer review `/privacy` and `/terms` and replace every `[bracketed]` placeholder before real clinics sign up.
+6. Check the daily job weekly under **Settings > Cron Jobs** (a failed run shows as an error there), or add a Vercel alert or log drain.
+7. Before charging clinics: check whether NPC registration applies (likely once sensitive data on 1,000 or more people is held), run a trademark check on BrightSmile, and register the business.
