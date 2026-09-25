@@ -54,14 +54,15 @@ export async function sendReminders(now: Date): Promise<number> {
       continue;
     }
     if (!claimed || claimed.length === 0) continue;
-    await sendSms({
+    // Claimed either way (a failed text is never retried, so nobody is texted twice); count only real sends.
+    const status = await sendSms({
       kind: "reminder",
       to: r.to,
       clinicId: r.clinicId,
       appointmentId: r.appointmentId,
       vars: { clinic: r.clinic, first: r.first, time: r.time, dentist: r.dentist ?? undefined, link: `${app}/a/${r.token}` },
     });
-    sent++;
+    if (status !== "failed") sent++;
   }
   return sent;
 }
