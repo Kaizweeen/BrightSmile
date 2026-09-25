@@ -159,3 +159,6 @@ A new daily job step: for each clinic whose `ends_at` is after now and at most 3
 - Production refuses a PayMongo test secret key at start, and the webhook ignores test events in production (7.3, 10).
 - `record_payment` adds months on the Manila calendar, whatever the session time zone (6).
 - The offline harness pins PGlite to 0.4.6, which is Postgres 17 like production (9).
+- The amount recorded for a PayMongo payment counts only the checkout's paid attempts, never failed ones (7.3).
+- A paid webhook for a clinic that no longer exists answers 200 and logs a refund reminder instead of 500, so PayMongo stops retrying (7.3, 11).
+- A paused clinic's booking actions refuse before a verification code is checked or spent, not only before one is sent (7.5).
