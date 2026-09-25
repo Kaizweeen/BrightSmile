@@ -36,6 +36,7 @@ export const NOINDEX_SOURCES = [
   "/reset-password",
   "/auth/:path*",
   "/api/:path*",
+  "/admin/:path*",
 ];
 
 /**

@@ -54,6 +54,7 @@ describe("securityHeaders", () => {
       "/reset-password",
       "/auth/:path*",
       "/api/:path*",
+      "/admin/:path*",
     ]);
   });
 

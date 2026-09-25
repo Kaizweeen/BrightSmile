@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { bannerText, billingFromRow, billingStatus, type Billing, type BillingRow } from "@/lib/billing";
+import { bannerText, billingFromRow, billingStatus, manilaMonthStart, type Billing, type BillingRow, type BillingState } from "@/lib/billing";
 import { logError } from "@/lib/log";
 import { adminClient } from "@/lib/supabase/admin";
 import type { Staff } from "@/lib/supabase/server";
@@ -99,5 +99,59 @@ export async function loadPayments(db: SupabaseClient, clinicId: string): Promis
     months: p.months,
     amountCentavos: p.amount_centavos,
     method: p.method,
+  }));
+}
+
+/** extend_trial through the secret key (spec 7.6). Returns the new trial end. */
+export async function extendTrial(clinicId: string, days: number): Promise<string> {
+  const { data, error } = await adminClient().rpc("extend_trial", { p_clinic_id: clinicId, p_days: days });
+  if (error) throw error;
+  return data as string;
+}
+
+export type AdminClinic = {
+  id: string;
+  name: string;
+  slug: string;
+  state: BillingState;
+  activeDentists: number;
+  credits: number;
+  lastPayment: { paidAt: string; months: number; amountCentavos: number; method: Method } | null;
+};
+
+type OverviewRow = {
+  id: string;
+  name: string;
+  slug: string;
+  created_at: string;
+  trial_ends_at: string | null;
+  paid_through: string | null;
+  active_dentists: number;
+  credits: number;
+  last_paid_at: string | null;
+  last_months: number | null;
+  last_amount_centavos: number | null;
+  last_method: Method | null;
+};
+
+/**
+ * Every clinic for the admin page (spec 7.6) in one call to admin_overview: billing and counts only, no patient
+ * data. Credits are texts sent since the start of this Manila month.
+ * ponytail: the API returns at most 1000 rows; page admin_overview when clinics near that.
+ */
+export async function adminOverview(now: Date): Promise<AdminClinic[]> {
+  const { data, error } = await adminClient().rpc("admin_overview", { p_month_start: manilaMonthStart(now).toISOString() });
+  if (error) throw error;
+  return (data as OverviewRow[]).map((r) => ({
+    id: r.id,
+    name: r.name,
+    slug: r.slug,
+    state: billingStatus(billingFromRow(r.trial_ends_at ? { trial_ends_at: r.trial_ends_at, paid_through: r.paid_through } : null, r.created_at), now),
+    activeDentists: r.active_dentists,
+    credits: r.credits,
+    lastPayment:
+      r.last_paid_at && r.last_months && r.last_amount_centavos && r.last_method
+        ? { paidAt: r.last_paid_at, months: r.last_months, amountCentavos: r.last_amount_centavos, method: r.last_method }
+        : null,
   }));
 }
