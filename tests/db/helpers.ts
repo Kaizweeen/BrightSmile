@@ -1,11 +1,13 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { newToken } from "@/lib/codes";
 
-const DEV_PROJECT_REF = "fmvqwojzsklinbdmfjkn";
-if (!process.env.NEXT_PUBLIC_SUPABASE_URL?.includes(DEV_PROJECT_REF)) {
+/** Production (first created as brightsmile-dev). */
+const PRODUCTION_PROJECT_REF = "fmvqwojzsklinbdmfjkn";
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+if (!url || url.includes(PRODUCTION_PROJECT_REF)) {
   throw new Error(
-    "Database tests only run against the development project. " +
-      "test:db uses the secret key and calls global functions like expire_pending, so it must never hit production.",
+    "Database tests never run against production: point .env.local at a development Supabase project. " +
+      "They use the secret key and call global functions like expire_pending.",
   );
 }
 
