@@ -16,7 +16,7 @@ Online booking for dental clinics in the Philippines. Patients request a time fr
 | Script | What it does |
 |---|---|
 | `npm run dev` | Dev server on port 3600 |
-| `npm test` | Unit tests, no network needed |
+| `npm test` | Unit tests and the offline database tests (`tests/sql`, PGlite), no network needed |
 | `npm run test:db` | Database tests against a development Supabase project (they refuse production) |
 | `npm run test:e2e` | The Playwright booking test (starts the dev server if needed) |
 | `npm run test:e2e:install` | Download Chromium for Playwright (once) |

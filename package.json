@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start -p 3600",
     "lint": "eslint",
-    "test": "vitest run tests/unit",
+    "test": "vitest run tests/unit tests/sql",
     "test:db": "vitest run tests/db",
     "test:e2e": "playwright test",
     "test:e2e:install": "node --env-file-if-exists=.env.local node_modules/@playwright/test/cli.js install chromium",
@@ -22,6 +22,7 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^24.13.6",
