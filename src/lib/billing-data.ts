@@ -53,3 +53,31 @@ export async function activeDentists(db: SupabaseClient, clinicId: string): Prom
     .throwOnError();
   return count ?? 0;
 }
+
+type Method = "gcash" | "paymongo";
+
+export type NewPayment = {
+  clinicId: string;
+  method: Method;
+  amountCentavos: number;
+  months: number;
+  reference: string;
+  sessionId: string | null;
+  recordedBy: string | null;
+};
+
+/** record_payment through the secret key (spec 6), for the admin page and the PayMongo webhook. Throws on a database error. */
+export async function recordPayment(p: NewPayment): Promise<{ status: "ok" | "duplicate"; paidThrough: string | null }> {
+  const { data, error } = await adminClient().rpc("record_payment", {
+    p_clinic_id: p.clinicId,
+    p_method: p.method,
+    p_amount_centavos: p.amountCentavos,
+    p_months: p.months,
+    p_reference: p.reference,
+    p_session_id: p.sessionId,
+    p_recorded_by: p.recordedBy,
+  });
+  if (error) throw error;
+  const result = data as { status: "ok" | "duplicate"; paid_through: string | null };
+  return { status: result.status, paidThrough: result.paid_through };
+}
