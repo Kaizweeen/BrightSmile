@@ -11,15 +11,19 @@ let db: PGlite;
 let a: Clinic;
 let b: Clinic;
 let operator: string;
+let refs = 0;
 
-/** record_payment through the secret key, as the admin page and the webhook call it. */
-async function pay(clinicId: string, months: number, sessionId: string | null = null): Promise<Payment> {
+/**
+ * record_payment through the secret key, as the admin page and the webhook call it. A GCash payment gets a
+ * fresh reference number unless the test gives one (references are unique).
+ */
+async function pay(clinicId: string, months: number, sessionId: string | null = null, reference = sessionId ?? `GCASH-${++refs}`): Promise<Payment> {
   const [row] = await asService<{ r: Payment }>(db, "select public.record_payment($1, $2, $3, $4, $5, $6, $7) as r", [
     clinicId,
     sessionId ? "paymongo" : "gcash",
     39900 * months,
     months,
-    sessionId ?? "GCASH-REF-1",
+    reference,
     sessionId,
     sessionId ? null : operator,
   ]);
@@ -114,7 +118,7 @@ describe("record_payment", () => {
     const c = await newClinic(db);
     await setDates(c.clinicId, "2030-01-01T00:00:00Z", "2030-01-15T00:00:00Z");
     await db.query("update public.clinic_billing set renewal_notice_for = paid_through where clinic_id = $1", [c.clinicId]);
-    expect(await pay(c.clinicId, 3)).toEqual({ status: "ok", paid_through: "2030-04-15T00:00:00+00:00" });
+    expect(await pay(c.clinicId, 3, null, "GCASH-REF-1")).toEqual({ status: "ok", paid_through: "2030-04-15T00:00:00+00:00" });
     const [row] = await db.query<{ renewal_notice_for: Date | null; paid_through_after: Date; reference: string; recorded_by: string }>(
       `select b.renewal_notice_for, p.paid_through_after, p.reference, p.recorded_by
        from public.clinic_billing b join public.payments p on p.clinic_id = b.clinic_id where b.clinic_id = $1`,
@@ -189,6 +193,22 @@ describe("record_payment", () => {
     expect(await pay(c.clinicId, 6, "cs_test_once")).toEqual({ status: "duplicate", paid_through: first.paid_through });
     const { rows } = await db.query("select id from public.payments where provider_session_id = 'cs_test_once'");
     expect(rows).toHaveLength(1);
+  });
+
+  it("records a GCash reference once, so the same transfer can never extend a plan twice", async () => {
+    const c = await newClinic(db);
+    const other = await newClinic(db);
+    await pay(c.clinicId, 1, null, "5012 345 678");
+    const plans = "select clinic_id, paid_through from public.clinic_billing where clinic_id in ($1, $2) order by clinic_id";
+    const before = (await db.query(plans, [c.clinicId, other.clinicId])).rows;
+    for (const clinicId of [c.clinicId, other.clinicId]) {
+      await expect(pay(clinicId, 1, null, "5012 345 678")).rejects.toMatchObject({
+        code: "23505",
+        message: expect.stringContaining("payments_gcash_reference"),
+      });
+    }
+    expect((await db.query(plans, [c.clinicId, other.clinicId])).rows).toEqual(before);
+    expect((await db.query("select id from public.payments where reference = '5012 345 678'")).rows).toHaveLength(1);
   });
 
   it("changes nothing when the payment itself is invalid", async () => {

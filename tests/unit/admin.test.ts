@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isOperator, operatorEmails, parseGcashPayment, parsePesos, parseTrialDays } from "@/lib/admin";
+import { gcashFailure, isOperator, operatorEmails, parseGcashPayment, parsePesos, parseTrialDays, trialFailure } from "@/lib/admin";
 
 const CLINIC = "3f1c2d4e-5a6b-4c7d-8e9f-0a1b2c3d4e5f";
 const LIST = " Kai@Example.com, ,ops@brightsmile.ph ";
@@ -60,5 +60,23 @@ describe("parseTrialDays", () => {
   it("accepts 1 to 365 whole days", () => {
     expect(["1", " 14 ", "365"].map(parseTrialDays)).toEqual([1, 14, 365]);
     for (const bad of ["0", "366", "1.5", "-3", "", "abc", 7, null]) expect(parseTrialDays(bad)).toBeNull();
+  });
+});
+
+describe("gcashFailure", () => {
+  it("names a GCash reference already recorded, and otherwise says to check before trying again", () => {
+    expect(gcashFailure({ code: "23505", message: 'duplicate key value violates unique constraint "payments_gcash_reference"' })).toBe(
+      "That GCash reference is already recorded.",
+    );
+    const unsure = "The payment may not have been recorded. Reload the page and check the last payment before trying again.";
+    for (const e of [{ code: "P0002" }, new Error("fetch failed"), null, "timeout"]) expect(gcashFailure(e)).toBe(unsure);
+  });
+});
+
+describe("trialFailure", () => {
+  it("names a clinic that no longer exists and a day count out of range", () => {
+    expect(trialFailure({ code: "P0002", message: "clinic not found" })).toBe("That clinic no longer exists.");
+    expect(trialFailure({ code: "22023", message: "days must be between 1 and 365" })).toBe("Enter 1 to 365 days.");
+    for (const e of [{ code: "08006" }, new Error("fetch failed"), null]) expect(trialFailure(e)).toBe("The trial was not extended. Try again.");
   });
 });

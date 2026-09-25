@@ -30,6 +30,8 @@ create table public.payments (
   check ((method = 'paymongo') = (provider_session_id is not null))
 );
 create index payments_clinic_time on public.payments (clinic_id, paid_at);
+-- A GCash reference number is recorded once, so recording the same transfer twice cannot extend a plan twice.
+create unique index payments_gcash_reference on public.payments (reference) where method = 'gcash';
 
 alter table public.clinic_billing enable row level security;
 alter table public.payments enable row level security;

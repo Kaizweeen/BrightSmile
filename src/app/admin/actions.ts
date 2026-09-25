@@ -1,7 +1,7 @@
 "use server";
 
 import { refresh } from "next/cache";
-import { parseGcashPayment, parseTrialDays } from "@/lib/admin";
+import { gcashFailure, parseGcashPayment, parseTrialDays, trialFailure } from "@/lib/admin";
 import { extendTrial, recordPayment } from "@/lib/billing-data";
 import { logError } from "@/lib/log";
 import { requireOperator } from "@/lib/supabase/server";
@@ -23,7 +23,7 @@ export async function recordGcashPayment(_state: AdminState, form: FormData): Pr
     await recordPayment({ ...parsed.value, method: "gcash", sessionId: null, recordedBy: userId });
   } catch (e) {
     logError("recordGcashPayment", e);
-    return { error: "The payment was not recorded. Try again." };
+    return { error: gcashFailure(e) };
   }
   refresh();
   return { done: "Payment recorded." };
@@ -40,7 +40,7 @@ export async function extendTrialAction(_state: AdminState, form: FormData): Pro
     await extendTrial(clinicId, days);
   } catch (e) {
     logError("extendTrialAction", e);
-    return { error: "The trial was not extended. Try again." };
+    return { error: trialFailure(e) };
   }
   refresh();
   return { done: "Trial extended." };

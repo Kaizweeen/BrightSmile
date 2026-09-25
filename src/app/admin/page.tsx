@@ -35,7 +35,9 @@ export default async function AdminPage() {
             <span className={`chip ${STATUS_CHIP[c.state.status]}`}>{STATUS_LABEL[c.state.status]}</span>
           </div>
           <p className="what">
-            Plan ends {billingDate(c.state.endsAt, now)}. {c.activeDentists} active {c.activeDentists === 1 ? "dentist" : "dentists"}.{" "}
+            {/* billingStatus says grace or lapsed exactly when ends_at is at or before now. */}
+            {c.state.status === "grace" || c.state.status === "lapsed" ? "Plan ended" : "Plan ends"} {billingDate(c.state.endsAt, now)}.{" "}
+            {c.activeDentists} active {c.activeDentists === 1 ? "dentist" : "dentists"}.{" "}
             {c.credits} {c.credits === 1 ? "credit" : "credits"} of texts sent this month.
           </p>
           <p className="what">

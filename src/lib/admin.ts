@@ -49,3 +49,19 @@ export function parseTrialDays(value: unknown): number | null {
   const days = /^\d{1,3}$/.test(text) ? Number(text) : 0;
   return days >= 1 && days <= 365 ? days : null;
 }
+
+const errorCode = (e: unknown) => (e as { code?: unknown } | null)?.code;
+
+/** What the operator reads when record_payment fails. 23505: the GCash reference is already recorded. */
+export function gcashFailure(e: unknown): string {
+  return errorCode(e) === "23505"
+    ? "That GCash reference is already recorded."
+    : "The payment may not have been recorded. Reload the page and check the last payment before trying again.";
+}
+
+/** What the operator reads when extend_trial fails. P0002: no such clinic. 22023: days outside 1 to 365. */
+export function trialFailure(e: unknown): string {
+  if (errorCode(e) === "P0002") return "That clinic no longer exists.";
+  if (errorCode(e) === "22023") return "Enter 1 to 365 days.";
+  return "The trial was not extended. Try again.";
+}
