@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 import BookingSheet from "./BookingSheet";
 import { loadClinic } from "@/lib/availability";
+import { bookingOpen } from "@/lib/billing-data";
 import { slugProblem } from "@/lib/validate";
 
 // Open times depend on the current minute, so this page is never prerendered.
@@ -21,9 +22,14 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   return { title, description, openGraph: { title, description, type: "website" } };
 }
 
-/** A clinic's public booking page and website (spec 5.1). It receives no patient data and no busy times. */
+/**
+ * A clinic's public booking page and website (spec 5.1). It receives no patient data and no busy times.
+ * A lapsed clinic's page shows how to call instead of the booking form (billing spec 7.5).
+ */
 export default async function ClinicBookingPage({ params }: Params) {
   const clinic = await clinicFor((await params).slug);
   if (!clinic) notFound();
-  return <BookingSheet clinic={clinic} nowIso={new Date().toISOString()} />;
+  const now = new Date();
+  const open = await bookingOpen(clinic.id, now);
+  return <BookingSheet clinic={clinic} nowIso={now.toISOString()} paused={!open} />;
 }

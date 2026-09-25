@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { dayOpenStarts, loadClinic } from "@/lib/availability";
+import { bookingOpen } from "@/lib/billing-data";
 import { parseBookingInput, type BookingPayload, type PublicClinic } from "@/lib/booking-input";
 import { BOOKING_CAPS, checkCode, hashCode, newCode, newToken, OTP } from "@/lib/codes";
 import { alertClinic } from "@/lib/notify";
@@ -15,6 +16,7 @@ export type BookingOutcome =
   | Finalized
   | CodeIssued
   | { status: "invalid"; errors: Record<string, string> }
+  | { status: "paused" }
   | { status: "unavailable" };
 
 export type VerifyOutcome =
@@ -23,12 +25,14 @@ export type VerifyOutcome =
   | { status: "expired" }
   | { status: "locked" }
   | { status: "used" }
+  | { status: "paused" }
   | { status: "unavailable" };
 
 export type ResendOutcome =
   | CodeIssued
   | { status: "wait"; seconds: number }
   | { status: "gone" }
+  | { status: "paused" }
   | { status: "unavailable" };
 
 type Ctx = { ip: string; now: Date };
@@ -184,6 +188,8 @@ export async function requestBooking(
   try {
     const clinic = await loadClinic({ slug });
     if (!clinic) return { status: "invalid", errors: { slot: "This booking link doesn't exist." } };
+    // Billing spec 7.5: a lapsed clinic takes no requests, even from a tab opened before it lapsed.
+    if (!(await bookingOpen(clinic.id, ctx.now))) return { status: "paused" };
     const parsed = parseBookingInput(clinic, input, manilaDate(ctx.now));
     if (!parsed.ok) return { status: "invalid", errors: parsed.errors };
 
@@ -255,6 +261,7 @@ export async function verifyCode(
 
     const clinic = await loadClinic({ id: row.booking.clinicId });
     if (!clinic) return done({ status: "unavailable" });
+    if (!(await bookingOpen(clinic.id, now))) return done({ status: "paused" });
     return done(await finalize(clinic, row.booking, now));
   } catch (e) {
     logFailure("verifyCode", e);
@@ -275,6 +282,7 @@ export async function resendCode(requestId: string, ctx: Ctx): Promise<ResendOut
     if (error) throw error;
     const row = data as Pick<OtpRow, "id" | "mobile" | "booking" | "verified_at"> | null;
     if (!row || row.verified_at) return { status: "gone" };
+    if (!(await bookingOpen(row.booking.clinicId, ctx.now))) return { status: "paused" };
 
     const id = randomUUID();
     const code = newCode();

@@ -69,6 +69,12 @@ describe("reminders", () => {
     ];
     expect(reminders(skipped, one, now)).toEqual([]);
   });
+
+  it("sends nothing for a clinic whose booking is paused", () => {
+    const other = { ...row, id: "a2", clinic_id: "c2" };
+    const both = new Map([["c1", 1], ["c2", 1]]);
+    expect(reminders([row, other], both, now, new Set(["c1"])).map((r) => r.appointmentId)).toEqual(["a2"]);
+  });
 });
 
 describe("lowCreditThreshold", () => {

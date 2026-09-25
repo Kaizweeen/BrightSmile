@@ -1,5 +1,7 @@
 import "server-only";
 import { appUrl } from "@/lib/app-url";
+import { billingStatus } from "@/lib/billing";
+import { loadBillings } from "@/lib/billing-data";
 import { LOW_CREDIT_GAP_MS, lowCreditThreshold, reminders, reminderWindow, type ReminderRow } from "@/lib/daily";
 import { logError } from "@/lib/log";
 import { normalizeMobile } from "@/lib/phone";
@@ -30,18 +32,17 @@ export async function sendReminders(now: Date): Promise<number> {
   const rows = (data ?? []) as unknown as ReminderRow[];
   if (rows.length === 0) return 0;
 
-  const { data: dentists, error: dentistError } = await db
-    .from("dentists")
-    .select("clinic_id")
-    .eq("active", true)
-    .in("clinic_id", [...new Set(rows.map((r) => r.clinic_id))]);
+  const clinicIds = [...new Set(rows.map((r) => r.clinic_id))];
+  const { data: dentists, error: dentistError } = await db.from("dentists").select("clinic_id").eq("active", true).in("clinic_id", clinicIds);
   if (dentistError) throw dentistError;
   const active = new Map<string, number>();
   for (const { clinic_id } of (dentists ?? []) as { clinic_id: string }[]) active.set(clinic_id, (active.get(clinic_id) ?? 0) + 1);
+  // Billing spec 7.5: a lapsed clinic's patients get no reminders.
+  const paused = new Set([...(await loadBillings(db, clinicIds))].filter(([, billing]) => !billingStatus(billing, now).open).map(([id]) => id));
 
   const app = appUrl();
   let sent = 0;
-  for (const r of reminders(rows, active, now)) {
+  for (const r of reminders(rows, active, now, paused)) {
     const { data: claimed, error: claimError } = await db
       .from("appointments")
       .update({ reminder_sent_at: now.toISOString() })

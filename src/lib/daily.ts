@@ -48,9 +48,11 @@ const date = (value: string | null) => (value ? new Date(value) : null);
 /**
  * Spec 11 step 1: needsReminder decides which visits are due; a patient without a mobile (or deleted)
  * gets nothing. Texts name the dentist only when the clinic has 2 or more active dentists (spec 10.1).
+ * A clinic whose booking is paused gets no reminders (billing spec 7.5).
  */
-export function reminders(rows: ReminderRow[], activeDentists: Map<string, number>, now: Date): Reminder[] {
+export function reminders(rows: ReminderRow[], activeDentists: Map<string, number>, now: Date, paused: Set<string> = new Set()): Reminder[] {
   return rows.flatMap((r) => {
+    if (paused.has(r.clinic_id)) return [];
     const startsAt = new Date(r.starts_at);
     const due = needsReminder(
       { status: r.status, starts_at: startsAt, confirmed_at: date(r.confirmed_at), reminder_sent_at: date(r.reminder_sent_at) },
