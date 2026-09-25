@@ -235,6 +235,8 @@ export async function verifyCode(
       now,
     );
     if (status === "used" || status === "expired" || status === "locked") return done({ status });
+    // Billing spec 7.5: a lapsed clinic takes no requests. Checked before the attempt or the code is spent.
+    if (!(await bookingOpen(row.booking.clinicId, now))) return done({ status: "paused" });
 
     // Spend an attempt before acting on the comparison. The update only matches while attempts is
     // unchanged, so parallel guesses share the same 5 attempts instead of each getting their own.
@@ -261,7 +263,6 @@ export async function verifyCode(
 
     const clinic = await loadClinic({ id: row.booking.clinicId });
     if (!clinic) return done({ status: "unavailable" });
-    if (!(await bookingOpen(clinic.id, now))) return done({ status: "paused" });
     return done(await finalize(clinic, row.booking, now));
   } catch (e) {
     logFailure("verifyCode", e);
