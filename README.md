@@ -17,7 +17,7 @@ Online booking for dental clinics in the Philippines. Patients request a time fr
 |---|---|
 | `npm run dev` | Dev server on port 3600 |
 | `npm test` | Unit tests, no network needed |
-| `npm run test:db` | Database tests against the development Supabase project |
+| `npm run test:db` | Database tests against a development Supabase project (they refuse production) |
 | `npm run test:e2e` | The Playwright booking test (starts the dev server if needed) |
 | `npm run test:e2e:install` | Download Chromium for Playwright (once) |
 | `npm run db:push` | Apply new migrations to the linked Supabase project |
@@ -31,7 +31,7 @@ One Playwright test walks the whole booking loop: a patient books on a clinic's 
 1. Once: put `PLAYWRIGHT_BROWSERS_PATH=D:\playwright-browsers` (or any folder on a drive with space) in `.env.local`, then run `npm run test:e2e:install`.
 2. Run `npm run test:e2e`. It uses the dev server on port 3600, starting it if needed, with `SMS_MODE=log`. If a dev server is already running, it must be in log mode too (the test reads the code from `sms_log`).
 
-The test creates its own clinic and staff login in the development Supabase project and deletes them afterwards. Like `npm run test:db`, it refuses to run against any other project, because it uses the secret key.
+The test creates its own clinic and staff login in the development Supabase project named in `.env.local` and deletes them afterwards. Like `npm run test:db`, it refuses to run against production, because it uses the secret key.
 
 ## Deploy to production
 
@@ -45,7 +45,9 @@ Do these in order. Kai creates the accounts; nothing here can be done from code.
 
 ### 2. Supabase production project
 
-1. Create a new project (not the development one), region Singapore. From **Project Settings > API Keys** copy the project URL, the publishable key, and the secret key.
+Production is the project with ref `fmvqwojzsklinbdmfjkn` (first created as `brightsmile-dev`, and empty at launch). Its migrations are already applied, so for it start at step 3. Steps 1 and 2 set up any new project, such as the separate development project that the database and e2e tests need.
+
+1. Create a new project, region Singapore. From **Project Settings > API Keys** copy the project URL, the publishable key, and the secret key.
 2. Apply the migrations in filename order: open each file in `supabase/migrations`, paste it into the **SQL Editor**, and run it before opening the next.
 
    | Order | File |
@@ -68,7 +70,7 @@ Do these in order. Kai creates the accounts; nothing here can be done from code.
 4. **Authentication > Email Templates:**
    - Confirm signup: link `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next=/onboarding`
    - Reset password: link `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/reset-password`
-5. **Authentication > Emails > SMTP Settings:** set up custom SMTP. Supabase's built-in sender is rate limited and meant for testing.
+5. **Authentication > Emails > SMTP Settings:** set up custom SMTP; it is required. Supabase's built-in sender only delivers to members of your Supabase team, at most 2 emails an hour, so clinics would never get their sign-up email. Without a domain of your own, a Gmail account works: host `smtp.gmail.com`, port `465`, username and sender email = the Gmail address, password = a Google App Password (needs 2-Step Verification).
 6. Keep email confirmation on (**Authentication > Sign In / Providers > Email**).
 
 ### 3. Keys
@@ -85,7 +87,7 @@ The first prints the VAPID public and private keys. Run the second twice, once f
 The Vercel project `bright-smile` already exists and is Git-connected: pushes to `main` deploy to production automatically. There is no import step.
 
 1. The framework is set to Next.js in `vercel.json` (`"framework": "nextjs"`), which overrides the project's Framework Preset; without it Vercel served every page as a 404. No build settings change. Functions run in Singapore (`regions` in `vercel.json`), next to the database.
-2. **Settings > Environment Variables**, for the **Production** environment. Production refuses to start until `APP_URL` is your custom domain (a `*.vercel.app` host is too long for the texts), so attach the domain (step 4) before the first production deploy. If the site shows errors, check **Logs** for "BrightSmile environment check failed"; it names each missing or wrong variable.
+2. **Settings > Environment Variables**, for the **Production** environment. Production refuses to start until `APP_URL` has a host of at most 17 characters (the default `bright-smile.vercel.app` is 23, too long for the texts; a short one like `bsmile.vercel.app` or a bought domain works), so attach it (step 4) before the first production deploy. If the site shows errors, check **Logs** for "BrightSmile environment check failed"; it names each missing or wrong variable.
 
    | Variable | Value |
    |---|---|
@@ -101,7 +103,7 @@ The Vercel project `bright-smile` already exists and is Git-connected: pushes to
    | `VAPID_SUBJECT` | `mailto:` plus a monitored address |
    | `NEXT_PUBLIC_CONTACT_EMAIL` | The address on the Privacy Notice and Terms |
 
-   For **Preview**, use the development Supabase keys, `SMS_MODE=log`, and set `APP_URL` to any fixed preview URL of the project (for example the `main` branch alias shown on a preview deployment); previews only log texts, so the exact value matters little, but it must be set or previews fail to start. Previews never text anyone and never run the cron job.
+   For **Preview**, use the development Supabase keys (until a development project exists, leave Preview unset: previews then fail to start, which is harmless), `SMS_MODE=log`, and set `APP_URL` to any fixed preview URL of the project (for example the `main` branch alias shown on a preview deployment); previews only log texts, so the exact value matters little, but it must be set or previews fail to start. Previews never text anyone and never run the cron job.
 
    The server checks these at start and refuses to run, listing the variable names, when one is missing or malformed (`src/lib/env.ts`). Redeploy after changing any of them: `NEXT_PUBLIC_` values are built into the pages.
 3. **Settings > Deployment Protection:** must be off for the production domain, or patients can't open booking links. Use a custom domain (Deployment Protection only ever applies to the `*.vercel.app` deployment URL, never to an attached custom domain) or turn Vercel Authentication off entirely; never leave "All Deployments" protection on the domain patients use. Check with `curl.exe -s -o NUL -w "%{http_code}" https://brightsmile.ph/`, which must print `200`.

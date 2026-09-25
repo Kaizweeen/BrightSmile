@@ -73,14 +73,6 @@ describe("envProblems", () => {
     expect(envProblems({ ...dev, SMS_MODE: "log" })).toEqual([]);
   });
 
-  it("refuses the development Supabase project in production", () => {
-    const devDb = "https://fmvqwojzsklinbdmfjkn.supabase.co";
-    expect(envProblems({ ...production, NEXT_PUBLIC_SUPABASE_URL: devDb })).toEqual([
-      "NEXT_PUBLIC_SUPABASE_URL points at the development project; production needs its own",
-    ]);
-    expect(envProblems({ ...dev, NEXT_PUBLIC_SUPABASE_URL: devDb })).toEqual([]);
-  });
-
   it("checks formats without repeating the values", () => {
     const bad = {
       ...production,
