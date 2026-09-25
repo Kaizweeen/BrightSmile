@@ -24,7 +24,7 @@ export function anonDb(): SupabaseClient {
 export const rand = () => Math.random().toString(36).slice(2, 8);
 
 /** A confirmed user, and a client signed in as them. */
-export async function signedInUser(): Promise<{ db: SupabaseClient; userId: string }> {
+export async function signedInUser(): Promise<{ db: SupabaseClient; userId: string; email: string; password: string }> {
   const email = `bs-test-${rand()}@example.com`;
   const password = `pw-${rand()}-${rand()}-${rand()}`;
   const { data, error } = await adminDb().auth.admin.createUser({ email, password, email_confirm: true });
@@ -32,7 +32,7 @@ export async function signedInUser(): Promise<{ db: SupabaseClient; userId: stri
   const db = anonDb();
   const { error: signInError } = await db.auth.signInWithPassword({ email, password });
   if (signInError) throw signInError;
-  return { db, userId: data.user.id };
+  return { db, userId: data.user.id, email, password };
 }
 
 export async function deleteUser(userId: string) {
@@ -73,6 +73,60 @@ export type Seed = Awaited<ReturnType<typeof seedClinic>>;
 
 export async function deleteClinic(id: string) {
   await adminDb().from("clinics").delete().eq("id", id);
+}
+
+/**
+ * A clinic made through create_clinic by a signed-in staff user, so `staff.db` acts under RLS exactly
+ * like the dashboard: one dentist ("Dr. Ana Reyes", short name "Dr. Reyes") working 9:00 to 17:00 every
+ * day, procedures Cleaning (60) and Consultation (30), and one patient with a mobile.
+ */
+export async function staffClinic() {
+  const user = await signedInUser();
+  const { data: clinicId } = await user.db
+    .rpc("create_clinic", {
+      p: {
+        name: "Staff Clinic",
+        sms_name: "Staff Clinic",
+        slug: `st-${rand()}`,
+        mobile: "+639170000002",
+        address: "Makati",
+        dentist: { name: "Dr. Ana Reyes", sms_name: "Dr. Reyes" },
+        hours: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, start: "09:00", end: "17:00" })),
+        procedures: [
+          { name: "Consultation", minutes: 30 },
+          { name: "Cleaning", minutes: 60 },
+        ],
+      },
+    })
+    .throwOnError();
+  const db = adminDb();
+  const { data: clinic } = await db.from("clinics").select("*").eq("id", clinicId).single().throwOnError();
+  const { data: dentist } = await db.from("dentists").select("*").eq("clinic_id", clinicId).single().throwOnError();
+  const { data: procedures } = await db.from("procedures").select("*").eq("clinic_id", clinicId).order("name").throwOnError();
+  const { data: patient } = await db
+    .from("patients")
+    .insert({
+      clinic_id: clinicId,
+      first_name: "Ana",
+      last_name: "Cruz",
+      mobile: `+63917${String(Math.floor(Math.random() * 1e7)).padStart(7, "0")}`,
+    })
+    .select()
+    .single()
+    .throwOnError();
+  return {
+    staff: { db: user.db, userId: user.userId, clinicId: clinicId as string },
+    login: { email: user.email, password: user.password },
+    seed: { clinic, dentist, patient },
+    procedures: procedures as { id: string; name: string; duration_minutes: number }[],
+  };
+}
+
+export type StaffSeed = Awaited<ReturnType<typeof staffClinic>>;
+
+export async function dropStaffClinic(s: StaffSeed) {
+  await deleteClinic(s.staff.clinicId);
+  await deleteUser(s.staff.userId);
 }
 
 /** An appointments row for direct inserts (no slot checks). */

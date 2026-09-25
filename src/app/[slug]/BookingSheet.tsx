@@ -1,15 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import Field from "@/components/Field";
 import MonthSheet from "./MonthSheet";
-import { busyFor, HMO_SUGGESTIONS, type SampleClinic } from "@/lib/sample-clinic";
-import { fitsAnyBlock, openDates as openDatesFor, openStarts, type Block, type Busy } from "@/lib/slots";
-import { addDays, formatDate, formatMinutes, formatTime, manilaDate, monthDates, weekday } from "@/lib/time";
-import { normalizeMobile } from "@/lib/phone";
-import { cleanBirthday, cleanText, LIMITS } from "@/lib/validate";
+import { getOpenDates, getOpenStarts, requestBooking, resendBookingCode, verifyBookingCode } from "./actions";
+import type { BookingOutcome } from "@/lib/booking";
+import { detailErrors, HMO_SUGGESTIONS, type Details, type PublicClinic } from "@/lib/booking-input";
+import { localMobile, normalizeMobile } from "@/lib/phone";
+import { fitsAnyBlock, mergeWeeks, openStarts, type Block } from "@/lib/slots";
+import { addDays, formatDate, formatMinutes, formatTime, manilaDate, weekday } from "@/lib/time";
+import { LIMITS } from "@/lib/validate";
 
-type SerialBusy = { id?: string; start: string; end: string };
-type Props = { clinic: SampleClinic; busy: SerialBusy[]; nowIso: string };
+type Props = { clinic: PublicClinic; nowIso: string };
 type Step = "what" | "when" | "who" | "code" | "sent";
 
 const STEPS: { id: Step; label: string }[] = [
@@ -17,10 +21,11 @@ const STEPS: { id: Step; label: string }[] = [
   { id: "when", label: "When" },
   { id: "who", label: "Who" },
 ];
-const EMPTY_FORM = { first: "", last: "", mobile: "", birthday: "", hmo: "", consent: false };
+const EMPTY_FORM: Details = { first: "", last: "", mobile: "", birthday: "", hmo: "", consent: false };
 const DAY_HEADS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const UNAVAILABLE = "Booking is temporarily unavailable. Please try again in a few minutes.";
 
-/** The clinic's hours, read off its own working blocks so the line cannot lie. */
+/** The clinic's hours, read off its dentists' own working blocks so the line cannot lie. */
 function hoursSummary(week: Block[][]): string {
   const describe = (blocks: Block[]) =>
     blocks.length === 0 ? "closed" : blocks.map((b) => `${formatMinutes(b.start)} to ${formatMinutes(b.end)}`).join(", ");
@@ -45,111 +50,277 @@ function initials(name: string) {
     .join("");
 }
 
-export default function BookingSheet({ clinic, busy, nowIso }: Props) {
+export default function BookingSheet({ clinic, nowIso }: Props) {
   const [step, setStep] = useState<Step>("what");
   const [procedureIds, setProcedureIds] = useState<string[]>([]);
   const [dentistId, setDentistId] = useState(clinic.dentists.length === 1 ? clinic.dentists[0].id : "");
+  const [query, setQuery] = useState("");
   const [month, setMonth] = useState(() => manilaDate(new Date(nowIso)).slice(0, 7));
+  const [monthOpen, setMonthOpen] = useState<string[] | null>(null);
   const [date, setDate] = useState<string | null>(null);
+  const [starts, setStarts] = useState<string[] | null>(null);
   const [startIso, setStartIso] = useState<string | null>(null);
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [form, setForm] = useState<Details>(EMPTY_FORM);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [notice, setNotice] = useState("");
+  const [working, setWorking] = useState(false);
   const [code, setCode] = useState("");
+  const [requestId, setRequestId] = useState("");
   const [resendIn, setResendIn] = useState(60);
-  const [reference, setReference] = useState("");
+  const [token, setToken] = useState("");
   const headingRef = useRef<HTMLHeadingElement>(null);
+  // Each availability load gets a number; a reply that is no longer the latest is dropped.
+  const loads = useRef(0);
 
-  // The React Compiler memoizes these; a month of dates against a handful of
-  // busy intervals is cheap arithmetic either way.
   const now = new Date(nowIso);
   const today = manilaDate(now);
   const lastBookable = addDays(today, clinic.rules.maxDaysAhead);
-  const allBusy: Busy[] = busy.map((b) => ({ id: b.id, start: new Date(b.start), end: new Date(b.end) }));
-
+  const week = mergeWeeks(clinic.dentists.map((d) => d.hours));
+  const phone = localMobile(clinic.mobile);
+  const closed = clinic.dentists.length === 0 || clinic.procedures.length === 0;
+  const showDentist = clinic.dentists.length > 1;
+  const dentist = clinic.dentists.find((d) => d.id === dentistId) ?? clinic.dentists[0];
   const chosen = clinic.procedures.filter((p) => procedureIds.includes(p.id));
   const duration = chosen.reduce((sum, p) => sum + p.minutes, 0);
-  const dentist = clinic.dentists.find((d) => d.id === dentistId) ?? clinic.dentists[0];
-  const myBusy = busyFor(dentist.id, allBusy);
-  const tooLong = duration > 0 && !fitsAnyBlock(duration, clinic.hoursByWeekday);
-
-  const monthOpen =
-    duration && !tooLong
-      ? openDatesFor({
-          dates: monthDates(month),
-          blocksByWeekday: clinic.hoursByWeekday,
-          busy: myBusy,
-          durationMinutes: duration,
-          rules: clinic.rules,
-          now,
-        })
-      : [];
-
-  const starts =
-    date && duration
-      ? openStarts({
-          date,
-          blocks: clinic.hoursByWeekday[weekday(date)],
-          busy: myBusy,
-          durationMinutes: duration,
-          rules: clinic.rules,
-          now,
-        })
-      : [];
+  const tooLong = duration > 0 && !fitsAnyBlock(duration, dentistId ? dentist.hours : week);
+  const selection = { dentistId: dentist?.id ?? "", procedureIds };
+  const closedWeekdays = dentist ? [0, 1, 2, 3, 4, 5, 6].filter((d) => dentist.hours[d].length === 0) : [];
+  // Ignoring bookings: would any slot for today still fit before hours or minimum notice run out?
+  const todayOutOfTime =
+    !dentist ||
+    duration === 0 ||
+    openStarts({ date: today, blocks: dentist.hours[weekday(today)], busy: [], durationMinutes: duration, rules: clinic.rules, now })
+      .length === 0;
+  const search = query.trim().toLowerCase();
+  const listed = search ? clinic.procedures.filter((p) => p.name.toLowerCase().includes(search)) : clinic.procedures;
+  const start = startIso ? new Date(startIso) : null;
+  const stepIndex = STEPS.findIndex((s) => s.id === step);
 
   useEffect(() => {
     headingRef.current?.focus();
   }, [step]);
 
-  // The countdown starts where the code was requested, so nothing sets state
-  // straight from an effect.
+  // The countdown starts where the code was requested, so nothing sets state straight from an effect.
   useEffect(() => {
     if (step !== "code") return;
     const tick = setInterval(() => setResendIn((s) => (s > 0 ? s - 1 : 0)), 1000);
     return () => clearInterval(tick);
   }, [step]);
 
-  const start = startIso ? new Date(startIso) : null;
-  const showDentist = clinic.dentists.length > 1;
-  const stepIndex = STEPS.findIndex((s) => s.id === step);
-
-  function toggleProcedure(id: string) {
-    setProcedureIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  function clearTime() {
     setDate(null);
+    setStarts(null);
     setStartIso(null);
   }
 
-  function submitDetails() {
-    const next: Record<string, string> = {};
-    if (!cleanText(form.first, LIMITS.personName)) next.first = "Please enter your first name.";
-    if (!cleanText(form.last, LIMITS.personName)) next.last = "Please enter your last name.";
-    if (!normalizeMobile(form.mobile)) next.mobile = "Enter a Philippine mobile number, like 0917 123 4567.";
-    if (cleanBirthday(form.birthday, today) === null) next.birthday = "Use a real past date, or leave this blank.";
-    if (cleanText(form.hmo, LIMITS.hmo, true) === null) next.hmo = `Keep this under ${LIMITS.hmo} characters.`;
-    if (!form.consent) next.consent = "Please agree before sending your request.";
-    setErrors(next);
-    if (Object.keys(next).length > 0) return;
-    setResendIn(60);
-    setStep("code");
+  function toggleProcedure(id: string) {
+    setProcedureIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+    loads.current++; // drop any month or day answer still in flight for the old choice
+    setMonthOpen(null);
+    clearTime();
   }
 
-  function verifyCode() {
-    if (!/^\d{6}$/.test(code.trim())) {
+  function chooseDentist(id: string) {
+    setDentistId(id);
+    loads.current++; // drop any month or day answer still in flight for the old choice
+    setMonthOpen(null);
+    clearTime();
+  }
+
+  async function loadMonth(nextMonth: string) {
+    const n = ++loads.current;
+    setMonth(nextMonth);
+    setMonthOpen(null);
+    clearTime();
+    try {
+      const open = await getOpenDates(clinic.slug, selection, nextMonth);
+      if (n === loads.current) setMonthOpen(open);
+    } catch {
+      if (n === loads.current) {
+        setMonthOpen([]);
+        setNotice(UNAVAILABLE);
+      }
+    }
+  }
+
+  async function loadDay(day: string) {
+    const n = ++loads.current;
+    setDate(day);
+    setStarts(null);
+    setStartIso(null);
+    try {
+      const list = await getOpenStarts(clinic.slug, selection, day);
+      if (n === loads.current) setStarts(list);
+    } catch {
+      if (n === loads.current) {
+        setStarts([]);
+        setNotice(UNAVAILABLE);
+      }
+    }
+  }
+
+  function goToWhen() {
+    setNotice("");
+    setStep("when");
+    if (monthOpen === null) void loadMonth(month);
+  }
+
+  function handleBooking(outcome: BookingOutcome) {
+    switch (outcome.status) {
+      case "code":
+        setRequestId(outcome.requestId);
+        setCode("");
+        setResendIn(60);
+        setStep("code");
+        return;
+      case "sent":
+        setToken(outcome.token);
+        setStep("sent");
+        return;
+      case "taken":
+        setStarts(outcome.starts);
+        setStartIso(null);
+        setNotice("That time was just taken. Pick another one below.");
+        setStep("when");
+        return;
+      case "invalid":
+        setErrors(outcome.errors);
+        if (outcome.errors.slot) {
+          setNotice(outcome.errors.slot);
+          setStep("when");
+        }
+        return;
+      case "limited":
+        setNotice(`Too many attempts. Try again in an hour or call ${phone}.`);
+        return;
+      case "sms_failed":
+        setNotice(`We couldn't send the code. Try again, or call ${phone}.`);
+        return;
+      case "too_many":
+        setNotice(`You already have requests waiting. Please call the clinic at ${phone}.`);
+        return;
+      case "unavailable":
+        setNotice(UNAVAILABLE);
+        return;
+    }
+  }
+
+  async function submitDetails() {
+    const problems = detailErrors(form, today);
+    setErrors(problems);
+    if (Object.keys(problems).length > 0 || !startIso) return;
+    setWorking(true);
+    setNotice("");
+    try {
+      handleBooking(await requestBooking(clinic.slug, { ...selection, startsAt: startIso, ...form }));
+    } catch {
+      setNotice(UNAVAILABLE);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function verify() {
+    if (!/^\d{6}$/.test(code)) {
       setErrors({ code: "Enter the 6 digits from the text." });
       return;
     }
     setErrors({});
-    setReference(`SD-${(startIso ?? "").slice(5, 10).replace("-", "")}-${formatTime(start!).replace(/[: ]/g, "")}`);
-    setStep("sent");
+    setNotice("");
+    setWorking(true);
+    try {
+      const outcome = await verifyBookingCode(requestId, code);
+      switch (outcome.status) {
+        case "sent":
+          setToken(outcome.token);
+          setStep("sent");
+          break;
+        case "wrong":
+          setErrors({
+            code:
+              outcome.attemptsLeft > 0
+                ? `That code is not right. ${outcome.attemptsLeft} ${outcome.attemptsLeft === 1 ? "try" : "tries"} left.`
+                : "Too many wrong tries. Send another code.",
+          });
+          break;
+        case "expired":
+          setErrors({ code: "That code has expired. Send another code." });
+          break;
+        case "locked":
+          setErrors({ code: "Too many wrong tries. Send another code." });
+          break;
+        case "used":
+          setErrors({ code: "That code was already used. Send another code." });
+          break;
+        case "taken":
+          setStarts(outcome.starts);
+          setStartIso(null);
+          setNotice("That time was just taken. Your number is verified, so pick another time and send again.");
+          setStep("when");
+          break;
+        case "too_many":
+          setNotice(`You already have requests waiting. Please call the clinic at ${phone}.`);
+          break;
+        case "unavailable":
+          setNotice(UNAVAILABLE);
+          break;
+      }
+    } catch {
+      setNotice(UNAVAILABLE);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function resend() {
+    setNotice("");
+    setWorking(true);
+    try {
+      const outcome = await resendBookingCode(requestId);
+      switch (outcome.status) {
+        case "code":
+          setRequestId(outcome.requestId);
+          setCode("");
+          setErrors({});
+          setResendIn(60);
+          break;
+        case "wait":
+          setResendIn(outcome.seconds);
+          break;
+        case "limited":
+          setNotice(`Too many attempts. Try again in an hour or call ${phone}.`);
+          break;
+        case "sms_failed":
+          setNotice(`We couldn't send the code. Try again, or call ${phone}.`);
+          break;
+        case "gone":
+          setNotice("Please send your request again.");
+          setStep("who");
+          break;
+        case "unavailable":
+          setNotice(UNAVAILABLE);
+          break;
+      }
+    } catch {
+      setNotice(UNAVAILABLE);
+    } finally {
+      setWorking(false);
+    }
   }
 
   function startOver() {
     setProcedureIds([]);
     setDentistId(clinic.dentists.length === 1 ? clinic.dentists[0].id : "");
-    setDate(null);
-    setStartIso(null);
+    setQuery("");
+    loads.current++; // drop any month or day answer still in flight for the old choice
+    setMonthOpen(null);
+    clearTime();
     setForm(EMPTY_FORM);
     setErrors({});
+    setNotice("");
     setCode("");
+    setRequestId("");
+    setToken("");
     setStep("what");
   }
 
@@ -173,425 +344,431 @@ export default function BookingSheet({ clinic, busy, nowIso }: Props) {
                 </>
               )}
             </p>
-            <p className="meta">{hoursSummary(clinic.hoursByWeekday)}</p>
-            <p className="mt-2">
-              <span className="chip chip-amber">Sample data</span>
+            <p className="meta">{hoursSummary(week)}</p>
+            <p className="meta">
+              <a href={`tel:${clinic.mobile}`} className="link">
+                {phone}
+              </a>
             </p>
           </div>
         </div>
         <hr className="rule-gold" />
 
-        {step !== "sent" && (
-          <div className="step-row" aria-hidden="true">
-            {STEPS.map((s, i) => (
-              <span key={s.id} className="flex items-center gap-2" style={{ flex: i < STEPS.length - 1 ? 1 : "0 0 auto" }}>
-                <span className={`step-pip ${s.id === step ? "active" : ""} ${i < stepIndex || step === "code" ? "done" : ""}`}>
-                  <span className="num">{i < stepIndex || step === "code" ? "✓" : i + 1}</span>
-                  {s.label}
-                </span>
-                {i < STEPS.length - 1 && <span className="step-sep" />}
-              </span>
-            ))}
-          </div>
-        )}
+        {closed ? (
+          <p className="note-box">
+            {"Online booking isn't open yet. Call "}
+            <a href={`tel:${clinic.mobile}`} className="font-semibold underline">
+              {phone}
+            </a>
+            {" to book."}
+          </p>
+        ) : (
+          <>
+            {step !== "sent" && (
+              <div className="step-row" aria-hidden="true">
+                {STEPS.map((s, i) => (
+                  <span key={s.id} className="flex items-center gap-2" style={{ flex: i < STEPS.length - 1 ? 1 : "0 0 auto" }}>
+                    <span className={`step-pip ${s.id === step ? "active" : ""} ${i < stepIndex || step === "code" ? "done" : ""}`}>
+                      <span className="num">{i < stepIndex || step === "code" ? "✓" : i + 1}</span>
+                      {s.label}
+                    </span>
+                    {i < STEPS.length - 1 && <span className="step-sep" />}
+                  </span>
+                ))}
+              </div>
+            )}
 
-        {step === "what" && (
-          <section>
-            <h2 ref={headingRef} tabIndex={-1} className="font-display text-[19px] font-bold outline-none">
-              What do you need?
-            </h2>
-            <p className="sub">Pick everything you need in one visit. The times you see will fit all of it.</p>
+            {notice && step !== "sent" && (
+              <p role="alert" className="note-box warn mb-4">
+                {notice}
+              </p>
+            )}
 
-            <div className="member-list">
-              {clinic.procedures.map((p) => (
-                <label key={p.id} className="member-row">
+            {step === "what" && (
+              <section>
+                <h2 ref={headingRef} tabIndex={-1} className="font-display text-[19px] font-bold outline-none">
+                  What do you need?
+                </h2>
+                <p className="sub">Pick everything you need in one visit. The times you see will fit all of it.</p>
+
+                {clinic.procedures.length > 6 && (
                   <input
-                    type="checkbox"
-                    checked={procedureIds.includes(p.id)}
-                    onChange={() => toggleProcedure(p.id)}
-                    aria-label={`${p.name}, ${p.minutes} minutes`}
+                    type="search"
+                    className="f-input mb-3"
+                    placeholder="Search procedures"
+                    aria-label="Search procedures"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
                   />
-                  <span className="nm">{p.name}</span>
-                  <span className="meta">{p.minutes} min</span>
-                </label>
-              ))}
-            </div>
+                )}
 
-            {showDentist && (
-              <fieldset className="mt-5">
-                <legend className="f-label">Dentist</legend>
                 <div className="member-list">
-                  {clinic.dentists.map((d) => (
-                    <label key={d.id} className="member-row">
+                  {listed.map((p) => (
+                    <label key={p.id} className="member-row">
                       <input
-                        type="radio"
-                        name="dentist"
-                        value={d.id}
-                        aria-label={d.name}
-                        checked={dentistId === d.id}
-                        onChange={() => {
-                          setDentistId(d.id);
-                          setDate(null);
-                          setStartIso(null);
-                        }}
+                        type="checkbox"
+                        checked={procedureIds.includes(p.id)}
+                        onChange={() => toggleProcedure(p.id)}
+                        aria-label={`${p.name}, ${p.minutes} minutes`}
                       />
-                      <span className="nm">{d.name}</span>
+                      <span className="nm">{p.name}</span>
+                      <span className="meta">{p.minutes} min</span>
                     </label>
                   ))}
+                  {listed.length === 0 && <p className="empty-note">No procedure matches that search.</p>}
                 </div>
-              </fieldset>
+
+                {showDentist && (
+                  <fieldset className="mt-5">
+                    <legend className="f-label">Dentist</legend>
+                    <div className="member-list">
+                      {clinic.dentists.map((d) => (
+                        <label key={d.id} className="member-row">
+                          <input
+                            type="radio"
+                            name="dentist"
+                            value={d.id}
+                            aria-label={d.name}
+                            checked={dentistId === d.id}
+                            onChange={() => chooseDentist(d.id)}
+                          />
+                          <span className="nm">{d.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                )}
+
+                <div className="cf-row mt-4">
+                  <span className="k">Estimated time</span>
+                  <span className="v">{duration > 0 ? `${duration} min` : "Nothing chosen yet"}</span>
+                </div>
+
+                {tooLong && (
+                  <p className="note-box warn mt-4">
+                    No single opening fits all of these. Choose fewer procedures or call{" "}
+                    <a href={`tel:${clinic.mobile}`} className="font-semibold underline">
+                      {phone}
+                    </a>
+                    .
+                  </p>
+                )}
+
+                <button
+                  type="button"
+                  className="btn btn-primary wide-btn mt-6"
+                  disabled={duration === 0 || tooLong || (showDentist && !dentistId)}
+                  onClick={goToWhen}
+                >
+                  {duration === 0 ? "Pick what you need" : showDentist && !dentistId ? "Choose a dentist" : "Pick a day"}
+                </button>
+              </section>
             )}
 
-            <div className="cf-row mt-4">
-              <span className="k">Estimated time</span>
-              <span className="v">{duration > 0 ? `${duration} min` : "Nothing chosen yet"}</span>
-            </div>
+            {step === "when" && (
+              <section>
+                <h2 ref={headingRef} tabIndex={-1} className="font-display text-[19px] font-bold outline-none">
+                  When suits you?
+                </h2>
+                <p className="sub">
+                  {duration} minutes with {dentist.name}.
+                </p>
 
-            {tooLong && (
-              <p className="note-box warn mt-4">
-                No single opening fits all of these. Choose fewer procedures, or call the clinic at{" "}
-                <a href={`tel:${clinic.mobile}`} className="font-semibold underline">
-                  {clinic.mobile}
-                </a>
-                .
-              </p>
-            )}
+                <MonthSheet
+                  month={month}
+                  today={today}
+                  lastBookable={lastBookable}
+                  openDates={monthOpen ?? []}
+                  loading={monthOpen === null}
+                  closedWeekdays={closedWeekdays}
+                  todayOutOfTime={todayOutOfTime}
+                  selected={date}
+                  onSelect={(d) => void loadDay(d)}
+                  onMonth={(delta) => void loadMonth(addDays(`${month}-01`, delta > 0 ? 31 : -1).slice(0, 7))}
+                />
 
-            <button
-              type="button"
-              className="btn btn-primary wide-btn mt-6"
-              disabled={duration === 0 || tooLong || (showDentist && !dentistId)}
-              onClick={() => setStep("when")}
-            >
-              {duration === 0 ? "Pick what you need" : showDentist && !dentistId ? "Choose a dentist" : "Pick a day"}
-            </button>
-          </section>
-        )}
-
-        {step === "when" && (
-          <section>
-            <h2 ref={headingRef} tabIndex={-1} className="font-display text-[19px] font-bold outline-none">
-              When suits you?
-            </h2>
-            <p className="sub">
-              {duration} minutes with {dentist.name}.
-            </p>
-
-            <MonthSheet
-              month={month}
-              today={today}
-              lastBookable={lastBookable}
-              openDates={monthOpen}
-              selected={date}
-              onSelect={(d) => {
-                setDate(d);
-                setStartIso(null);
-              }}
-              onMonth={(delta) => {
-                const first = `${month}-01`;
-                setMonth(addDays(first, delta > 0 ? 31 : -1).slice(0, 7));
-                setDate(null);
-                setStartIso(null);
-              }}
-            />
-
-            {date && (
-              <div className="screen-in mt-6">
-                <div className="mini-head">
-                  <p className="m font-display">{formatDate(new Date(`${date}T00:00:00+08:00`))}</p>
-                  <span className="chip chip-brand">
-                    {starts.length} {starts.length === 1 ? "opening" : "openings"}
-                  </span>
-                </div>
-                {starts.length === 0 ? (
-                  <p className="empty-note">Nothing left on this day.</p>
-                ) : (
-                  <div className="slot-grid">
-                    {starts.map((s) => {
-                      const iso = s.toISOString();
-                      return (
-                        <button
-                          key={iso}
-                          type="button"
-                          onClick={() => setStartIso(iso)}
-                          aria-pressed={iso === startIso}
-                          className={`slot ${iso === startIso ? "sel" : ""}`}
-                        >
-                          {formatTime(s)}
-                        </button>
-                      );
-                    })}
+                {date && (
+                  <div className="screen-in mt-6">
+                    <div className="mini-head">
+                      <p className="m font-display">{formatDate(new Date(`${date}T00:00:00+08:00`))}</p>
+                      {starts && (
+                        <span className="chip chip-brand">
+                          {starts.length} {starts.length === 1 ? "opening" : "openings"}
+                        </span>
+                      )}
+                    </div>
+                    {starts === null ? (
+                      <p className="empty-note" aria-live="polite">
+                        Checking times...
+                      </p>
+                    ) : starts.length === 0 ? (
+                      <p className="empty-note">Nothing left on this day.</p>
+                    ) : (
+                      <div className="slot-grid">
+                        {starts.map((iso) => (
+                          <button
+                            key={iso}
+                            type="button"
+                            onClick={() => setStartIso(iso)}
+                            aria-pressed={iso === startIso}
+                            className={`slot ${iso === startIso ? "sel" : ""}`}
+                          >
+                            {formatTime(new Date(iso))}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
+
+                <div className="mt-6 flex gap-3">
+                  <button type="button" className="btn btn-ghost" onClick={() => setStep("what")}>
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary flex-1"
+                    disabled={!startIso}
+                    onClick={() => {
+                      setNotice("");
+                      setStep("who");
+                    }}
+                  >
+                    {startIso ? `Take ${formatTime(new Date(startIso))}` : "Pick a time"}
+                  </button>
+                </div>
+              </section>
             )}
 
-            <div className="mt-6 flex gap-3">
-              <button type="button" className="btn btn-ghost" onClick={() => setStep("what")}>
-                Back
-              </button>
-              <button type="button" className="btn btn-primary flex-1" disabled={!startIso} onClick={() => setStep("who")}>
-                {startIso ? `Take ${formatTime(new Date(startIso))}` : "Pick a time"}
-              </button>
-            </div>
-          </section>
-        )}
+            {step === "who" && start && (
+              <section>
+                <h2 ref={headingRef} tabIndex={-1} className="font-display text-[19px] font-bold outline-none">
+                  Who is this for?
+                </h2>
+                <p className="sub">The clinic texts this number to confirm.</p>
 
-        {step === "who" && start && (
-          <section>
-            <h2 ref={headingRef} tabIndex={-1} className="font-display text-[19px] font-bold outline-none">
-              Who is this for?
-            </h2>
-            <p className="sub">The clinic texts this number to confirm.</p>
+                <div className="cf-box mb-5">
+                  <div className="cf-row">
+                    <span className="k">When</span>
+                    <span className="v">{`${formatDate(start)}, ${formatTime(start)}`}</span>
+                  </div>
+                  <div className="cf-row">
+                    <span className="k">With</span>
+                    <span className="v">{dentist.name}</span>
+                  </div>
+                  <div className="cf-row">
+                    <span className="k">For</span>
+                    <span className="v">{chosen.map((p) => p.name).join(", ")}</span>
+                  </div>
+                </div>
 
-            <div className="cf-box mb-5">
-              <div className="cf-row">
-                <span className="k">When</span>
-                <span className="v">{`${formatDate(start)}, ${formatTime(start)}`}</span>
-              </div>
-              <div className="cf-row">
-                <span className="k">With</span>
-                <span className="v">{dentist.name}</span>
-              </div>
-              <div className="cf-row">
-                <span className="k">For</span>
-                <span className="v">{chosen.map((p) => p.name).join(", ")}</span>
-              </div>
-            </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="First name" error={errors.first}>
+                    <input
+                      className="f-input"
+                      value={form.first}
+                      autoComplete="given-name"
+                      maxLength={LIMITS.personName}
+                      onChange={(e) => setForm({ ...form, first: e.target.value })}
+                    />
+                  </Field>
+                  <Field label="Last name" error={errors.last}>
+                    <input
+                      className="f-input"
+                      value={form.last}
+                      autoComplete="family-name"
+                      maxLength={LIMITS.personName}
+                      onChange={(e) => setForm({ ...form, last: e.target.value })}
+                    />
+                  </Field>
+                </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="First name" error={errors.first}>
-                <input
-                  className="f-input"
-                  value={form.first}
-                  autoComplete="given-name"
-                  maxLength={LIMITS.personName}
-                  onChange={(e) => setForm({ ...form, first: e.target.value })}
-                />
-              </Field>
-              <Field label="Last name" error={errors.last}>
-                <input
-                  className="f-input"
-                  value={form.last}
-                  autoComplete="family-name"
-                  maxLength={LIMITS.personName}
-                  onChange={(e) => setForm({ ...form, last: e.target.value })}
-                />
-              </Field>
-            </div>
+                <Field label="Mobile number" error={errors.mobile}>
+                  <span className="prefix-row">
+                    <span aria-hidden="true" className="px">
+                      +63
+                    </span>
+                    <input
+                      className="f-input"
+                      value={form.mobile}
+                      inputMode="tel"
+                      autoComplete="tel-national"
+                      placeholder="917 123 4567"
+                      onChange={(e) => setForm({ ...form, mobile: e.target.value })}
+                    />
+                  </span>
+                </Field>
 
-            <Field label="Mobile number" error={errors.mobile}>
-              <span className="prefix-row">
-                <span aria-hidden="true" className="px">
-                  +63
-                </span>
-                <input
-                  className="f-input"
-                  value={form.mobile}
-                  inputMode="tel"
-                  autoComplete="tel-national"
-                  placeholder="917 123 4567"
-                  onChange={(e) => setForm({ ...form, mobile: e.target.value })}
-                />
-              </span>
-            </Field>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Birthday" optional error={errors.birthday}>
+                    <input
+                      type="date"
+                      className="f-input"
+                      value={form.birthday}
+                      max={today}
+                      min="1900-01-01"
+                      onChange={(e) => setForm({ ...form, birthday: e.target.value })}
+                    />
+                  </Field>
+                  <Field label="HMO provider" optional error={errors.hmo}>
+                    <input
+                      className="f-input"
+                      list="hmo-list"
+                      value={form.hmo}
+                      maxLength={LIMITS.hmo}
+                      onChange={(e) => setForm({ ...form, hmo: e.target.value })}
+                    />
+                    <datalist id="hmo-list">
+                      {HMO_SUGGESTIONS.map((h) => (
+                        <option key={h} value={h} />
+                      ))}
+                    </datalist>
+                  </Field>
+                </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Birthday" optional error={errors.birthday}>
-                <input
-                  type="date"
-                  className="f-input"
-                  value={form.birthday}
-                  max={today}
-                  min="1900-01-01"
-                  onChange={(e) => setForm({ ...form, birthday: e.target.value })}
-                />
-              </Field>
-              <Field label="HMO provider" optional error={errors.hmo}>
-                <input
-                  className="f-input"
-                  list="hmo-list"
-                  value={form.hmo}
-                  maxLength={LIMITS.hmo}
-                  onChange={(e) => setForm({ ...form, hmo: e.target.value })}
-                />
-                <datalist id="hmo-list">
-                  {HMO_SUGGESTIONS.map((h) => (
-                    <option key={h} value={h} />
-                  ))}
-                </datalist>
-              </Field>
-            </div>
+                <label className="member-row mt-4 items-start">
+                  <input
+                    type="checkbox"
+                    checked={form.consent}
+                    onChange={(e) => setForm({ ...form, consent: e.target.checked })}
+                    aria-describedby={errors.consent ? "consent-error" : undefined}
+                    style={{ marginTop: 2 }}
+                  />
+                  <span className="nm" style={{ fontSize: 13.5 }}>
+                    I agree to {clinic.name} and BrightSmile using my details to manage this appointment, as described in the{" "}
+                    <a href="/privacy" target="_blank" rel="noopener" className="link">
+                      Privacy Notice
+                    </a>
+                    .
+                  </span>
+                </label>
+                {errors.consent && (
+                  <p id="consent-error" className="field-err">
+                    {errors.consent}
+                  </p>
+                )}
 
-            <label className="member-row mt-4 items-start">
-              <input
-                type="checkbox"
-                checked={form.consent}
-                onChange={(e) => setForm({ ...form, consent: e.target.checked })}
-                aria-describedby={errors.consent ? "consent-error" : undefined}
-                style={{ marginTop: 2 }}
-              />
-              <span className="nm" style={{ fontSize: 13.5 }}>
-                I agree to {clinic.name} and BrightSmile using these details to manage this appointment, as set out in the
-                privacy notice.
-              </span>
-            </label>
-            {errors.consent && (
-              <p id="consent-error" className="field-err">
-                {errors.consent}
-              </p>
+                <div className="mt-6 flex gap-3">
+                  <button type="button" className="btn btn-ghost" onClick={() => setStep("when")}>
+                    Back
+                  </button>
+                  <button type="button" className="btn btn-primary flex-1" disabled={working} onClick={() => void submitDetails()}>
+                    {working ? "Sending..." : "Send request"}
+                  </button>
+                </div>
+
+                <p className="f-hint mt-4">
+                  Need help? Call{" "}
+                  <a href={`tel:${clinic.mobile}`} className="link">
+                    {phone}
+                  </a>
+                  .
+                </p>
+              </section>
             )}
 
-            <div className="mt-6 flex gap-3">
-              <button type="button" className="btn btn-ghost" onClick={() => setStep("when")}>
-                Back
-              </button>
-              <button type="button" className="btn btn-primary flex-1" onClick={submitDetails}>
-                Send request
-              </button>
-            </div>
+            {step === "code" && (
+              <section>
+                <h2 ref={headingRef} tabIndex={-1} className="font-display text-[19px] font-bold outline-none">
+                  Check your texts
+                </h2>
+                <p className="sub">
+                  We sent a 6 digit code to {localMobile(normalizeMobile(form.mobile) ?? "+63")}. It expires in 5 minutes.
+                </p>
 
-            <p className="f-hint mt-4">
-              Need help? Call{" "}
-              <a href={`tel:${clinic.mobile}`} className="link">
-                {clinic.mobile}
-              </a>
-              .
-            </p>
-          </section>
-        )}
+                <Field label="Code from the text" error={errors.code}>
+                  <input
+                    className="f-input text-center text-2xl font-bold tracking-[0.3em] tabular-nums"
+                    value={code}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                  />
+                </Field>
 
-        {step === "code" && (
-          <section>
-            <h2 ref={headingRef} tabIndex={-1} className="font-display text-[19px] font-bold outline-none">
-              Check your texts
-            </h2>
-            <p className="sub">
-              We sent a 6 digit code to {normalizeMobile(form.mobile) ?? form.mobile}. It expires in 5 minutes.
-            </p>
+                <div className="mt-6 flex gap-3">
+                  <button type="button" className="btn btn-ghost" onClick={() => setStep("who")}>
+                    Back
+                  </button>
+                  <button type="button" className="btn btn-primary flex-1" disabled={working} onClick={() => void verify()}>
+                    {working ? "Checking..." : "Confirm request"}
+                  </button>
+                </div>
 
-            <Field label="Code from the text" error={errors.code}>
-              <input
-                className="f-input text-center text-2xl font-bold tracking-[0.3em] tabular-nums"
-                value={code}
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-              />
-            </Field>
+                <p className="f-hint mt-4">
+                  {resendIn > 0 ? (
+                    <span className="tabular-nums">You can ask for another code in {resendIn}s.</span>
+                  ) : (
+                    <button type="button" onClick={() => void resend()} className="link" disabled={working}>
+                      Send another code
+                    </button>
+                  )}
+                </p>
+              </section>
+            )}
 
-            <div className="mt-6 flex gap-3">
-              <button type="button" className="btn btn-ghost" onClick={() => setStep("who")}>
-                Back
-              </button>
-              <button type="button" className="btn btn-primary flex-1" onClick={verifyCode}>
-                Confirm request
-              </button>
-            </div>
+            {step === "sent" && start && (
+              <section>
+                <h2 ref={headingRef} tabIndex={-1} className="font-display text-[19px] font-bold outline-none">
+                  Request sent
+                </h2>
+                <p className="sub">The clinic will confirm by text. Nothing is booked until they do.</p>
 
-            <p className="f-hint mt-4">
-              {resendIn > 0 ? (
-                <span className="tabular-nums">You can ask for another code in {resendIn}s.</span>
-              ) : (
-                <button type="button" onClick={() => setResendIn(60)} className="link">
-                  Send another code
+                <div className="cf-box screen-in">
+                  <span aria-hidden="true" className="cf-check">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M20 6 9 17l-5-5" />
+                    </svg>
+                  </span>
+                  <p className="big-time">{formatTime(start)}</p>
+                  <p className="font-display text-[15px] font-semibold">{formatDate(start)}</p>
+                  <p className="mt-3">
+                    <span className="chip chip-amber">Waiting for the clinic</span>
+                  </p>
+                  <div className="mt-4">
+                    <div className="cf-row">
+                      <span className="k">With</span>
+                      <span className="v">{dentist.name}</span>
+                    </div>
+                    <div className="cf-row">
+                      <span className="k">For</span>
+                      <span className="v">{chosen.map((p) => p.name).join(", ")}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <p className="f-hint mt-4">
+                  No reply within a day? Call{" "}
+                  <a href={`tel:${clinic.mobile}`} className="link">
+                    {phone}
+                  </a>
+                  .
+                </p>
+                {token && (
+                  <p className="f-hint mt-2">
+                    <Link href={`/a/${token}`} className="link">
+                      View or cancel this request
+                    </Link>
+                  </p>
+                )}
+
+                <button type="button" className="btn btn-ghost wide-btn mt-6" onClick={startOver}>
+                  Book another time
                 </button>
-              )}
-            </p>
-
-            <p className="note-box warn mt-4">
-              No text is sent on this sample page, so any 6 digits will do. The real page sends a code through Semaphore.
-            </p>
-          </section>
-        )}
-
-        {step === "sent" && start && (
-          <section>
-            <h2 ref={headingRef} tabIndex={-1} className="font-display text-[19px] font-bold outline-none">
-              Request sent
-            </h2>
-            <p className="sub">{clinic.name} will confirm by text. Nothing is booked until they do.</p>
-
-            <div className="cf-box screen-in">
-              <span aria-hidden="true" className="cf-check">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M20 6 9 17l-5-5" />
-                </svg>
-              </span>
-              <p className="big-time">{formatTime(start)}</p>
-              <p className="font-display text-[15px] font-semibold">{formatDate(start)}</p>
-              <p className="mt-3">
-                <span className="chip chip-amber">Waiting for the clinic</span>
-              </p>
-              <div className="mt-4">
-                <div className="cf-row">
-                  <span className="k">With</span>
-                  <span className="v">{dentist.name}</span>
-                </div>
-                <div className="cf-row">
-                  <span className="k">For</span>
-                  <span className="v">{chosen.map((p) => p.name).join(", ")}</span>
-                </div>
-                <div className="cf-row">
-                  <span className="k">Reference</span>
-                  <span className="v">{reference}</span>
-                </div>
-              </div>
-            </div>
-
-            <p className="f-hint mt-4">
-              No reply within a day? Call{" "}
-              <a href={`tel:${clinic.mobile}`} className="link">
-                {clinic.mobile}
-              </a>
-              .
-            </p>
-
-            <button type="button" className="btn btn-ghost wide-btn mt-6" onClick={startOver}>
-              Book another time
-            </button>
-          </section>
+              </section>
+            )}
+          </>
         )}
       </div>
 
       <p className="mt-5 text-center">
         <span className="brand-lockup">
-          {/* Placeholder mark in the logo's colours. Swap for /brand/logo.png when Kai adds the file. */}
-          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M12 3c2.2 0 3.3 1.1 5 1.1 1.4 0 2.5.9 2.5 3.2 0 3.1-1.3 4.6-2 7.4-.6 2.6-1 4.8-2.4 4.8-1.2 0-1.4-1.6-3.1-1.6s-1.9 1.6-3.1 1.6c-1.4 0-1.8-2.2-2.4-4.8-.7-2.8-2-4.3-2-7.4 0-2.3 1.1-3.2 2.5-3.2 1.7 0 2.8-1.1 5-1.1Z"
-              fill="var(--primary)"
-            />
-            <path d="M8.8 15.6c1.9 1.5 4.5 1.5 6.4 0" stroke="var(--gold)" strokeWidth="1.6" fill="none" strokeLinecap="round" />
-          </svg>
+          <Image src="/brand/logo.png" alt="" width={22} height={22} />
           <span className="wm">BrightSmile</span>
           <span className="tag">Booking</span>
         </span>
       </p>
     </div>
-  );
-}
-
-function Field({
-  label,
-  children,
-  error,
-  optional,
-}: {
-  label: string;
-  children: ReactNode;
-  error?: string;
-  optional?: boolean;
-}) {
-  return (
-    <label className="mt-4 block">
-      <span className="f-label">
-        {label}
-        {optional && <span className="f-optional">Optional</span>}
-      </span>
-      {children}
-      {error && <span className="field-err block">{error}</span>}
-    </label>
   );
 }

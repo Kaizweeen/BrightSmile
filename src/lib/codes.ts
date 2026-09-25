@@ -9,6 +9,13 @@ export const OTP = {
   perIpPerHour: 10,
 } as const;
 
+// Spec: caps how many pending online requests one mobile can hold at once, so one number can't
+// flood a clinic's (or the whole platform's) pending queue with unconfirmed requests.
+export const BOOKING_CAPS = {
+  perClinic: 3,
+  total: 5,
+} as const;
+
 export const DEVICE_COOKIE = "bs_verified";
 const DEVICE_DAYS = 180;
 const BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";

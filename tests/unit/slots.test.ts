@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitsAnyBlock, openDates, openStarts, withinHours, type Block } from "@/lib/slots";
+import { fitsAnyBlock, mergeWeeks, openDates, openStarts, withinHours, type Block } from "@/lib/slots";
 import { formatTime, manilaInstant } from "@/lib/time";
 
 const rules = { slotMinutes: 30, minNoticeMinutes: 120, maxDaysAhead: 60 };
@@ -99,5 +99,24 @@ describe("fitsAnyBlock", () => {
     const blocks: Block[][] = [[], [{ start: 9 * 60, end: 12 * 60 }], [], [], [], [], []];
     expect(fitsAnyBlock(180, blocks)).toBe(true);
     expect(fitsAnyBlock(181, blocks)).toBe(false);
+  });
+});
+
+describe("mergeWeeks", () => {
+  const a: Block[][] = [[], [{ start: 540, end: 720 }, { start: 780, end: 1020 }], [], [], [], [], []];
+  const b: Block[][] = [[], [{ start: 600, end: 800 }], [{ start: 540, end: 600 }], [], [], [], []];
+
+  it("merges every dentist's blocks per weekday", () => {
+    expect(mergeWeeks([a, b])).toEqual([[], [{ start: 540, end: 1020 }], [{ start: 540, end: 600 }], [], [], [], []]);
+  });
+
+  it("keeps a gap between blocks that do not touch", () => {
+    expect(mergeWeeks([a])[1]).toEqual([{ start: 540, end: 720 }, { start: 780, end: 1020 }]);
+  });
+
+  it("returns a closed week for no dentists and leaves its inputs alone", () => {
+    expect(mergeWeeks([])).toEqual([[], [], [], [], [], [], []]);
+    mergeWeeks([a, b]);
+    expect(a[1][0]).toEqual({ start: 540, end: 720 });
   });
 });

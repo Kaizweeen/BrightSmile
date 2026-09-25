@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Poppins } from "next/font/google";
 import "./globals.css";
 
@@ -29,7 +29,11 @@ RULES: Status never rests on colour alone, every state carries a word. Struck th
 export const metadata: Metadata = {
   title: { default: "BrightSmile", template: "%s | BrightSmile" },
   description: "Online booking for dental clinics in the Philippines.",
+  // iPhone: Add to Home Screen opens full screen, which iOS 16.4+ needs for web push (spec 10.4).
+  appleWebApp: { capable: true, title: "BrightSmile", statusBarStyle: "default" },
 };
+
+export const viewport: Viewport = { themeColor: "#12727e" };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (

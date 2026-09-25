@@ -11,6 +11,12 @@ type Props = {
   today: string;
   lastBookable: string;
   openDates: string[];
+  /** True while the server is working out this month's open days. */
+  loading: boolean;
+  /** Weekdays (0 Sunday) the chosen dentist doesn't work, so their days read "closed", not "fully booked". */
+  closedWeekdays: number[];
+  /** True when today has no slot left only because the day's hours or minimum notice have passed, not because every slot is taken. */
+  todayOutOfTime: boolean;
   selected: string | null;
   onSelect: (date: string) => void;
   onMonth: (delta: number) => void;
@@ -22,11 +28,22 @@ function monthLabel(month: string) {
 }
 
 /**
- * The month as Planorama's mini calendar: circular days, purple for the one
- * you chose, an outline on today. Days with nothing open are struck through
- * and say why in their accessible name, so the mark never rests on color.
+ * The month as a mini calendar: circular days, the primary colour for the one you chose, an outline
+ * on today. Days with nothing open are struck through and say why in their accessible name, so the
+ * mark never rests on colour. While the month loads, every day is muted and unpickable.
  */
-export default function MonthSheet({ month, today, lastBookable, openDates, selected, onSelect, onMonth }: Props) {
+export default function MonthSheet({
+  month,
+  today,
+  lastBookable,
+  openDates,
+  loading,
+  closedWeekdays,
+  todayOutOfTime,
+  selected,
+  onSelect,
+  onMonth,
+}: Props) {
   const dates = monthDates(month);
   const open = new Set(openDates);
   const blanks = weekday(dates[0]);
@@ -38,7 +55,7 @@ export default function MonthSheet({ month, today, lastBookable, openDates, sele
   const weeks = Array.from({ length: cells.length / 7 }, (_, w) => cells.slice(w * 7, w * 7 + 7));
 
   return (
-    <section aria-label="Choose a day">
+    <section aria-label="Choose a day" aria-busy={loading}>
       <div className="mini-head">
         <p className="m font-display">{monthLabel(month)}</p>
         <div className="mini-nav">
@@ -72,15 +89,15 @@ export default function MonthSheet({ month, today, lastBookable, openDates, sele
                   <td key={date}>
                     <button
                       type="button"
-                      disabled={!open.has(date)}
+                      disabled={loading || !open.has(date)}
                       aria-pressed={date === selected}
-                      aria-label={dayLabel(date, month, open.has(date), today, lastBookable)}
+                      aria-label={dayLabel(date, month, open.has(date), loading, today, lastBookable, closedWeekdays, todayOutOfTime)}
                       onClick={() => onSelect(date)}
                       className={[
                         "mini-day",
                         date === selected ? "sel" : "",
                         date === today && date !== selected ? "today" : "",
-                        open.has(date) ? "" : date >= today && date <= lastBookable ? "off" : "muted",
+                        loading ? "muted" : open.has(date) ? "" : date >= today && date <= lastBookable ? "off" : "muted",
                       ].join(" ")}
                     >
                       {Number(date.slice(8))}
@@ -112,9 +129,15 @@ export default function MonthSheet({ month, today, lastBookable, openDates, sele
         </span>
       </div>
 
-      <p className="sr-only">{`${openDates.length} days are open in ${monthLabel(month)}.`}</p>
+      {loading ? (
+        <p className="empty-note mt-3" aria-live="polite">
+          Checking openings...
+        </p>
+      ) : (
+        <p className="sr-only" aria-live="polite">{`${openDates.length} days are open in ${monthLabel(month)}.`}</p>
+      )}
 
-      {openDates.length === 0 && (
+      {!loading && openDates.length === 0 && (
         <p className="note-box mt-3">
           Nothing open in {monthLabel(month)}.{" "}
           {canGoForward ? (
@@ -130,12 +153,30 @@ export default function MonthSheet({ month, today, lastBookable, openDates, sele
   );
 }
 
-function dayLabel(date: string, month: string, isOpen: boolean, today: string, lastBookable: string) {
+function dayLabel(
+  date: string,
+  month: string,
+  isOpen: boolean,
+  loading: boolean,
+  today: string,
+  lastBookable: string,
+  closedWeekdays: number[],
+  todayOutOfTime: boolean,
+) {
   const day = Number(date.slice(8));
   const monthName = monthLabel(month).split(" ")[0];
-  const why = date < today ? "past" : date > lastBookable ? "too far ahead" : weekday(date) === 0 ? "closed" : "fully booked";
+  const why =
+    date < today
+      ? "past"
+      : date > lastBookable
+        ? "too far ahead"
+        : closedWeekdays.includes(weekday(date))
+          ? "closed"
+          : date === today && todayOutOfTime
+            ? "no more openings today"
+            : "fully booked";
   const parts = [`${DAY_NAMES[weekday(date)]}, ${monthName} ${day}`];
-  if (!isOpen) parts.push(why);
+  if (!isOpen && !loading) parts.push(why);
   if (date === today) parts.push("today");
   return parts.join(", ");
 }
