@@ -72,6 +72,8 @@ export async function sendReminders(now: Date): Promise<number> {
 /**
  * Billing spec 7.4: one heads-up per plan end, 3 days or less before it. Each clinic's notice first claims
  * renewal_notice_for with a compare-and-set, so a rerun never alerts twice. Returns how many alerts went out.
+ * A failed claim or alert is not retried (the claim may already be set), so after trying every clinic it throws,
+ * which marks the run failed and puts the counts in the log.
  * ponytail: reads every clinic_billing row (the API returns at most 1000); page through when clinics near that.
  */
 export async function sendRenewalNotices(now: Date): Promise<number> {
@@ -79,6 +81,7 @@ export async function sendRenewalNotices(now: Date): Promise<number> {
   const { data, error } = await db.from("clinic_billing").select("clinic_id, trial_ends_at, paid_through, renewal_notice_for");
   if (error) throw error;
   let sent = 0;
+  let failed = 0;
   for (const { clinicId, endsAt } of renewalNotices((data ?? []) as RenewalRow[], now)) {
     const endsIso = endsAt.toISOString();
     const { data: claimed, error: claimError } = await db
@@ -89,11 +92,14 @@ export async function sendRenewalNotices(now: Date): Promise<number> {
       .select("clinic_id");
     if (claimError) {
       logError("sendRenewalNotices claim", claimError);
+      failed++;
       continue;
     }
     if (!claimed || claimed.length === 0) continue;
-    if ((await alertPlanEnding(clinicId, endsAt)) !== "failed") sent++;
+    if ((await alertPlanEnding(clinicId, endsAt)) === "failed") failed++;
+    else sent++;
   }
+  if (failed > 0) throw new Error(`${failed} heads-ups failed, ${sent} sent`);
   return sent;
 }
 

@@ -109,6 +109,15 @@ describe("the words", () => {
     expect(statusLine(billingStatus(trial, lapsedNow), lapsedNow)).toBe("Your plan ended Fri Oct 9. Online booking reopens when you pay.");
   });
 
+  it("counts grace days on the Manila calendar, to the date the banner names", () => {
+    // The trial ended Fri Oct 9, 10:00 AM, so booking pauses Mon Oct 12, 10:00 AM.
+    const saturday = manilaInstant("2026-10-10", 60); // 1:00 AM, 2 days and 9 hours before the pause
+    expect(statusLine(billingStatus(trial, saturday), saturday)).toBe("Your plan ended Fri Oct 9. Online booking pauses in 2 days.");
+    const monday = manilaInstant("2026-10-12", 60);
+    expect(statusLine(billingStatus(trial, monday), monday)).toBe("Your plan ended Fri Oct 9. Online booking pauses today.");
+    expect(bannerText(billingStatus(trial, monday), monday)).toBe("Your plan ended. Online booking pauses on Mon Oct 12.");
+  });
+
   it("shows the banner only from 3 days before the end", () => {
     const early = at(trialEnd, -3 * DAY - 1);
     expect(bannerText(billingStatus(trial, early), early)).toBeNull();

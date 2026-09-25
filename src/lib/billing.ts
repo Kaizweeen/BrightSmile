@@ -87,7 +87,9 @@ export function statusLine(state: BillingState, now: Date): string {
   if (state.status === "active") return `Paid until ${ends}.`;
   if (state.status === "trial") return `Free trial until ${ends}.`;
   if (state.status === "lapsed") return `Your plan ended ${ends}. Online booking reopens when you pay.`;
-  const days = Math.max(1, Math.ceil((state.pausesAt.getTime() - now.getTime()) / DAY_MS));
+  // Manila calendar days to the pause, so the count always agrees with the date the banner names.
+  const days = (Date.parse(manilaDate(state.pausesAt)) - Date.parse(manilaDate(now))) / DAY_MS;
+  if (days === 0) return `Your plan ended ${ends}. Online booking pauses today.`;
   return `Your plan ended ${ends}. Online booking pauses in ${days} ${days === 1 ? "day" : "days"}.`;
 }
 
