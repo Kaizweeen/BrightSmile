@@ -45,7 +45,7 @@ Do these in order. Kai creates the accounts; nothing here can be done from code.
 
 ### 2. Supabase production project
 
-Production is the project with ref `fmvqwojzsklinbdmfjkn` (first created as `brightsmile-dev`, and empty at launch). Its migrations are already applied, so for it start at step 3. Steps 1 and 2 set up any new project, such as the separate development project that the database and e2e tests need.
+Production is the project with ref `fmvqwojzsklinbdmfjkn` (first created as `brightsmile-dev`, and empty at launch). Migrations 1 to 6 are already applied there, so for it start at step 3; migration 7 is pasted as described under "Billing" below. Steps 1 and 2 set up any new project, such as the separate development project that the database and e2e tests need.
 
 1. Create a new project, region Singapore. From **Project Settings > API Keys** copy the project URL, the publishable key, and the secret key.
 2. Apply the migrations in filename order: open each file in `supabase/migrations`, paste it into the **SQL Editor**, and run it before opening the next.
@@ -58,12 +58,13 @@ Production is the project with ref `fmvqwojzsklinbdmfjkn` (first created as `bri
    | 4 | `20260924000100_hardening.sql` |
    | 5 | `20260924000200_default_function_privileges.sql` |
    | 6 | `20260925000100_otp_issue_lock.sql` |
+   | 7 | `20260925000200_billing.sql` |
 
    Migrations run by hand are not recorded in the project's migration history. Before you ever use `npm run db:push` against this project, link it and mark them as applied, or the CLI will try to run them again:
 
    ```powershell
    npx supabase link --project-ref <production-project-ref>
-   npx supabase migration repair --status applied 20260922000100 20260922000200 20260922000300 20260924000100 20260924000200 20260925000100
+   npx supabase migration repair --status applied 20260922000100 20260922000200 20260922000300 20260924000100 20260924000200 20260925000100 20260925000200
    ```
 
 3. **Authentication > URL Configuration:** Site URL = your `APP_URL` (for example `https://brightsmile.ph`); add `https://brightsmile.ph/**` under Redirect URLs.
@@ -124,3 +125,37 @@ The Vercel project `bright-smile` already exists and is Git-connected: pushes to
 5. Have a lawyer review `/privacy` and `/terms` and replace every `[bracketed]` placeholder before real clinics sign up.
 6. Check the daily job weekly under **Settings > Cron Jobs** (a failed run shows as an error there), or add a Vercel alert or log drain.
 7. Before charging clinics: check whether NPC registration applies (likely once sensitive data on 1,000 or more people is held), run a trademark check on BrightSmile, and register the business.
+
+## Billing
+
+Clinics get a 14 day free trial at signup, then prepay 1 to 12 months (spec: `docs/superpowers/specs/2026-09-25-brightsmile-billing-design.md`). Prices are in `TIERS` in `src/lib/billing.ts`: Solo (1 to 2 active dentists) ₱399 a month, Team (3 to 6) ₱1,299, Group (7 or more) ₱1,799. Three days before a plan ends the clinic gets a push or a text; 3 days after it ends, its booking page and reminder texts pause until it pays. The dashboard always keeps working.
+
+### Apply the billing migration (once, before merging the billing branch)
+
+Every merge to `main` deploys, and the new code reads the new tables, so the migration goes first.
+
+1. Open `supabase/migrations/20260925000200_billing.sql`, paste it into the production **SQL Editor**, and run it. It creates `clinic_billing` and `payments`, gives every existing clinic its trial (14 days from its signup), and adds `record_payment`, `extend_trial`, and `admin_overview`. `npm test` has already applied it to an offline copy of the schema (`tests/sql`).
+2. Check it: `select count(*) from public.clinics c left join public.clinic_billing b on b.clinic_id = c.id where b.clinic_id is null;` must return `0`.
+3. If you ever link the project for `npm run db:push`, mark it applied first: `npx supabase migration repair --status applied 20260925000200`.
+
+### Environment
+
+| Variable | Needed |
+|---|---|
+| `OPERATOR_EMAILS` | Production. The login emails that may open `/admin`, comma separated. The email must be confirmed. |
+| `BILLING_GCASH_NAME`, `BILLING_GCASH_NUMBER` | Production. The GCash account clinics pay, shown on the Billing page. |
+| `PAYMONGO_SECRET_KEY`, `PAYMONGO_WEBHOOK_SECRET` | Optional, both or neither. Set them once live PayMongo keys exist (they need a registered business). |
+
+Set the first three in Vercel (**Settings > Environment Variables**, Production) before merging the billing branch: the server refuses to start without them.
+
+### Record a GCash payment
+
+1. A clinic sends the amount shown on its Billing page, with its booking link name (for example `bright-dental`) as the GCash note.
+2. When it arrives in your GCash app, log in with an `OPERATOR_EMAILS` address, open `/admin`, find the clinic, choose the months, check the amount (prefilled with the price), type the GCash reference number, and press **Record payment**. The plan extends from its current end, or from today after a lapse.
+3. **Extend trial** on the same card adds days to a trial, for example for the `demo` clinic.
+
+### Turn on PayMongo
+
+1. In the PayMongo dashboard (Developers), create a webhook for the event `checkout_session.payment.paid` pointing at `{APP_URL}/api/paymongo/webhook`, and copy its secret.
+2. In Vercel, set `PAYMONGO_SECRET_KEY` (the secret key from the same page) and `PAYMONGO_WEBHOOK_SECRET`, then redeploy. The Billing page then shows **Pay online** (GCash, Maya, or card on PayMongo's page).
+3. Pay 1 month for the demo clinic: within a minute the payment shows in its Billing page history and on `/admin`. A payment that never shows means the webhook failed: check the Vercel logs for "paymongo webhook", and record it by hand on `/admin` meanwhile.
