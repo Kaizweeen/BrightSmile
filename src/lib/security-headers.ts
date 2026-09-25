@@ -41,7 +41,9 @@ export const NOINDEX_SOURCES = [
  * The same areas for robots.txt, which matches by prefix: the trailing slashes on /app/, /a/, /auth/, and
  * /api/ keep booking links like /apple-dental crawlable. /app itself is covered by its noindex header.
  */
-export const ROBOTS_DISALLOW = ["/app/", "/a/", "/onboarding", "/login", "/signup", "/forgot", "/reset-password", "/auth/", "/api/"];
+// Folder prefixes only. robots.txt matches by prefix, so a page like /login would also hide a clinic whose
+// booking link is /login-dental; the single auth pages rely on their X-Robots-Tag noindex header instead.
+export const ROBOTS_DISALLOW = ["/app/", "/a/", "/onboarding/", "/auth/", "/api/"];
 
 /** Everything next.config.ts sends. Later rules override earlier ones with the same key, so /sw.js goes last. */
 export function securityHeaders({ dev, https }: { dev: boolean; https: boolean }): HeaderRule[] {
