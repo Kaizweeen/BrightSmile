@@ -24,7 +24,7 @@ export function anonDb(): SupabaseClient {
 export const rand = () => Math.random().toString(36).slice(2, 8);
 
 /** A confirmed user, and a client signed in as them. */
-export async function signedInUser(): Promise<{ db: SupabaseClient; userId: string }> {
+export async function signedInUser(): Promise<{ db: SupabaseClient; userId: string; email: string; password: string }> {
   const email = `bs-test-${rand()}@example.com`;
   const password = `pw-${rand()}-${rand()}-${rand()}`;
   const { data, error } = await adminDb().auth.admin.createUser({ email, password, email_confirm: true });
@@ -32,7 +32,7 @@ export async function signedInUser(): Promise<{ db: SupabaseClient; userId: stri
   const db = anonDb();
   const { error: signInError } = await db.auth.signInWithPassword({ email, password });
   if (signInError) throw signInError;
-  return { db, userId: data.user.id };
+  return { db, userId: data.user.id, email, password };
 }
 
 export async function deleteUser(userId: string) {
@@ -116,6 +116,7 @@ export async function staffClinic() {
     .throwOnError();
   return {
     staff: { db: user.db, userId: user.userId, clinicId: clinicId as string },
+    login: { email: user.email, password: user.password },
     seed: { clinic, dentist, patient },
     procedures: procedures as { id: string; name: string; duration_minutes: number }[],
   };

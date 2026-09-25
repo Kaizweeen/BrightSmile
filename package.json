@@ -9,6 +9,8 @@
     "lint": "eslint",
     "test": "vitest run tests/unit",
     "test:db": "vitest run tests/db",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "node --env-file-if-exists=.env.local node_modules/@playwright/test/cli.js install chromium",
     "db:push": "supabase db push --yes"
   },
   "dependencies": {
@@ -20,6 +22,7 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^24.13.6",
     "@types/react": "^19",

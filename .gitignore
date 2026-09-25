@@ -55,3 +55,8 @@ supabase/.branches/
 .superpowers/
 supabase/telemetry.json
 supabase/traces/
+
+# Playwright output
+/test-results/
+/playwright-report/
+/blob-report/

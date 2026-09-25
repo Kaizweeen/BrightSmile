@@ -18,9 +18,20 @@ Online booking for dental clinics in the Philippines. Patients request a time fr
 | `npm run dev` | Dev server on port 3600 |
 | `npm test` | Unit tests, no network needed |
 | `npm run test:db` | Database tests against the development Supabase project |
+| `npm run test:e2e` | The Playwright booking test (starts the dev server if needed) |
+| `npm run test:e2e:install` | Download Chromium for Playwright (once) |
 | `npm run db:push` | Apply new migrations to the linked Supabase project |
 | `npm run build` | Production build |
 | `npm run lint` | ESLint |
+
+## End-to-end test
+
+One Playwright test walks the whole booking loop: a patient books on a clinic's page, the code is read from `sms_log`, the clinic approves in the dashboard, and the visit shows on the schedule.
+
+1. Once: put `PLAYWRIGHT_BROWSERS_PATH=D:\playwright-browsers` (or any folder on a drive with space) in `.env.local`, then run `npm run test:e2e:install`.
+2. Run `npm run test:e2e`. It uses the dev server on port 3600, starting it if needed, with `SMS_MODE=log`.
+
+The test creates its own clinic and staff login in the development Supabase project and deletes them afterwards. Like `npm run test:db`, it refuses to run against any other project, because it uses the secret key.
 
 ## Deploy to production
 
