@@ -134,6 +134,13 @@ describe("billing variables", () => {
     expect(problems.join(" ")).not.toContain("not-an-email");
     expect(problems.join(" ")).not.toContain("12345");
   });
+
+  it("refuses an OPERATOR_EMAILS value that lists no addresses", () => {
+    for (const empty of [",", " , ,"]) {
+      expect(envProblems({ ...production, OPERATOR_EMAILS: empty })).toEqual(["OPERATOR_EMAILS lists no email addresses"]);
+      expect(envProblems({ ...dev, OPERATOR_EMAILS: empty })).toEqual(["OPERATOR_EMAILS lists no email addresses"]);
+    }
+  });
 });
 
 describe("assertEnv", () => {

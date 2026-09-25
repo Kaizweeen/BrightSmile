@@ -58,8 +58,10 @@ export function envProblems(env: Env): string[] {
     problems.push("SMS_LOW_CREDIT_THRESHOLD must be a whole number");
   }
   if (env.SEMAPHORE_SENDER_NAME && env.SEMAPHORE_SENDER_NAME.length > 11) problems.push("SEMAPHORE_SENDER_NAME must be at most 11 characters");
-  if (env.OPERATOR_EMAILS?.trim() && !operatorEmails(env.OPERATOR_EMAILS).every((email) => cleanEmail(email))) {
-    problems.push("OPERATOR_EMAILS must be email addresses separated by commas");
+  if (env.OPERATOR_EMAILS?.trim()) {
+    const emails = operatorEmails(env.OPERATOR_EMAILS);
+    if (emails.length === 0) problems.push("OPERATOR_EMAILS lists no email addresses");
+    else if (!emails.every((email) => cleanEmail(email))) problems.push("OPERATOR_EMAILS must be email addresses separated by commas");
   }
   if (env.BILLING_GCASH_NUMBER?.trim() && !normalizeMobile(env.BILLING_GCASH_NUMBER)) {
     problems.push("BILLING_GCASH_NUMBER must be a Philippine mobile number");
