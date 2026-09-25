@@ -81,3 +81,23 @@ export async function recordPayment(p: NewPayment): Promise<{ status: "ok" | "du
   const result = data as { status: "ok" | "duplicate"; paid_through: string | null };
   return { status: result.status, paidThrough: result.paid_through };
 }
+
+export type PaymentItem = { id: string; paidAt: string; months: number; amountCentavos: number; method: Method };
+
+/** The Billing page's payment history, newest first (spec 7.1). Staff pass their RLS client. */
+export async function loadPayments(db: SupabaseClient, clinicId: string): Promise<PaymentItem[]> {
+  const { data } = await db
+    .from("payments")
+    .select("id, paid_at, months, amount_centavos, method")
+    .eq("clinic_id", clinicId)
+    .order("paid_at", { ascending: false })
+    .limit(24)
+    .throwOnError();
+  return (data as { id: string; paid_at: string; months: number; amount_centavos: number; method: Method }[]).map((p) => ({
+    id: p.id,
+    paidAt: p.paid_at,
+    months: p.months,
+    amountCentavos: p.amount_centavos,
+    method: p.method,
+  }));
+}

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { AccountForms, ProfileForm, RulesForm } from "./ClinicForms";
 import DentistEditor from "./DentistEditor";
 import ProcedureEditor from "./ProcedureEditor";
@@ -33,6 +34,13 @@ export default async function SettingsPage() {
         <DentistEditor dentist={null} />
       </section>
       <ProcedureEditor procedures={settings.procedures} />
+      <section className="card card-pad settings-section">
+        <h2 className="font-display">Plan and billing</h2>
+        <p className="f-hint">See when your plan ends, pay by GCash or online, and see past payments.</p>
+        <Link href="/app/billing" className="btn btn-soft mt-3">
+          Open Billing
+        </Link>
+      </section>
       <AccountForms />
     </>
   );
