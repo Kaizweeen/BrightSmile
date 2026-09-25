@@ -5,10 +5,15 @@ import { logError } from "@/lib/log";
 import { isUuid } from "@/lib/validate";
 
 const CHECKOUT_SESSIONS = "https://api.paymongo.com/v1/checkout_sessions";
+/** The only place createCheckout sends a clinic. */
+const CHECKOUT_ORIGIN = "https://checkout.paymongo.com";
 /** The one event that records a payment (billing spec 7.3). */
 export const PAID_EVENT = "checkout_session.payment.paid";
-/** A signature whose timestamp is further than this from now is refused (spec 7.3: 5 minutes). */
-export const SIGNATURE_TOLERANCE_S = 300;
+/**
+ * A signature whose timestamp is further than this from now is refused: 3 days either way (spec 7.3). PayMongo
+ * does not document whether its retries are signed again, and record_payment makes a replayed delivery harmless.
+ */
+export const SIGNATURE_TOLERANCE_S = 3 * 24 * 60 * 60;
 
 export type PayMongoKeys = { secretKey: string; webhookSecret: string };
 
@@ -53,15 +58,26 @@ export function checkoutRequest(input: CheckoutInput, secretKey: string): { url:
   };
 }
 
-/** Creates the checkout session and returns its checkout_url, or null after logging the status (never the key). Never throws. */
+/**
+ * Creates the checkout session and returns its checkout_url, which must be on checkout.paymongo.com. Otherwise
+ * null, after logging the status and PayMongo's error code: never the key, and never the error's detail, which
+ * can echo what was sent. Never throws.
+ */
 export async function createCheckout(input: CheckoutInput, secretKey: string): Promise<string | null> {
   try {
     const { url, init } = checkoutRequest(input, secretKey);
     const res = await fetch(url, { ...init, signal: AbortSignal.timeout(10_000) });
-    const body = (await res.json().catch(() => null)) as { data?: { attributes?: { checkout_url?: unknown } } } | null;
+    const body = (await res.json().catch(() => null)) as {
+      data?: { attributes?: { checkout_url?: unknown } };
+      errors?: { code?: unknown }[];
+    } | null;
     const checkoutUrl = body?.data?.attributes?.checkout_url;
-    if (res.ok && typeof checkoutUrl === "string" && checkoutUrl.startsWith("https://")) return checkoutUrl;
-    logError("createCheckout", `PayMongo answered ${res.status}`);
+    if (res.ok && typeof checkoutUrl === "string" && URL.canParse(checkoutUrl) && new URL(checkoutUrl).origin === CHECKOUT_ORIGIN) {
+      return checkoutUrl;
+    }
+    const code = body?.errors?.[0]?.code;
+    const reason = typeof code === "string" && /^\w{1,64}$/.test(code) ? `, ${code}` : "";
+    logError("createCheckout", res.ok ? `PayMongo gave no ${CHECKOUT_ORIGIN} checkout_url` : `PayMongo answered ${res.status}${reason}`);
     return null;
   } catch (e) {
     logError("createCheckout", e);
@@ -72,7 +88,7 @@ export async function createCheckout(input: CheckoutInput, secretKey: string): P
 /**
  * The Paymongo-Signature header is "t=<unix seconds>,te=<hex>,li=<hex>": an HMAC-SHA256 of "{t}.{raw body}"
  * with the webhook secret, in li for live events and te for test events. Compared in constant time, and
- * refused when t is more than 5 minutes from now.
+ * refused when t is more than SIGNATURE_TOLERANCE_S (3 days) from now.
  */
 export function verifySignature(header: string | null, rawBody: string, secret: string | undefined, livemode: boolean, now: Date): boolean {
   if (!header || !secret) return false;
@@ -90,15 +106,19 @@ export function verifySignature(header: string | null, rawBody: string, secret: 
 }
 
 export type PaidCheckout = { sessionId: string; clinicId: string; months: number; amountCentavos: number };
-export type WebhookEvent = { livemode: boolean; type: string | null; paid: PaidCheckout | null };
+/** eventId and sessionId are kept for logs (neither is a secret); paid is what gets recorded. */
+export type WebhookEvent = { eventId: string | null; livemode: boolean; type: string | null; sessionId: string | null; paid: PaidCheckout | null };
 
 const record = (value: unknown): Record<string, unknown> | null =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 
+/** A plain PayMongo id ("evt_...", "cs_..."), or null, so nothing odd reaches a log or the database. */
+const plainId = (value: unknown): string | null => (typeof value === "string" && /^[A-Za-z0-9_]{1,100}$/.test(value) ? value : null);
+
 /**
- * Reads a webhook body defensively, checking every field it uses: {data: {attributes: {type, livemode,
- * data: <checkout session>}}}. paid is set only for a paid checkout whose session carries our metadata and
- * paid amounts; any other shape leaves it null.
+ * Reads a webhook body defensively, checking every field it uses: {data: {id, attributes: {type, livemode,
+ * data: <checkout session>}}}. paid is set only for a paid checkout whose session carries our metadata and at
+ * least one paid payment; any other shape leaves it null.
  */
 export function readWebhookEvent(rawBody: string): WebhookEvent {
   let root: unknown = null;
@@ -107,21 +127,23 @@ export function readWebhookEvent(rawBody: string): WebhookEvent {
   } catch {
     // Not JSON: nothing to read.
   }
-  const attributes = record(record(record(root)?.data)?.attributes);
+  const data = record(record(root)?.data);
+  const attributes = record(data?.attributes);
+  const session = record(attributes?.data);
+  const sessionId = plainId(session?.id);
   const livemode = attributes?.livemode === true;
   const type = typeof attributes?.type === "string" ? attributes.type : null;
-  const none = { livemode, type, paid: null };
+  const none = { eventId: plainId(data?.id), livemode, type, sessionId, paid: null };
   if (type !== PAID_EVENT) return none;
 
-  const session = record(attributes?.data);
   const details = record(session?.attributes);
   const metadata = record(details?.metadata);
-  const sessionId = session?.id;
   const clinicId = metadata?.clinic_id;
   const months = parseMonths(metadata?.months);
-  if (typeof sessionId !== "string" || !/^[A-Za-z0-9_]{1,100}$/.test(sessionId) || !isUuid(clinicId) || months === null) return none;
+  if (!sessionId || !isUuid(clinicId) || months === null) return none;
+  // PayMongo lists one payment per attempt, failed ones included: only the paid ones count.
   const payments = Array.isArray(details?.payments) ? details.payments : [];
-  const amounts = payments.map((p) => record(record(p)?.attributes)?.amount);
+  const amounts = payments.map((p) => record(record(p)?.attributes)).filter((a) => a?.status === "paid").map((a) => a?.amount);
   if (amounts.length === 0 || !amounts.every((a): a is number => Number.isInteger(a) && (a as number) > 0)) return none;
-  return { livemode, type, paid: { sessionId, clinicId, months, amountCentavos: amounts.reduce((sum, a) => sum + a, 0) } };
+  return { ...none, paid: { sessionId, clinicId, months, amountCentavos: amounts.reduce((sum, a) => sum + a, 0) } };
 }

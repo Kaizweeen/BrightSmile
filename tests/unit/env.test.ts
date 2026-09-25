@@ -116,6 +116,15 @@ describe("billing variables", () => {
     expect(envProblems({ ...production, PAYMONGO_SECRET_KEY: "sk_live_abc", PAYMONGO_WEBHOOK_SECRET: "whsk_abc" })).toEqual([]);
   });
 
+  it("refuses a PayMongo test key in production only, without repeating it", () => {
+    const testKey = { PAYMONGO_SECRET_KEY: " sk_test_4b2f1c9e ", PAYMONGO_WEBHOOK_SECRET: "whsk_abc" };
+    const problems = envProblems({ ...production, ...testKey });
+    expect(problems).toEqual(["PAYMONGO_SECRET_KEY must be a live key in production, not a test key"]);
+    expect(problems.join(" ")).not.toContain("4b2f1c9e");
+    expect(envProblems({ ...dev, ...testKey })).toEqual([]);
+    expect(envProblems({ ...dev, NODE_ENV: "production", VERCEL_ENV: "preview", APP_URL: "https://bsmile.vercel.app", ...testKey })).toEqual([]);
+  });
+
   it("checks the formats without repeating the values", () => {
     const problems = envProblems({ ...production, OPERATOR_EMAILS: "kai@example.com, not-an-email", BILLING_GCASH_NUMBER: "12345" });
     expect(problems).toEqual([

@@ -67,6 +67,10 @@ export function envProblems(env: Env): string[] {
   if (Boolean(env.PAYMONGO_SECRET_KEY?.trim()) !== Boolean(env.PAYMONGO_WEBHOOK_SECRET?.trim())) {
     problems.push("PAYMONGO_SECRET_KEY and PAYMONGO_WEBHOOK_SECRET must be set together, or neither");
   }
+  // Test payments must never extend real plans (the webhook also ignores test events in production).
+  if (production && env.PAYMONGO_SECRET_KEY?.trim().startsWith("sk_test_")) {
+    problems.push("PAYMONGO_SECRET_KEY must be a live key in production, not a test key");
+  }
   return problems;
 }
 

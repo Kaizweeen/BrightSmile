@@ -14,7 +14,10 @@ function signature(body: string, { live = false, t = T, secret = SECRET } = {}) 
   return live ? `t=${t},te=,li=${hex}` : `t=${t},te=${hex},li=`;
 }
 
-function paidEvent({ live = false, metadata = { clinic_id: CLINIC, months: "3" } as Record<string, unknown>, payments = [{ attributes: { amount: 389_700 } }] as unknown[] } = {}) {
+/** One entry of a checkout session's payments: PayMongo lists every attempt, failed ones included. */
+const attempt = (amount: unknown, status = "paid") => ({ attributes: { amount, status } });
+
+function paidEvent({ live = false, metadata = { clinic_id: CLINIC, months: "3" } as Record<string, unknown>, payments = [attempt(389_700)] as unknown[] } = {}) {
   return JSON.stringify({
     data: {
       id: "evt_9aZ",
@@ -74,6 +77,34 @@ describe("createCheckout", () => {
     expect(fetchSpy.mock.calls[0][0]).toBe("https://api.paymongo.com/v1/checkout_sessions");
   });
 
+  it("sends clinics only to a checkout page on checkout.paymongo.com", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    for (const checkoutUrl of [
+      "https://checkout.paymongo.com.evil.ph/cs_1",
+      "https://evil.ph/https://checkout.paymongo.com/cs_1",
+      "http://checkout.paymongo.com/cs_1",
+      "https://checkout.paymongo.com:8443/cs_1",
+      "javascript:alert(1)",
+      "not a url",
+      42,
+    ]) {
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(Response.json({ data: { id: "cs_1", attributes: { checkout_url: checkoutUrl } } }));
+      expect(await createCheckout(input, "sk_test_abc"), String(checkoutUrl)).toBeNull();
+    }
+    expect(logged).toHaveBeenCalledTimes(7);
+    expect(logged).toHaveBeenCalledWith("createCheckout failed:", "PayMongo gave no https://checkout.paymongo.com checkout_url");
+  });
+
+  it("logs PayMongo's error code with the status, but not its detail", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      Response.json({ errors: [{ code: "parameter_invalid", detail: "reference_number bright-dental is invalid" }] }, { status: 400 }),
+    );
+    expect(await createCheckout(input, "sk_test_abc")).toBeNull();
+    expect(logged).toHaveBeenCalledWith("createCheckout failed:", "PayMongo answered 400, parameter_invalid");
+    expect(JSON.stringify(logged.mock.calls)).not.toContain("bright-dental");
+  });
+
   it("gives null for a refusal or a network error, and never logs the key", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(Response.json({ errors: [{ detail: "Unauthorized" }] }, { status: 401 }));
@@ -106,10 +137,12 @@ describe("verifySignature", () => {
     expect(verifySignature(signature(body), body, "", false, NOW)).toBe(false);
   });
 
-  it("refuses a timestamp more than 5 minutes away, either way", () => {
-    expect(verifySignature(signature(body, { t: T - 300 }), body, SECRET, false, NOW)).toBe(true);
-    expect(verifySignature(signature(body, { t: T - 301 }), body, SECRET, false, NOW)).toBe(false);
-    expect(verifySignature(signature(body, { t: T + 301 }), body, SECRET, false, NOW)).toBe(false);
+  it("refuses a timestamp more than 3 days away, either way, so retries of an old delivery still verify", () => {
+    const days3 = 3 * 24 * 60 * 60;
+    expect(verifySignature(signature(body, { t: T - days3 }), body, SECRET, false, NOW)).toBe(true);
+    expect(verifySignature(signature(body, { t: T + days3 }), body, SECRET, false, NOW)).toBe(true);
+    expect(verifySignature(signature(body, { t: T - days3 - 1 }), body, SECRET, false, NOW)).toBe(false);
+    expect(verifySignature(signature(body, { t: T + days3 + 1 }), body, SECRET, false, NOW)).toBe(false);
   });
 
   it("refuses a malformed header", () => {
@@ -123,20 +156,34 @@ describe("verifySignature", () => {
 describe("readWebhookEvent", () => {
   it("reads a paid checkout: our session id, clinic, months, and the amount paid", () => {
     expect(readWebhookEvent(paidEvent())).toEqual({
+      eventId: "evt_9aZ",
       livemode: false,
       type: "checkout_session.payment.paid",
+      sessionId: "cs_test_4Nd9k2",
       paid: { sessionId: "cs_test_4Nd9k2", clinicId: CLINIC, months: 3, amountCentavos: 389_700 },
     });
     expect(readWebhookEvent(paidEvent({ live: true })).livemode).toBe(true);
-    const split = paidEvent({ payments: [{ attributes: { amount: 200_000 } }, { attributes: { amount: 189_700 } }] });
+    const split = paidEvent({ payments: [attempt(200_000), attempt(189_700)] });
     expect(readWebhookEvent(split).paid?.amountCentavos).toBe(389_700);
   });
 
+  it("counts only the paid attempts", () => {
+    const retried = paidEvent({ payments: [attempt(389_700, "failed"), attempt(389_700)] });
+    expect(readWebhookEvent(retried).paid?.amountCentavos).toBe(389_700);
+  });
+
   it("reads other events without a payment", () => {
-    const other = JSON.stringify({ data: { attributes: { type: "payment.failed", livemode: true, data: {} } } });
-    expect(readWebhookEvent(other)).toEqual({ livemode: true, type: "payment.failed", paid: null });
-    expect(readWebhookEvent("not json")).toEqual({ livemode: false, type: null, paid: null });
-    expect(readWebhookEvent("[]")).toEqual({ livemode: false, type: null, paid: null });
+    const other = JSON.stringify({ data: { id: "evt_2", attributes: { type: "payment.failed", livemode: true, data: {} } } });
+    expect(readWebhookEvent(other)).toEqual({ eventId: "evt_2", livemode: true, type: "payment.failed", sessionId: null, paid: null });
+    const empty = { eventId: null, livemode: false, type: null, sessionId: null, paid: null };
+    expect(readWebhookEvent("not json")).toEqual(empty);
+    expect(readWebhookEvent("[]")).toEqual(empty);
+  });
+
+  it("keeps the event and session ids of a paid checkout it cannot read, for the log, but only plain ids", () => {
+    expect(readWebhookEvent(paidEvent({ metadata: {} }))).toMatchObject({ eventId: "evt_9aZ", sessionId: "cs_test_4Nd9k2", paid: null });
+    const odd = paidEvent().replace('"evt_9aZ"', '"evt 9aZ; x"').replace('"cs_test_4Nd9k2"', '"cs_' + "x".repeat(100) + '"');
+    expect(readWebhookEvent(odd)).toMatchObject({ eventId: null, sessionId: null, paid: null });
   });
 
   it("leaves paid empty when any field it needs is missing or wrong", () => {
@@ -146,9 +193,12 @@ describe("readWebhookEvent", () => {
       paidEvent({ metadata: { clinic_id: CLINIC, months: "13" } }),
       paidEvent({ metadata: { clinic_id: CLINIC, months: "0" } }),
       paidEvent({ payments: [] }),
-      paidEvent({ payments: [{ attributes: { amount: "389700" } }] }),
-      paidEvent({ payments: [{ attributes: { amount: 0 } }] }),
-      paidEvent({ payments: [{ attributes: {} }] }),
+      paidEvent({ payments: [attempt(389_700, "failed")] }),
+      paidEvent({ payments: [{ attributes: { amount: 389_700 } }] }),
+      paidEvent({ payments: [attempt("389700")] }),
+      paidEvent({ payments: [attempt(0)] }),
+      paidEvent({ payments: [attempt(389_700), attempt(-1)] }),
+      paidEvent({ payments: [{ attributes: { status: "paid" } }] }),
       paidEvent({ payments: [null] }),
       paidEvent().replace('"cs_test_4Nd9k2"', '"cs test; drop"'),
     ]) {
