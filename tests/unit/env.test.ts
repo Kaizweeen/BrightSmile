@@ -23,6 +23,9 @@ const production = {
   VAPID_PRIVATE_KEY: "vapid-private",
   VAPID_SUBJECT: "mailto:hello@brightsmile.ph",
   NEXT_PUBLIC_CONTACT_EMAIL: "hello@brightsmile.ph",
+  OPERATOR_EMAILS: "kai@example.com",
+  BILLING_GCASH_NAME: "Kai B.",
+  BILLING_GCASH_NUMBER: "0917 555 0101",
 };
 
 describe("envProblems", () => {
@@ -93,6 +96,34 @@ describe("envProblems", () => {
     for (const value of ["short-secret", "tiny-app-secret", "028123456", "lots", "BrightSmileClinic"]) {
       expect(problems.join("\n")).not.toContain(value);
     }
+  });
+});
+
+describe("billing variables", () => {
+  it("requires the operator emails and the GCash details in production only", () => {
+    const { OPERATOR_EMAILS, BILLING_GCASH_NAME, BILLING_GCASH_NUMBER, ...missing } = production;
+    void OPERATOR_EMAILS;
+    void BILLING_GCASH_NAME;
+    void BILLING_GCASH_NUMBER;
+    expect(envProblems(missing)).toEqual(["OPERATOR_EMAILS is not set", "BILLING_GCASH_NAME is not set", "BILLING_GCASH_NUMBER is not set"]);
+    expect(envProblems(dev)).toEqual([]);
+  });
+
+  it("wants both PayMongo keys or neither, everywhere", () => {
+    const both = "PAYMONGO_SECRET_KEY and PAYMONGO_WEBHOOK_SECRET must be set together, or neither";
+    expect(envProblems({ ...dev, PAYMONGO_SECRET_KEY: "sk_test_abc" })).toEqual([both]);
+    expect(envProblems({ ...production, PAYMONGO_WEBHOOK_SECRET: "whsk_abc" })).toEqual([both]);
+    expect(envProblems({ ...production, PAYMONGO_SECRET_KEY: "sk_live_abc", PAYMONGO_WEBHOOK_SECRET: "whsk_abc" })).toEqual([]);
+  });
+
+  it("checks the formats without repeating the values", () => {
+    const problems = envProblems({ ...production, OPERATOR_EMAILS: "kai@example.com, not-an-email", BILLING_GCASH_NUMBER: "12345" });
+    expect(problems).toEqual([
+      "OPERATOR_EMAILS must be email addresses separated by commas",
+      "BILLING_GCASH_NUMBER must be a Philippine mobile number",
+    ]);
+    expect(problems.join(" ")).not.toContain("not-an-email");
+    expect(problems.join(" ")).not.toContain("12345");
   });
 });
 

@@ -1,5 +1,7 @@
+import { operatorEmails } from "@/lib/admin";
 import { normalizeMobile } from "@/lib/phone";
 import { productionModeError, smsMode } from "@/lib/sms/prepare";
+import { cleanEmail } from "@/lib/validate";
 
 type Env = Record<string, string | undefined>;
 
@@ -17,6 +19,9 @@ const LIVE = [
   "VAPID_PRIVATE_KEY",
   "VAPID_SUBJECT",
   "NEXT_PUBLIC_CONTACT_EMAIL",
+  "OPERATOR_EMAILS",
+  "BILLING_GCASH_NAME",
+  "BILLING_GCASH_NUMBER",
 ];
 
 function parseUrl(value: string): URL | null {
@@ -53,6 +58,15 @@ export function envProblems(env: Env): string[] {
     problems.push("SMS_LOW_CREDIT_THRESHOLD must be a whole number");
   }
   if (env.SEMAPHORE_SENDER_NAME && env.SEMAPHORE_SENDER_NAME.length > 11) problems.push("SEMAPHORE_SENDER_NAME must be at most 11 characters");
+  if (env.OPERATOR_EMAILS?.trim() && !operatorEmails(env.OPERATOR_EMAILS).every((email) => cleanEmail(email))) {
+    problems.push("OPERATOR_EMAILS must be email addresses separated by commas");
+  }
+  if (env.BILLING_GCASH_NUMBER?.trim() && !normalizeMobile(env.BILLING_GCASH_NUMBER)) {
+    problems.push("BILLING_GCASH_NUMBER must be a Philippine mobile number");
+  }
+  if (Boolean(env.PAYMONGO_SECRET_KEY?.trim()) !== Boolean(env.PAYMONGO_WEBHOOK_SECRET?.trim())) {
+    problems.push("PAYMONGO_SECRET_KEY and PAYMONGO_WEBHOOK_SECRET must be set together, or neither");
+  }
   return problems;
 }
 
