@@ -635,8 +635,11 @@ export default function BookingSheet({ clinic, nowIso }: Props) {
                     style={{ marginTop: 2 }}
                   />
                   <span className="nm" style={{ fontSize: 13.5 }}>
-                    I agree to {clinic.name} and BrightSmile using my details to manage this appointment, as described in the
-                    Privacy Notice.
+                    I agree to {clinic.name} and BrightSmile using my details to manage this appointment, as described in the{" "}
+                    <a href="/privacy" target="_blank" rel="noopener" className="link">
+                      Privacy Notice
+                    </a>
+                    .
                   </span>
                 </label>
                 {errors.consent && (
