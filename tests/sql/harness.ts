@@ -16,6 +16,12 @@ export const MIGRATIONS = readdirSync(DIR)
  * reading the JWT claims the way PostgREST sets them, and Supabase's default privileges, which grant
  * every new table, sequence, and function in public to anon, authenticated, and service_role. Keeping
  * those defaults means a migration that forgets a revoke fails a test here instead of leaking in production.
+ *
+ * Two differences remain. PGlite runs migrations as a superuser, while Supabase's postgres role is not one
+ * (it owns the tables and bypasses RLS), and auth belongs to supabase_auth_admin there. A migration that
+ * needs superuser, or a security definer function that reaches into auth internals, can pass here and fail
+ * on paste, so keep migrations to what the postgres role may do. PGlite is pinned to 0.4.6 (Postgres 17.5)
+ * because production runs Postgres 17: avoid Postgres 18 features.
  */
 const SUPABASE = `
   set timezone to 'UTC';

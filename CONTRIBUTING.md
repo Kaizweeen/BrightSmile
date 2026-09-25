@@ -97,7 +97,8 @@ There is no development Supabase project (the first one became production) and n
 
 - Never edit a migration that production already has. Add a new one.
 - Name migrations `YYYYMMDDHHMMSS_what.sql` in `supabase/migrations`.
-- A new table gets RLS, explicit grants, and its per-clinic access rules in the same PR, with a test in `tests/sql`. Supabase grants new tables to `anon` and `authenticated` by default, and so does the harness, so a forgotten revoke fails a test.
+- A new table gets RLS, explicit grants, and its per-clinic access rules in the same PR, with a test in `tests/sql`. Supabase grants new tables to `anon` and `authenticated` by default, and so does the harness, so a forgotten revoke fails a test. The tests also list exactly which functions visitors and signed-in staff may run, so a new function must be granted on purpose.
+- The harness runs Postgres 17 (PGlite pinned to 0.4.6), the major version production runs. Do not use Postgres 18 features, and keep migrations to what Supabase's `postgres` role may do: it is not a superuser, although PGlite runs as one.
 - Kai pastes a reviewed migration into the production SQL Editor just before merging the PR that needs it, because every merge to `main` deploys. Never run `npm run db:push`: the only project is production.
 - When two open PRs both change the database, merge them one at a time.
 

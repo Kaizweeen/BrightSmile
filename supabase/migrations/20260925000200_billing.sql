@@ -25,7 +25,9 @@ create table public.payments (
   -- The operator who recorded a GCash payment; null for PayMongo.
   recorded_by uuid references auth.users (id) on delete set null,
   paid_through_after timestamptz not null,
-  paid_at timestamptz not null default now()
+  paid_at timestamptz not null default now(),
+  -- A PayMongo payment always carries its session id, so it can only ever be recorded once.
+  check ((method = 'paymongo') = (provider_session_id is not null))
 );
 create index payments_clinic_time on public.payments (clinic_id, paid_at);
 
@@ -91,9 +93,10 @@ $$;
 revoke execute on function public.create_clinic(jsonb) from public, anon;
 grant execute on function public.create_clinic(jsonb) to authenticated;
 
--- Clinics that signed up before billing get their 14 days from signup.
+-- Clinics that signed up before billing existed get a fresh 14 day trial from today, so none pauses the
+-- moment this migration runs. Safe to run again: it only adds rows that are missing.
 insert into public.clinic_billing (clinic_id, trial_ends_at)
-select id, created_at + interval '14 days' from public.clinics
+select id, now() + interval '14 days' from public.clinics
 on conflict (clinic_id) do nothing;
 
 -- Records one payment in one transaction (billing spec 6). A payment extends from the latest of
@@ -136,7 +139,9 @@ begin
     return jsonb_build_object('status', 'duplicate', 'paid_through', v_paid);
   end if;
 
-  v_after := greatest(coalesce(v_paid, '-infinity'::timestamptz), v_trial, now()) + make_interval(months => p_months);
+  -- Months are added on the Manila calendar, whatever the session time zone (greatest ignores a null paid_through).
+  v_after := ((greatest(v_paid, v_trial, now()) at time zone 'Asia/Manila') + make_interval(months => p_months))
+    at time zone 'Asia/Manila';
 
   update public.clinic_billing
   set paid_through = v_after, renewal_notice_for = null
@@ -156,15 +161,28 @@ grant execute on function public.record_payment(uuid, text, integer, integer, te
 -- The operator extends a trial by some days, from the later of its end and now (billing spec 7.6).
 create function public.extend_trial(p_clinic_id uuid, p_days integer)
 returns timestamptz
-language sql
+language plpgsql
 security invoker
 set search_path = ''
 as $$
+declare
+  v_end timestamptz;
+begin
+  if p_days is null or p_days not between 1 and 365 then
+    raise exception 'days must be between 1 and 365' using errcode = '22023';
+  end if;
+
   insert into public.clinic_billing (clinic_id, trial_ends_at)
   select id, now() + make_interval(days => p_days) from public.clinics where id = p_clinic_id
   on conflict (clinic_id) do update
     set trial_ends_at = greatest(public.clinic_billing.trial_ends_at, now()) + make_interval(days => p_days)
-  returning trial_ends_at;
+  returning trial_ends_at into v_end;
+
+  if v_end is null then
+    raise exception 'clinic not found' using errcode = 'P0002';
+  end if;
+  return v_end;
+end;
 $$;
 revoke execute on function public.extend_trial(uuid, integer) from public, anon, authenticated;
 grant execute on function public.extend_trial(uuid, integer) to service_role;

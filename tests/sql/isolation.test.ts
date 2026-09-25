@@ -96,6 +96,22 @@ describe("visitors without a session", () => {
   });
 });
 
+describe("signed-in staff", () => {
+  it("can run only the staff functions", async () => {
+    const { rows } = await db.query<{ proname: string }>(
+      "select proname from pg_proc where pronamespace = 'public'::regnamespace and has_function_privilege('authenticated', oid, 'execute') order by 1",
+    );
+    expect(rows.map((r) => r.proname)).toEqual(["create_booking", "create_clinic", "is_clinic_member", "move_appointment", "set_appointment_status"]);
+  });
+});
+
+describe("the offline engine", () => {
+  it("is Postgres 17, the major version production runs", async () => {
+    const { rows } = await db.query<{ major: number }>("select current_setting('server_version_num')::int / 10000 as major");
+    expect(rows).toEqual([{ major: 17 }]);
+  });
+});
+
 describe("double booking guard", () => {
   const insert = (clinic: Clinic, start: string, end: string, status: string) =>
     db.query(
