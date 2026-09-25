@@ -2,8 +2,9 @@ import "server-only";
 import { appUrl } from "@/lib/app-url";
 import { billingStatus } from "@/lib/billing";
 import { loadBillings } from "@/lib/billing-data";
-import { LOW_CREDIT_GAP_MS, lowCreditThreshold, reminders, reminderWindow, type ReminderRow } from "@/lib/daily";
+import { LOW_CREDIT_GAP_MS, lowCreditThreshold, reminders, reminderWindow, renewalNotices, type ReminderRow, type RenewalRow } from "@/lib/daily";
 import { logError } from "@/lib/log";
+import { alertPlanEnding } from "@/lib/notify";
 import { normalizeMobile } from "@/lib/phone";
 import { smsMode, type SmsMode } from "@/lib/sms/prepare";
 import { semaphoreBalance, sendSms } from "@/lib/sms/send";
@@ -64,6 +65,34 @@ export async function sendReminders(now: Date): Promise<number> {
       vars: { clinic: r.clinic, first: r.first, time: r.time, dentist: r.dentist ?? undefined, link: `${app}/a/${r.token}` },
     });
     if (status !== "failed") sent++;
+  }
+  return sent;
+}
+
+/**
+ * Billing spec 7.4: one heads-up per plan end, 3 days or less before it. Each clinic's notice first claims
+ * renewal_notice_for with a compare-and-set, so a rerun never alerts twice. Returns how many alerts went out.
+ * ponytail: reads every clinic_billing row (the API returns at most 1000); page through when clinics near that.
+ */
+export async function sendRenewalNotices(now: Date): Promise<number> {
+  const db = adminClient();
+  const { data, error } = await db.from("clinic_billing").select("clinic_id, trial_ends_at, paid_through, renewal_notice_for");
+  if (error) throw error;
+  let sent = 0;
+  for (const { clinicId, endsAt } of renewalNotices((data ?? []) as RenewalRow[], now)) {
+    const endsIso = endsAt.toISOString();
+    const { data: claimed, error: claimError } = await db
+      .from("clinic_billing")
+      .update({ renewal_notice_for: endsIso })
+      .eq("clinic_id", clinicId)
+      .or(`renewal_notice_for.is.null,renewal_notice_for.neq."${endsIso}"`)
+      .select("clinic_id");
+    if (claimError) {
+      logError("sendRenewalNotices claim", claimError);
+      continue;
+    }
+    if (!claimed || claimed.length === 0) continue;
+    if ((await alertPlanEnding(clinicId, endsAt)) !== "failed") sent++;
   }
   return sent;
 }
@@ -133,6 +162,7 @@ type Failed = "failed";
 export type DailySummary = {
   ok: boolean;
   reminders: number | Failed;
+  renewals: number | Failed;
   expired: number | Failed;
   cleaned: { codes: number; bodies: number } | Failed;
   credit: { status: CreditCheck; balance: number | null } | Failed;
@@ -154,7 +184,8 @@ export async function runDailyJob(now: Date): Promise<DailySummary> {
   const expired = await step("expiry", () => expirePending());
   const cleaned = await step("cleanup", () => cleanup(now));
   const sent = await step("reminders", () => sendReminders(now));
+  const renewals = await step("renewal notices", () => sendRenewalNotices(now));
   const credit = await step("credit check", () => checkCredit(now));
-  const failed = [sent, expired, cleaned, credit].includes("failed") || (credit !== "failed" && credit.status === "unknown");
-  return { ok: !failed, reminders: sent, expired, cleaned, credit };
+  const failed = [sent, renewals, expired, cleaned, credit].includes("failed") || (credit !== "failed" && credit.status === "unknown");
+  return { ok: !failed, reminders: sent, renewals, expired, cleaned, credit };
 }
