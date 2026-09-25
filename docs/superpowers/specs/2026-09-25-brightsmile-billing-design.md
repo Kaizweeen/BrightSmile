@@ -95,7 +95,7 @@ The clinic sends the amount with its slug as the note. Kai sees it in the GCash 
 ### 7.3 PayMongo payment
 
 1. "Pay online" posts a server action that computes the amount on the server and creates a checkout session: `POST https://api.paymongo.com/v1/checkout_sessions`, basic auth with the secret key, one line item ("BrightSmile {tier} plan, {n} months", amount in centavos, `PHP`, quantity 1), `payment_method_types` `gcash`, `paymaya`, `card`, `success_url` `{APP_URL}/app/billing?paid=1`, `cancel_url` `{APP_URL}/app/billing`, `reference_number` the slug, `metadata` with the clinic id and months, `send_email_receipt` true. It redirects to the returned `checkout_url`.
-2. PayMongo calls `POST /api/paymongo/webhook`. The route reads the raw body and verifies the `Paymongo-Signature` header (`t=...,te=...,li=...`): HMAC-SHA256 of `{t}.{raw body}` with `PAYMONGO_WEBHOOK_SECRET`, compared in constant time against `li` for live events and `te` for test events, rejecting timestamps older than 5 minutes. A bad signature gets 401.
+2. PayMongo calls `POST /api/paymongo/webhook`. The route reads the raw body and verifies the `Paymongo-Signature` header (`t=...,te=...,li=...`): HMAC-SHA256 of `{t}.{raw body}` with `PAYMONGO_WEBHOOK_SECRET`, compared in constant time against `li` for live events and `te` for test events, rejecting timestamps more than 3 days from now in either direction (PayMongo does not document whether its retries are signed again, and `record_payment` makes a replayed delivery harmless). A bad signature gets 401.
 3. For `checkout_session.payment.paid` it takes the session id, the metadata, and the amount paid, and calls `record_payment` with method `paymongo`. `ok` and `duplicate` both answer 200. Any other event answers 200 and is ignored. A database failure answers 500 so PayMongo retries, which is safe because the payment records once.
 4. `?paid=1` on the Billing page says "Payment received. Your plan updates within a minute." The page never trusts the query string for the plan itself.
 
@@ -149,4 +149,13 @@ A new daily job step: for each clinic whose `ends_at` is after now and at most 3
 
 ## Revisions
 
-None yet.
+2026-09-26, from review of the implementation:
+
+- Webhook timestamp tolerance is 3 days either way, not 5 minutes, so PayMongo's retries of an old delivery still verify (7.3).
+- The migration gives existing clinics a fresh 14 day trial from the moment it runs, so none pauses at deploy (6).
+- Two more service-role functions: `extend_trial` (the admin page's trial extension, 1 to 365 days) and `admin_overview` (the admin page's clinic list in one call) (6, 7.6).
+- GCash reference numbers are unique, so the same transfer cannot be recorded twice (6, 7.2).
+- A PayMongo payment must carry its checkout session id, and a GCash payment must not (6).
+- Production refuses a PayMongo test secret key at start, and the webhook ignores test events in production (7.3, 10).
+- `record_payment` adds months on the Manila calendar, whatever the session time zone (6).
+- The offline harness pins PGlite to 0.4.6, which is Postgres 17 like production (9).
