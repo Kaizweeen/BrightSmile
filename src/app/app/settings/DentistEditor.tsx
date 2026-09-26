@@ -18,8 +18,11 @@ function span(startsAt: string, endsAt: string): string {
   return `${formatDate(s)}, ${formatTime(s)} to ${formatDate(e)}, ${formatTime(e)}`;
 }
 
-/** One dentist (or "Add a dentist" when null): name, short name, weekly hours, active, and time off. */
-export default function DentistEditor({ dentist }: { dentist: Dentist | null }) {
+/**
+ * One dentist (or "Add a dentist" when null): name, short name, weekly hours, active, and time off. Staff (canEdit
+ * false) see only the time off, the one part of a dentist they may change (teams spec 4).
+ */
+export default function DentistEditor({ dentist, canEdit = true }: { dentist: Dentist | null; canEdit?: boolean }) {
   const blank = { name: "", smsName: "", hours: DEFAULT_HOURS };
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(dentist ? { name: dentist.name, smsName: dentist.smsName, hours: dentist.hours } : blank);
@@ -39,7 +42,7 @@ export default function DentistEditor({ dentist }: { dentist: Dentist | null }) 
         </span>
         <span className={`chip ${dentist.active ? "chip-green" : "chip-gold"}`}>{dentist.active ? "Active" : "Inactive"}</span>
         <button type="button" className="btn btn-ghost" onClick={() => setOpen(true)}>
-          Edit
+          {canEdit ? "Edit" : "Time off"}
         </button>
       </div>
     ) : (
@@ -51,54 +54,67 @@ export default function DentistEditor({ dentist }: { dentist: Dentist | null }) 
 
   return (
     <div className="cf-box mt-3">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          startTransition(async () => {
-            const r = await saveDentistAction(dentist?.id ?? null, form);
-            setResult(r);
-            if (r.ok && !dentist) {
-              setForm(blank);
-              setOpen(false);
-            }
-          });
-        }}
-      >
-        <Field label="Display name" hint='For example "Dr. Ana Reyes".' error={err("name")}>
-          <input
-            className="f-input"
-            maxLength={60}
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-          />
-        </Field>
-        <Field label="Short name for texts" hint="Up to 16 characters, like Dr. Reyes." error={err("smsName")}>
-          <input className="f-input" maxLength={16} value={form.smsName} onChange={(e) => setForm({ ...form, smsName: e.target.value })} />
-        </Field>
-        <HoursEditor hours={form.hours} onChange={(hours) => setForm({ ...form, hours })} error={err("hours")} />
-        <p className="f-hint mt-2">Changing hours cancels nothing. Visits outside the new hours show Outside hours on the schedule.</p>
-        <Feedback result={result} inline={["name", "smsName", "hours"]} />
-        <div className="action-row">
+      {canEdit ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            startTransition(async () => {
+              const r = await saveDentistAction(dentist?.id ?? null, form);
+              setResult(r);
+              if (r.ok && !dentist) {
+                setForm(blank);
+                setOpen(false);
+              }
+            });
+          }}
+        >
+          <Field label="Display name" hint='For example "Dr. Ana Reyes".' error={err("name")}>
+            <input
+              className="f-input"
+              maxLength={60}
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
+          </Field>
+          <Field label="Short name for texts" hint="Up to 16 characters, like Dr. Reyes." error={err("smsName")}>
+            <input className="f-input" maxLength={16} value={form.smsName} onChange={(e) => setForm({ ...form, smsName: e.target.value })} />
+          </Field>
+          <HoursEditor hours={form.hours} onChange={(hours) => setForm({ ...form, hours })} error={err("hours")} />
+          <p className="f-hint mt-2">Changing hours cancels nothing. Visits outside the new hours show Outside hours on the schedule.</p>
+          <Feedback result={result} inline={["name", "smsName", "hours"]} />
+          <div className="action-row">
+            <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>
+              Close
+            </button>
+            <button type="submit" className="btn btn-primary flex-1" disabled={pending}>
+              {pending ? "Saving..." : dentist ? "Save dentist" : "Add dentist"}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="flex items-center justify-between gap-3">
+          <p className="font-display text-[16px] font-bold">{dentist?.name}</p>
           <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>
             Close
           </button>
-          <button type="submit" className="btn btn-primary flex-1" disabled={pending}>
-            {pending ? "Saving..." : dentist ? "Save dentist" : "Add dentist"}
-          </button>
         </div>
-      </form>
+      )}
 
       {dentist && (
         <>
-          <button
-            type="button"
-            className={`btn mt-5 ${dentist.active ? "btn-danger" : "btn-soft"}`}
-            disabled={pending}
-            onClick={() => startTransition(async () => setResult(await setDentistActiveAction(dentist.id, !dentist.active)))}
-          >
-            {dentist.active ? "Deactivate" : "Reactivate"}
-          </button>
-          <p className="f-hint">Inactive dentists leave the booking page and New appointment. Their appointments stay.</p>
+          {canEdit && (
+            <>
+              <button
+                type="button"
+                className={`btn mt-5 ${dentist.active ? "btn-danger" : "btn-soft"}`}
+                disabled={pending}
+                onClick={() => startTransition(async () => setResult(await setDentistActiveAction(dentist.id, !dentist.active)))}
+              >
+                {dentist.active ? "Deactivate" : "Reactivate"}
+              </button>
+              <p className="f-hint">Inactive dentists leave the booking page and New appointment. Their appointments stay.</p>
+            </>
+          )}
 
           <h3 className="f-label mt-6">Time off</h3>
           {dentist.timeOff.length === 0 && <p className="f-hint">None planned.</p>}

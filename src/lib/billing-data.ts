@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { bannerText, billingFromRow, billingStatus, manilaMonthStart, type Billing, type BillingRow, type BillingState } from "@/lib/billing";
 import { logError } from "@/lib/log";
 import { adminClient } from "@/lib/supabase/admin";
-import type { Staff } from "@/lib/supabase/server";
+import type { Member } from "@/lib/supabase/server";
 
 /**
  * Each clinic's billing, with the missing-row rule (billing spec 11). Staff pages pass their RLS client (members
@@ -33,10 +33,13 @@ export async function bookingOpen(clinicId: string, now: Date): Promise<boolean>
   return billingStatus(await loadBilling(adminClient(), clinicId), now).open;
 }
 
-/** The dashboard banner, or null. Never throws: a failed billing read must not take the dashboard down. */
-export async function billingBanner(staff: Staff, now: Date): Promise<string | null> {
+/**
+ * The dashboard banner, or null, in the owner's or the staff's words (teams spec 6.5). Never throws: a failed billing
+ * read must not take the dashboard down.
+ */
+export async function billingBanner(member: Member, now: Date): Promise<string | null> {
   try {
-    return bannerText(billingStatus(await loadBilling(staff.db, staff.clinicId), now), now);
+    return bannerText(billingStatus(await loadBilling(member.db, member.clinicId), now), now, member.role === "owner");
   } catch (e) {
     logError("billingBanner", e);
     return null;

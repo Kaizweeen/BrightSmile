@@ -17,6 +17,25 @@ type Props = { searchParams: Promise<{ paid?: string | string[] }> };
 export default async function BillingPage({ searchParams }: Props) {
   const staff = await requireStaff();
   const now = new Date();
+  // Teams spec 6.5: staff see the status line only, without prices, payment options, or history.
+  if (staff.role !== "owner") {
+    const state = billingStatus(await loadBilling(staff.db, staff.clinicId), now);
+    return (
+      <>
+        <div className="page-head">
+          <h1 className="font-display">Billing</h1>
+        </div>
+        <section className="card card-pad settings-section">
+          <h2 className="font-display">Your plan</h2>
+          <div className="chip-row">
+            <span className={`chip ${STATUS_CHIP[state.status]}`}>{STATUS_LABEL[state.status]}</span>
+          </div>
+          <p className="mt-2">{statusLine(state, now)}</p>
+          <p className="f-hint mt-2">Your clinic&apos;s owner handles the plan and payments.</p>
+        </section>
+      </>
+    );
+  }
   const [billing, dentists, payments, clinic, { paid }] = await Promise.all([
     loadBilling(staff.db, staff.clinicId),
     activeDentists(staff.db, staff.clinicId),

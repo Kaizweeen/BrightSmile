@@ -129,6 +129,17 @@ describe("the words", () => {
     expect(bannerText(billingStatus(trial, lapsed), lapsed)).toBe("Online booking is paused. Pay to reopen it.");
   });
 
+  it("asks staff to tell the owner in place of the payment prompt (teams spec 6.5)", () => {
+    const early = at(trialEnd, -3 * DAY - 1);
+    expect(bannerText(billingStatus(trial, early), early, false)).toBeNull();
+    const threeDays = at(trialEnd, -3 * DAY);
+    expect(bannerText(billingStatus(trial, threeDays), threeDays, false)).toBe("Your plan ends on Fri Oct 9. Ask your clinic's owner to renew.");
+    const grace = at(trialEnd, DAY);
+    expect(bannerText(billingStatus(trial, grace), grace, false)).toBe("Your plan ended. Online booking pauses on Mon Oct 12. Ask your clinic's owner to renew.");
+    const lapsed = at(trialEnd, 3 * DAY);
+    expect(bannerText(billingStatus(trial, lapsed), lapsed, false)).toBe("Online booking is paused. Ask your clinic's owner to renew.");
+  });
+
   it("tells patients of a paused clinic to call", () => {
     expect(pausedMessage("Bright Dental", "09171234567")).toBe("Bright Dental is not taking online requests right now. Call 09171234567 to book.");
   });

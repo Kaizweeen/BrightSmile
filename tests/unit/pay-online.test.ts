@@ -3,13 +3,18 @@ import { payOnline } from "@/app/app/billing/actions";
 import { activeDentists } from "@/lib/billing-data";
 import { createCheckout } from "@/lib/paymongo";
 
-const fake = vi.hoisted(() => ({ slugRead: null as unknown as () => Promise<{ data: { slug: string } }> }));
+const fake = vi.hoisted(() => ({ slugRead: null as unknown as () => Promise<{ data: { slug: string } }>, owner: true }));
 
 vi.mock("@/lib/supabase/server", () => ({
-  requireStaff: async () => ({
-    clinicId: "3f1c2d4e-5a6b-4c7d-8e9f-0a1b2c3d4e5f",
-    db: { from: () => ({ select: () => ({ eq: () => ({ single: () => ({ throwOnError: () => fake.slugRead() }) }) }) }) },
-  }),
+  OWNER_ONLY: "Only the clinic's owner can change this.",
+  requireOwner: async () =>
+    fake.owner
+      ? {
+          clinicId: "3f1c2d4e-5a6b-4c7d-8e9f-0a1b2c3d4e5f",
+          role: "owner",
+          db: { from: () => ({ select: () => ({ eq: () => ({ single: () => ({ throwOnError: () => fake.slugRead() }) }) }) }) },
+        }
+      : null,
 }));
 vi.mock("@/lib/billing-data", () => ({ activeDentists: vi.fn() }));
 vi.mock("@/lib/paymongo", () => ({ paymongoKeys: () => ({ secretKey: "sk_live_abc", webhookSecret: "whsk_abc" }), createCheckout: vi.fn() }));
@@ -33,6 +38,7 @@ beforeEach(() => {
   vi.mocked(activeDentists).mockReset().mockResolvedValue(3);
   vi.mocked(createCheckout).mockReset().mockResolvedValue("https://checkout.paymongo.com/cs_1");
   fake.slugRead = async () => ({ data: { slug: "bright-dental" } });
+  fake.owner = true;
 });
 
 describe("payOnline", () => {
@@ -54,5 +60,12 @@ describe("payOnline", () => {
   it("charges what the server computes and redirects to checkout", async () => {
     await expect(payOnline({}, form("3"))).rejects.toThrow("NEXT_REDIRECT https://checkout.paymongo.com/cs_1");
     expect(vi.mocked(createCheckout).mock.calls[0][0]).toMatchObject({ slug: "bright-dental", tier: "Team", months: 3, amountCentavos: 389_700 });
+  });
+
+  it("answers staff that only the owner pays, before reading anything (teams spec 4)", async () => {
+    fake.owner = false;
+    expect(await payOnline({}, form("3"))).toEqual({ error: "Only the clinic's owner can change this." });
+    expect(activeDentists).not.toHaveBeenCalled();
+    expect(createCheckout).not.toHaveBeenCalled();
   });
 });

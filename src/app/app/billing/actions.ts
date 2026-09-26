@@ -6,7 +6,7 @@ import { amountCentavos, parseMonths, tierFor } from "@/lib/billing";
 import { activeDentists } from "@/lib/billing-data";
 import { logError } from "@/lib/log";
 import { createCheckout, paymongoKeys } from "@/lib/paymongo";
-import { requireStaff } from "@/lib/supabase/server";
+import { OWNER_ONLY, requireOwner } from "@/lib/supabase/server";
 
 export type PayState = { error?: string };
 
@@ -14,10 +14,12 @@ const UNAVAILABLE = "Online payment is not available right now. You can pay by G
 
 /**
  * Billing spec 7.3: opens PayMongo checkout for the chosen months. The amount comes from the clinic's active
- * dentists, read here on the server, never from the form. redirect stays outside any try block.
+ * dentists, read here on the server, never from the form. redirect stays outside any try block. Only the owner pays
+ * (teams spec 4).
  */
 export async function payOnline(_state: PayState, form: FormData): Promise<PayState> {
-  const staff = await requireStaff();
+  const staff = await requireOwner();
+  if (!staff) return { error: OWNER_ONLY };
   const months = parseMonths(form.get("months"));
   if (!months) return { error: "Choose how many months to pay for." };
   const keys = paymongoKeys();

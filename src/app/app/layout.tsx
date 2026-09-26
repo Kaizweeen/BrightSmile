@@ -35,10 +35,15 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       <main id="main" className="app-main">
         {banner && (
           <p className="note-box warn mb-4">
-            {banner}{" "}
-            <Link href="/app/billing" className="link inline-flex min-h-11 items-center">
-              Go to Billing
-            </Link>
+            {banner}
+            {staff.role === "owner" && (
+              <>
+                {" "}
+                <Link href="/app/billing" className="link inline-flex min-h-11 items-center">
+                  Go to Billing
+                </Link>
+              </>
+            )}
           </p>
         )}
         {children}

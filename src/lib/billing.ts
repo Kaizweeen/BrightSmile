@@ -93,11 +93,15 @@ export function statusLine(state: BillingState, now: Date): string {
   return `Your plan ended ${ends}. Online booking pauses in ${days} ${days === 1 ? "day" : "days"}.`;
 }
 
-/** The dashboard banner (spec 7.5), or null when the plan has more than 3 days left. */
-export function bannerText(state: BillingState, now: Date): string | null {
-  if (state.status === "lapsed") return "Online booking is paused. Pay to reopen it.";
-  if (state.status === "grace") return `Your plan ended. Online booking pauses on ${billingDate(state.pausesAt, now)}.`;
-  if (state.endsAt.getTime() - now.getTime() <= NOTICE_DAYS * DAY_MS) return `Your plan ends on ${billingDate(state.endsAt, now)}.`;
+/**
+ * The dashboard banner (spec 7.5), or null when the plan has more than 3 days left. Staff cannot pay, so they get
+ * "Ask your clinic's owner to renew." in place of the payment prompt (teams spec 6.5).
+ */
+export function bannerText(state: BillingState, now: Date, owner = true): string | null {
+  const ask = owner ? "" : " Ask your clinic's owner to renew.";
+  if (state.status === "lapsed") return owner ? "Online booking is paused. Pay to reopen it." : `Online booking is paused.${ask}`;
+  if (state.status === "grace") return `Your plan ended. Online booking pauses on ${billingDate(state.pausesAt, now)}.${ask}`;
+  if (state.endsAt.getTime() - now.getTime() <= NOTICE_DAYS * DAY_MS) return `Your plan ends on ${billingDate(state.endsAt, now)}.${ask}`;
   return null;
 }
 
