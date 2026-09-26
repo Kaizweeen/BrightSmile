@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import Field from "@/components/Field";
 import MonthSheet from "./MonthSheet";
 import { getOpenDates, getOpenStarts, requestBooking, resendBookingCode, verifyBookingCode } from "./actions";
+import { pausedMessage } from "@/lib/billing";
 import type { BookingOutcome } from "@/lib/booking";
 import { detailErrors, HMO_SUGGESTIONS, type Details, type PublicClinic } from "@/lib/booking-input";
 import { localMobile, normalizeMobile } from "@/lib/phone";
@@ -13,7 +14,7 @@ import { fitsAnyBlock, mergeWeeks, openStarts, type Block } from "@/lib/slots";
 import { addDays, formatDate, formatMinutes, formatTime, manilaDate, weekday } from "@/lib/time";
 import { LIMITS } from "@/lib/validate";
 
-type Props = { clinic: PublicClinic; nowIso: string };
+type Props = { clinic: PublicClinic; nowIso: string; paused: boolean };
 type Step = "what" | "when" | "who" | "code" | "sent";
 
 const STEPS: { id: Step; label: string }[] = [
@@ -50,7 +51,7 @@ function initials(name: string) {
     .join("");
 }
 
-export default function BookingSheet({ clinic, nowIso }: Props) {
+export default function BookingSheet({ clinic, nowIso, paused }: Props) {
   const [step, setStep] = useState<Step>("what");
   const [procedureIds, setProcedureIds] = useState<string[]>([]);
   const [dentistId, setDentistId] = useState(clinic.dentists.length === 1 ? clinic.dentists[0].id : "");
@@ -199,6 +200,9 @@ export default function BookingSheet({ clinic, nowIso }: Props) {
       case "too_many":
         setNotice(`You already have requests waiting. Please call the clinic at ${phone}.`);
         return;
+      case "paused":
+        setNotice(pausedMessage(clinic.name, phone));
+        return;
       case "unavailable":
         setNotice(UNAVAILABLE);
         return;
@@ -261,6 +265,9 @@ export default function BookingSheet({ clinic, nowIso }: Props) {
         case "too_many":
           setNotice(`You already have requests waiting. Please call the clinic at ${phone}.`);
           break;
+        case "paused":
+          setNotice(pausedMessage(clinic.name, phone));
+          break;
         case "unavailable":
           setNotice(UNAVAILABLE);
           break;
@@ -296,6 +303,9 @@ export default function BookingSheet({ clinic, nowIso }: Props) {
         case "gone":
           setNotice("Please send your request again.");
           setStep("who");
+          break;
+        case "paused":
+          setNotice(pausedMessage(clinic.name, phone));
           break;
         case "unavailable":
           setNotice(UNAVAILABLE);
@@ -354,7 +364,11 @@ export default function BookingSheet({ clinic, nowIso }: Props) {
         </div>
         <hr className="rule-gold" />
 
-        {closed ? (
+        {paused ? (
+          <p className="note-box" role="status">
+            {pausedMessage(clinic.name, phone)}
+          </p>
+        ) : closed ? (
           <p className="note-box">
             {"Online booking isn't open yet. Call "}
             <a href={`tel:${clinic.mobile}`} className="font-semibold underline">

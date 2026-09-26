@@ -1,7 +1,10 @@
 import "server-only";
 import { appUrl } from "@/lib/app-url";
-import { LOW_CREDIT_GAP_MS, lowCreditThreshold, reminders, reminderWindow, type ReminderRow } from "@/lib/daily";
+import { billingStatus } from "@/lib/billing";
+import { loadBillings } from "@/lib/billing-data";
+import { LOW_CREDIT_GAP_MS, lowCreditThreshold, reminders, reminderWindow, renewalNotices, type ReminderRow, type RenewalRow } from "@/lib/daily";
 import { logError } from "@/lib/log";
+import { alertPlanEnding } from "@/lib/notify";
 import { normalizeMobile } from "@/lib/phone";
 import { smsMode, type SmsMode } from "@/lib/sms/prepare";
 import { semaphoreBalance, sendSms } from "@/lib/sms/send";
@@ -30,18 +33,17 @@ export async function sendReminders(now: Date): Promise<number> {
   const rows = (data ?? []) as unknown as ReminderRow[];
   if (rows.length === 0) return 0;
 
-  const { data: dentists, error: dentistError } = await db
-    .from("dentists")
-    .select("clinic_id")
-    .eq("active", true)
-    .in("clinic_id", [...new Set(rows.map((r) => r.clinic_id))]);
+  const clinicIds = [...new Set(rows.map((r) => r.clinic_id))];
+  const { data: dentists, error: dentistError } = await db.from("dentists").select("clinic_id").eq("active", true).in("clinic_id", clinicIds);
   if (dentistError) throw dentistError;
   const active = new Map<string, number>();
   for (const { clinic_id } of (dentists ?? []) as { clinic_id: string }[]) active.set(clinic_id, (active.get(clinic_id) ?? 0) + 1);
+  // Billing spec 7.5: a lapsed clinic's patients get no reminders.
+  const paused = new Set([...(await loadBillings(db, clinicIds))].filter(([, billing]) => !billingStatus(billing, now).open).map(([id]) => id));
 
   const app = appUrl();
   let sent = 0;
-  for (const r of reminders(rows, active, now)) {
+  for (const r of reminders(rows, active, now, paused)) {
     const { data: claimed, error: claimError } = await db
       .from("appointments")
       .update({ reminder_sent_at: now.toISOString() })
@@ -64,6 +66,41 @@ export async function sendReminders(now: Date): Promise<number> {
     });
     if (status !== "failed") sent++;
   }
+  return sent;
+}
+
+/**
+ * Billing spec 7.4: one heads-up per plan end, 3 days or less before it. Each clinic's notice first claims
+ * renewal_notice_for with a compare-and-set, so a rerun never alerts twice. Returns how many alerts went out.
+ * A failed claim or alert is not retried (the claim may already be set), so after trying every clinic it throws,
+ * which marks the run failed and puts the counts in the log.
+ * ponytail: reads every clinic_billing row (the API returns at most 1000); page through when clinics near that.
+ */
+export async function sendRenewalNotices(now: Date): Promise<number> {
+  const db = adminClient();
+  const { data, error } = await db.from("clinic_billing").select("clinic_id, trial_ends_at, paid_through, renewal_notice_for");
+  if (error) throw error;
+  let sent = 0;
+  const failed: string[] = [];
+  for (const { clinicId, endsAt } of renewalNotices((data ?? []) as RenewalRow[], now)) {
+    const endsIso = endsAt.toISOString();
+    const { data: claimed, error: claimError } = await db
+      .from("clinic_billing")
+      .update({ renewal_notice_for: endsIso })
+      .eq("clinic_id", clinicId)
+      .or(`renewal_notice_for.is.null,renewal_notice_for.neq."${endsIso}"`)
+      .select("clinic_id");
+    if (claimError) {
+      logError("sendRenewalNotices claim", claimError);
+      failed.push(clinicId);
+      continue;
+    }
+    if (!claimed || claimed.length === 0) continue;
+    if ((await alertPlanEnding(clinicId, endsAt)) === "failed") failed.push(clinicId);
+    else sent++;
+  }
+  // A failed claim or alert is not retried, so name the clinics (ids only) for Kai to tell by hand.
+  if (failed.length > 0) throw new Error(`${failed.length} heads-ups failed, ${sent} sent (clinics ${failed.join(", ")})`);
   return sent;
 }
 
@@ -132,6 +169,7 @@ type Failed = "failed";
 export type DailySummary = {
   ok: boolean;
   reminders: number | Failed;
+  renewals: number | Failed;
   expired: number | Failed;
   cleaned: { codes: number; bodies: number } | Failed;
   credit: { status: CreditCheck; balance: number | null } | Failed;
@@ -153,7 +191,8 @@ export async function runDailyJob(now: Date): Promise<DailySummary> {
   const expired = await step("expiry", () => expirePending());
   const cleaned = await step("cleanup", () => cleanup(now));
   const sent = await step("reminders", () => sendReminders(now));
+  const renewals = await step("renewal notices", () => sendRenewalNotices(now));
   const credit = await step("credit check", () => checkCredit(now));
-  const failed = [sent, expired, cleaned, credit].includes("failed") || (credit !== "failed" && credit.status === "unknown");
-  return { ok: !failed, reminders: sent, expired, cleaned, credit };
+  const failed = [sent, renewals, expired, cleaned, credit].includes("failed") || (credit !== "failed" && credit.status === "unknown");
+  return { ok: !failed, reminders: sent, renewals, expired, cleaned, credit };
 }

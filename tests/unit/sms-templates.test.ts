@@ -3,7 +3,7 @@ import { renderSms, smsCredits, toSmsText, type SmsKind } from "@/lib/sms/templa
 
 const kinds: SmsKind[] = [
   "otp", "request_alert", "confirmed", "declined", "moved",
-  "cancelled", "reminder", "patient_cancel_alert", "low_credit",
+  "cancelled", "reminder", "patient_cancel_alert", "low_credit", "renewal",
 ];
 
 // Longest values the database allows (Global Constraints) plus the longest date and time.
@@ -75,6 +75,11 @@ describe("renderSms", () => {
       clinic: "Elite Dental", date: "Thu Sep 24", time: "10:00 AM", reason: "Dentist unavailable", bookLink: "https://x.ph/elite",
     });
     expect(text).toBe("Elite Dental can't take Thu Sep 24, 10:00 AM. Dentist unavailable. Rebook: https://x.ph/elite");
+  });
+
+  it("renders the plan heads-up with the link to Billing", () => {
+    const text = renderSms("renewal", { clinic: "Elite Dental", date: "Fri Oct 9", appUrl: "https://brightsmile.ph" });
+    expect(text).toBe("BrightSmile: your plan for Elite Dental ends Fri Oct 9. Pay in the app to keep online booking open: https://brightsmile.ph/app/billing");
   });
 
   it("never starts a clinic alert with the patient's name", () => {

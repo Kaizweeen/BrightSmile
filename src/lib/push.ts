@@ -17,6 +17,11 @@ export function pushPayload(kind: AlertKind, startsAt: Date, dentist: string | n
   return { title: kind === "request_alert" ? "New booking request" : "Request cancelled", body: when, url: "/app/requests" };
 }
 
+/** Billing spec 7.4: the plan heads-up. Like every push, a tap opens the requests page, where the banner links to Billing. */
+export function planPushPayload(endsAt: Date): PushPayload {
+  return { title: `Your BrightSmile plan ends ${formatDate(endsAt)}`, body: "Pay in BrightSmile to keep online booking open.", url: "/app/requests" };
+}
+
 // The push services of Chrome and Android (FCM), Firefox, Safari and iOS, and Edge on Windows.
 const PUSH_HOSTS = [/^fcm\.googleapis\.com$/, /^updates\.push\.services\.mozilla\.com$/, /(^|\.)push\.apple\.com$/, /\.notify\.windows\.com$/];
 const BASE64URL = /^[A-Za-z0-9_-]+={0,2}$/;

@@ -23,6 +23,9 @@ const production = {
   VAPID_PRIVATE_KEY: "vapid-private",
   VAPID_SUBJECT: "mailto:hello@brightsmile.ph",
   NEXT_PUBLIC_CONTACT_EMAIL: "hello@brightsmile.ph",
+  OPERATOR_EMAILS: "kai@example.com",
+  BILLING_GCASH_NAME: "Kai B.",
+  BILLING_GCASH_NUMBER: "0917 555 0101",
 };
 
 describe("envProblems", () => {
@@ -92,6 +95,50 @@ describe("envProblems", () => {
     ]);
     for (const value of ["short-secret", "tiny-app-secret", "028123456", "lots", "BrightSmileClinic"]) {
       expect(problems.join("\n")).not.toContain(value);
+    }
+  });
+});
+
+describe("billing variables", () => {
+  it("requires the operator emails and the GCash details in production only", () => {
+    const { OPERATOR_EMAILS, BILLING_GCASH_NAME, BILLING_GCASH_NUMBER, ...missing } = production;
+    void OPERATOR_EMAILS;
+    void BILLING_GCASH_NAME;
+    void BILLING_GCASH_NUMBER;
+    expect(envProblems(missing)).toEqual(["OPERATOR_EMAILS is not set", "BILLING_GCASH_NAME is not set", "BILLING_GCASH_NUMBER is not set"]);
+    expect(envProblems(dev)).toEqual([]);
+  });
+
+  it("wants both PayMongo keys or neither, everywhere", () => {
+    const both = "PAYMONGO_SECRET_KEY and PAYMONGO_WEBHOOK_SECRET must be set together, or neither";
+    expect(envProblems({ ...dev, PAYMONGO_SECRET_KEY: "sk_test_abc" })).toEqual([both]);
+    expect(envProblems({ ...production, PAYMONGO_WEBHOOK_SECRET: "whsk_abc" })).toEqual([both]);
+    expect(envProblems({ ...production, PAYMONGO_SECRET_KEY: "sk_live_abc", PAYMONGO_WEBHOOK_SECRET: "whsk_abc" })).toEqual([]);
+  });
+
+  it("refuses a PayMongo test key in production only, without repeating it", () => {
+    const testKey = { PAYMONGO_SECRET_KEY: " sk_test_4b2f1c9e ", PAYMONGO_WEBHOOK_SECRET: "whsk_abc" };
+    const problems = envProblems({ ...production, ...testKey });
+    expect(problems).toEqual(["PAYMONGO_SECRET_KEY must be a live key in production, not a test key"]);
+    expect(problems.join(" ")).not.toContain("4b2f1c9e");
+    expect(envProblems({ ...dev, ...testKey })).toEqual([]);
+    expect(envProblems({ ...dev, NODE_ENV: "production", VERCEL_ENV: "preview", APP_URL: "https://bsmile.vercel.app", ...testKey })).toEqual([]);
+  });
+
+  it("checks the formats without repeating the values", () => {
+    const problems = envProblems({ ...production, OPERATOR_EMAILS: "kai@example.com, not-an-email", BILLING_GCASH_NUMBER: "12345" });
+    expect(problems).toEqual([
+      "OPERATOR_EMAILS must be email addresses separated by commas",
+      "BILLING_GCASH_NUMBER must be a Philippine mobile number",
+    ]);
+    expect(problems.join(" ")).not.toContain("not-an-email");
+    expect(problems.join(" ")).not.toContain("12345");
+  });
+
+  it("refuses an OPERATOR_EMAILS value that lists no addresses", () => {
+    for (const empty of [",", " , ,"]) {
+      expect(envProblems({ ...production, OPERATOR_EMAILS: empty })).toEqual(["OPERATOR_EMAILS lists no email addresses"]);
+      expect(envProblems({ ...dev, OPERATOR_EMAILS: empty })).toEqual(["OPERATOR_EMAILS lists no email addresses"]);
     }
   });
 });

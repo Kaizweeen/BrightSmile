@@ -53,7 +53,8 @@ npm run lint; npm test; npm run build
 
 Also run:
 
-- `npm run test:db` when you touched `supabase/migrations` or `tests/db`.
+- Nothing extra for a migration: `npm test` runs the offline database tests in `tests/sql`.
+- `npm run test:db` and `npm run test:e2e` only once a development Supabase project exists; both refuse production.
 - The app (`npm run dev`, then http://localhost:3600) when you touched UI. Look at it at phone width, in light and dark.
 
 ## 4. Open the PR
@@ -79,7 +80,7 @@ Steps the reviewer can follow.
 
 ## Checks
 - [ ] `npm run lint`, `npm test`, `npm run build` pass
-- [ ] `npm run test:db` passes (migrations or `tests/db` changed)
+- [ ] The migration has a test in `tests/sql` (migrations changed)
 - [ ] Screenshots at phone width, light and dark (UI changed)
 - [ ] Each new dependency is named with its reason (or none added)
 ```
@@ -92,13 +93,14 @@ Steps the reviewer can follow.
 
 ## Database changes
 
-There is no local Supabase, so development and the database tests share one Supabase project. `npm run db:push` changes it the moment you run it, before anyone reviews.
+There is no development Supabase project (the first one became production) and no Docker, so migrations are proven offline: `tests/sql/harness.ts` applies every file in `supabase/migrations`, in order, to an in-process Postgres (PGlite) with a stand-in for Supabase's roles, `auth.uid()`, and default privileges, and the tests in `tests/sql` run SQL as signed-in users and as visitors. `npm test` runs them.
 
-- Never edit a migration that has been pushed. Add a new one.
+- Never edit a migration that production already has. Add a new one.
 - Name migrations `YYYYMMDDHHMMSS_what.sql` in `supabase/migrations`.
-- A new table gets RLS and its per-clinic access rules in the same PR, with a test in `tests/db`.
-- Say in the PR that the migration is already on the development project. When two open PRs both change the database, merge them one at a time and rerun `npm run test:db` after each.
-- Production migrations run only from `main`, after the merge.
+- A new table gets RLS, explicit grants, and its per-clinic access rules in the same PR, with a test in `tests/sql`. Supabase grants new tables to `anon` and `authenticated` by default, and so does the harness, so a forgotten revoke fails a test. The tests also list exactly which functions visitors and signed-in staff may run, so a new function must be granted on purpose.
+- The harness runs Postgres 17 (PGlite pinned to 0.4.6), the major version production runs. Do not use Postgres 18 features, and keep migrations to what Supabase's `postgres` role may do: it is not a superuser, although PGlite runs as one.
+- Kai pastes a reviewed migration into the production SQL Editor just before merging the PR that needs it, because every merge to `main` deploys. Never run `npm run db:push`: the only project is production.
+- When two open PRs both change the database, merge them one at a time.
 
 ## Review
 

@@ -15,6 +15,11 @@ describe("contentSecurityPolicy", () => {
     expect(csp).not.toContain("unsafe-eval");
   });
 
+  it("lets Pay online reach PayMongo checkout even from a form posted before the page loaded", () => {
+    // form-action also governs where a form submission may redirect; the checkout lives on PayMongo.
+    expect(contentSecurityPolicy(false, true)).toContain("form-action 'self' https://checkout.paymongo.com;");
+  });
+
   it("allows eval only for next dev, and upgrades requests only over https", () => {
     expect(contentSecurityPolicy(true, false)).toContain("'unsafe-eval'");
     expect(contentSecurityPolicy(false, false)).not.toContain("upgrade-insecure-requests");
@@ -49,6 +54,7 @@ describe("securityHeaders", () => {
       "/reset-password",
       "/auth/:path*",
       "/api/:path*",
+      "/admin/:path*",
     ]);
   });
 

@@ -35,6 +35,7 @@ export async function proxy(request: NextRequest) {
 }
 
 // Public pages (the booking page and patient links) never touch the staff session, so they skip the proxy.
+// /admin passes through only to keep its session fresh: guardRedirect never redirects it, requireOperator guards it.
 export const config = {
-  matcher: ["/app/:path*", "/onboarding/:path*", "/login", "/signup"],
+  matcher: ["/app/:path*", "/onboarding/:path*", "/login", "/signup", "/admin"],
 };

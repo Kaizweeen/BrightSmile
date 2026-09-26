@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isCronAuthorized, lowCreditThreshold, reminders, reminderWindow, type ReminderRow } from "@/lib/daily";
+import { isCronAuthorized, lowCreditThreshold, reminders, reminderWindow, renewalNotices, type ReminderRow, type RenewalRow } from "@/lib/daily";
 import { manilaInstant } from "@/lib/time";
 
 const SECRET = "s3cret-s3cret-s3cret-s3cret";
@@ -68,6 +68,34 @@ describe("reminders", () => {
       { ...row, patient: null },
     ];
     expect(reminders(skipped, one, now)).toEqual([]);
+  });
+
+  it("sends nothing for a clinic whose booking is paused", () => {
+    const other = { ...row, id: "a2", clinic_id: "c2" };
+    const both = new Map([["c1", 1], ["c2", 1]]);
+    expect(reminders([row, other], both, now, new Set(["c1"])).map((r) => r.appointmentId)).toEqual(["a2"]);
+  });
+});
+
+describe("renewalNotices", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = manilaInstant("2026-10-06", 9 * 60);
+  const trialEnd = manilaInstant("2026-10-09", 9 * 60); // exactly 3 days away
+  const row: RenewalRow = { clinic_id: "c1", trial_ends_at: trialEnd.toISOString(), paid_through: null, renewal_notice_for: null };
+
+  it("picks plans that end within 3 days and have had no heads-up for that end", () => {
+    expect(renewalNotices([row], now)).toEqual([{ clinicId: "c1", endsAt: trialEnd }]);
+    const paidThrough = new Date(now.getTime() + DAY);
+    const paid = { ...row, trial_ends_at: manilaInstant("2026-09-01", 0).toISOString(), paid_through: paidThrough.toISOString() };
+    expect(renewalNotices([paid], now)).toEqual([{ clinicId: "c1", endsAt: paidThrough }]);
+  });
+
+  it("skips plans further out, already ended, or already told about this end", () => {
+    expect(renewalNotices([row], new Date(trialEnd.getTime() - 3 * DAY - 1))).toEqual([]);
+    expect(renewalNotices([row], trialEnd)).toEqual([]);
+    expect(renewalNotices([{ ...row, renewal_notice_for: trialEnd.toISOString() }], now)).toEqual([]);
+    const oldNotice = { ...row, renewal_notice_for: manilaInstant("2026-09-06", 9 * 60).toISOString() };
+    expect(renewalNotices([oldNotice], now)).toEqual([{ clinicId: "c1", endsAt: trialEnd }]);
   });
 });
 

@@ -2,7 +2,8 @@ import "server-only";
 import { createServerClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { isOperator } from "@/lib/admin";
 
 /** Cookie-bound client with the publishable key: acts as the signed-in staff member, so RLS applies. */
 export async function serverClient() {
@@ -46,4 +47,16 @@ export async function requireStaff(): Promise<Staff> {
   if (!staff) redirect("/login");
   if (!staff.clinicId) redirect("/onboarding");
   return { db: staff.db, userId: staff.userId, clinicId: staff.clinicId };
+}
+
+/**
+ * For /admin and its actions (billing spec 7.6): the signed-in user whose confirmed email is in OPERATOR_EMAILS.
+ * Everyone else, signed in or not, gets a 404, so the page never reveals itself. getUser asks Supabase Auth, so
+ * email_confirmed_at is current. Call it outside try blocks, because notFound throws.
+ */
+export async function requireOperator(): Promise<{ userId: string }> {
+  const db = await serverClient();
+  const { data } = await db.auth.getUser();
+  if (!data.user || !isOperator(data.user, process.env.OPERATOR_EMAILS)) notFound();
+  return { userId: data.user.id };
 }

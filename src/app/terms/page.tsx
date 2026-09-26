@@ -66,7 +66,17 @@ export default function TermsPage() {
         </p>
 
         <h2>Fees</h2>
-        <p>[To be decided before launch: price, text allowance, billing, and notice before any change.]</p>
+        <p>
+          A new clinic gets a free 14 day trial. After it, a clinic pays ahead for 1 to 12 months at a time, at the price for its
+          active dentists when it pays: ₱399 a month for 1 to 2 dentists, ₱1,299 for 3 to 6, and ₱1,799 for 7 or more. Texts to
+          patients are included. Plans do not renew on their own.
+        </p>
+        <p>
+          We remind the clinic 3 days before its plan ends. If it is not renewed, the clinic has 3 more days; after that its booking
+          page stops taking online requests and reminder texts pause until it pays. The dashboard and the clinic&apos;s data stay
+          available the whole time.
+        </p>
+        <p>[Legal review: refunds, and how much notice we give before a price change.]</p>
 
         <h2>Availability</h2>
         <p>

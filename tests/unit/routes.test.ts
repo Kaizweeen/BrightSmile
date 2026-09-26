@@ -24,6 +24,10 @@ describe("guardRedirect", () => {
     }
   });
 
+  it("never redirects the admin page, which checks the operator itself", () => {
+    for (const visitor of [out, noClinic, staff]) expect(guardRedirect("/admin", visitor)).toBeNull();
+  });
+
   it("sends signed-in users without a clinic to onboarding", () => {
     expect(guardRedirect("/app", noClinic)).toBe("/onboarding");
     expect(guardRedirect("/login", noClinic)).toBe("/onboarding");

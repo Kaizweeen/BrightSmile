@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { needsReminder, type Status } from "@/lib/appointments";
+import { billingStatus, NOTICE_DAYS } from "@/lib/billing";
 import { addDays, formatTime, manilaDate, manilaInstant } from "@/lib/time";
 
 /**
@@ -48,9 +49,11 @@ const date = (value: string | null) => (value ? new Date(value) : null);
 /**
  * Spec 11 step 1: needsReminder decides which visits are due; a patient without a mobile (or deleted)
  * gets nothing. Texts name the dentist only when the clinic has 2 or more active dentists (spec 10.1).
+ * A clinic whose booking is paused gets no reminders (billing spec 7.5).
  */
-export function reminders(rows: ReminderRow[], activeDentists: Map<string, number>, now: Date): Reminder[] {
+export function reminders(rows: ReminderRow[], activeDentists: Map<string, number>, now: Date, paused: Set<string> = new Set()): Reminder[] {
   return rows.flatMap((r) => {
+    if (paused.has(r.clinic_id)) return [];
     const startsAt = new Date(r.starts_at);
     const due = needsReminder(
       { status: r.status, starts_at: startsAt, confirmed_at: date(r.confirmed_at), reminder_sent_at: date(r.reminder_sent_at) },
@@ -81,4 +84,23 @@ export const LOW_CREDIT_GAP_MS = 20 * 60 * 60 * 1000;
 export function lowCreditThreshold(value: string | undefined = process.env.SMS_LOW_CREDIT_THRESHOLD): number {
   const text = value?.trim() ?? "";
   return /^\d+$/.test(text) ? Number(text) : 500;
+}
+
+/** A clinic_billing row as the heads-up step reads it. */
+export type RenewalRow = { clinic_id: string; trial_ends_at: string; paid_through: string | null; renewal_notice_for: string | null };
+export type Renewal = { clinicId: string; endsAt: Date };
+
+/**
+ * Billing spec 7.4: clinics whose plan (trial or paid) ends after now and at most 3 days from now, and that
+ * have not had a heads-up for this end yet. Dates compare at millisecond precision, the precision the job
+ * writes renewal_notice_for with.
+ */
+export function renewalNotices(rows: RenewalRow[], now: Date): Renewal[] {
+  return rows.flatMap((r) => {
+    const paidThrough = r.paid_through ? new Date(r.paid_through) : null;
+    const { endsAt } = billingStatus({ trialEndsAt: new Date(r.trial_ends_at), paidThrough }, now);
+    const left = endsAt.getTime() - now.getTime();
+    const noticed = r.renewal_notice_for !== null && new Date(r.renewal_notice_for).getTime() === endsAt.getTime();
+    return left > 0 && left <= NOTICE_DAYS * 24 * 60 * 60 * 1000 && !noticed ? [{ clinicId: r.clinic_id, endsAt }] : [];
+  });
 }
