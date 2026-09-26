@@ -38,7 +38,8 @@ export function parseGcashPayment(input: {
   if (!months) return { ok: false, error: "Choose 1 to 12 months." };
   const amountCentavos = parsePesos(input.amount);
   if (!amountCentavos) return { ok: false, error: "Enter the amount received, like 1197 or 1,197.50." };
-  const reference = cleanText(input.reference, 100);
+  // GCash shows references with spaces; without them the same transfer always matches the unique index.
+  const reference = cleanText(input.reference, 100)?.replace(/\s+/g, "") || null;
   if (!reference) return { ok: false, error: "Enter the GCash reference number, up to 100 characters." };
   return { ok: true, value: { clinicId: input.clinicId, months, amountCentavos, reference } };
 }

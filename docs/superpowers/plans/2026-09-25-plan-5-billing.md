@@ -3848,6 +3848,8 @@ Write the summary for Kai: what shipped, the test counts, the dependency added (
 
 ## What Kai must do (outside the code)
 
+> **Updated after review (2026-09-26):** follow the README's Billing section instead of this list, and see the spec's Revisions. Existing clinics now get a fresh 14 day trial when the migration runs (no trial extensions needed), a GCash reference can only be recorded once, a paid webhook for a deleted clinic answers 200, and the webhook accepts signatures up to 3 days old.
+
 Before merging the billing branch (every merge to `main` deploys production):
 - Review `supabase/migrations/20260925000200_billing.sql`, paste it into the production **SQL Editor**, run it, and run the check query in the README's "Billing" section (it must return `0`).
 - In Vercel, Production: set `OPERATOR_EMAILS` (your login email), `BILLING_GCASH_NAME`, and `BILLING_GCASH_NUMBER`. Without them the new deployment refuses to start.

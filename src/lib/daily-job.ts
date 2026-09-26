@@ -81,7 +81,7 @@ export async function sendRenewalNotices(now: Date): Promise<number> {
   const { data, error } = await db.from("clinic_billing").select("clinic_id, trial_ends_at, paid_through, renewal_notice_for");
   if (error) throw error;
   let sent = 0;
-  let failed = 0;
+  const failed: string[] = [];
   for (const { clinicId, endsAt } of renewalNotices((data ?? []) as RenewalRow[], now)) {
     const endsIso = endsAt.toISOString();
     const { data: claimed, error: claimError } = await db
@@ -92,14 +92,15 @@ export async function sendRenewalNotices(now: Date): Promise<number> {
       .select("clinic_id");
     if (claimError) {
       logError("sendRenewalNotices claim", claimError);
-      failed++;
+      failed.push(clinicId);
       continue;
     }
     if (!claimed || claimed.length === 0) continue;
-    if ((await alertPlanEnding(clinicId, endsAt)) === "failed") failed++;
+    if ((await alertPlanEnding(clinicId, endsAt)) === "failed") failed.push(clinicId);
     else sent++;
   }
-  if (failed > 0) throw new Error(`${failed} heads-ups failed, ${sent} sent`);
+  // A failed claim or alert is not retried, so name the clinics (ids only) for Kai to tell by hand.
+  if (failed.length > 0) throw new Error(`${failed.length} heads-ups failed, ${sent} sent (clinics ${failed.join(", ")})`);
   return sent;
 }
 

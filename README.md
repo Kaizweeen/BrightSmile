@@ -164,7 +164,7 @@ Set the first three in Vercel (**Settings > Environment Variables**, Production)
 1. A clinic sends the amount shown on its Billing page, with its booking link name (for example `bright-dental`) as the GCash note.
 2. When it arrives in your GCash app, log in with an `OPERATOR_EMAILS` address, open `/admin`, find the clinic, choose the months, check the amount (prefilled with the price), type the GCash reference number, and press **Record payment**. The plan extends from its current end, or from today after a lapse.
 3. **Extend trial** on the same card adds days to a trial, for example for the `demo` clinic.
-4. To void a payment recorded by mistake, use the production **SQL Editor**: find it by its GCash reference, delete it, then set the clinic's `paid_through` back to where its remaining payments leave it (`null` when none remain), with the ids from the first query in place of `<payment id>` and `<id>`:
+4. To void a payment recorded by mistake, use the production **SQL Editor**: find it by its GCash reference (stored without spaces), delete it, then set the clinic's `paid_through` back to where its remaining payments leave it (`null` when none remain), with the ids from the first query in place of `<payment id>` and `<id>`:
 
    ```sql
    select id, clinic_id, months, amount_centavos, paid_at from public.payments where method = 'gcash' and reference = '<reference>';

@@ -44,7 +44,13 @@ describe("parseGcashPayment", () => {
   const good = { clinicId: CLINIC, months: "3", amount: "3,897", reference: " 1234 567 890 " };
 
   it("builds the payment from the form", () => {
-    expect(parseGcashPayment(good)).toEqual({ ok: true, value: { clinicId: CLINIC, months: 3, amountCentavos: 389_700, reference: "1234 567 890" } });
+    expect(parseGcashPayment(good)).toEqual({ ok: true, value: { clinicId: CLINIC, months: 3, amountCentavos: 389_700, reference: "1234567890" } });
+  });
+
+  it("drops the spaces GCash shows in reference numbers, so one transfer cannot be recorded twice", () => {
+    const spaced = parseGcashPayment({ ...good, reference: "5012 345 678901" });
+    const plain = parseGcashPayment({ ...good, reference: "5012345678901" });
+    expect(spaced).toEqual(plain);
   });
 
   it("says what is wrong", () => {

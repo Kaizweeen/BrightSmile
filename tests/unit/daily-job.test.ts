@@ -49,7 +49,7 @@ describe("sendRenewalNotices", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     db.claims.set("c1", { data: null, error: { message: "connection reset" } }).set("c2", claimed("c2")).set("c3", claimed("c3"));
     alert.mockResolvedValueOnce("failed").mockResolvedValueOnce("sms");
-    await expect(sendRenewalNotices(now)).rejects.toThrow("2 heads-ups failed, 1 sent");
+    await expect(sendRenewalNotices(now)).rejects.toThrow(/^2 heads-ups failed, 1 sent \(clinics [0-9a-f-]+, [0-9a-f-]+\)$/);
     expect(alert.mock.calls.map(([clinicId]) => clinicId)).toEqual(["c2", "c3"]);
   });
 });
