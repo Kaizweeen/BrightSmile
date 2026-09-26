@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
 import type { CreateClinicPayload } from "@/lib/onboarding";
+import { hashInviteToken } from "@/lib/team";
 
 const DIR = new URL("../../supabase/migrations/", import.meta.url);
 
@@ -106,4 +107,22 @@ export async function newClinic(db: PGlite): Promise<{ userId: string; clinicId:
   };
   const [row] = await asUser<{ id: string }>(db, userId, "select public.create_clinic($1::jsonb) as id", [JSON.stringify(payload)]);
   return { userId, clinicId: row.id };
+}
+
+/** A join link the clinic's owner makes through RLS, as the Team page does. Returns the token. */
+export async function invite(db: PGlite, clinic: { userId: string; clinicId: string }): Promise<string> {
+  const token = randomUUID().replace(/-/g, "").slice(0, 12);
+  await asUser(db, clinic.userId, "insert into public.clinic_invites (clinic_id, token_hash) values ($1, $2)", [
+    clinic.clinicId,
+    hashInviteToken(token),
+  ]);
+  return token;
+}
+
+/** A new user who joins the clinic as staff through a join link, as /join does. Returns the user id. */
+export async function addStaff(db: PGlite, clinic: { userId: string; clinicId: string }): Promise<string> {
+  const token = await invite(db, clinic);
+  const userId = await addUser(db);
+  await asUser(db, userId, "select public.accept_invite($1)", [token]);
+  return userId;
 }

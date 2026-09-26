@@ -1,6 +1,7 @@
 import type { PGlite } from "@electric-sql/pglite";
 import { beforeAll, describe, expect, it } from "vitest";
 import { asUser, freshDb, newClinic } from "./harness";
+import { hashInviteToken } from "@/lib/team";
 
 type Clinic = { userId: string; clinicId: string };
 
@@ -8,6 +9,7 @@ type Clinic = { userId: string; clinicId: string };
 const SEEDED = [
   "appointment_events",
   "appointments",
+  "clinic_invites",
   "clinic_members",
   "dentists",
   "patients",
@@ -36,6 +38,7 @@ async function seed({ userId, clinicId }: Clinic) {
   await db.query("insert into public.time_off (clinic_id, dentist_id, starts_at, ends_at) values ($1, $2, '2030-01-08T09:00:00+08:00', '2030-01-08T12:00:00+08:00')", [clinicId, dentist]);
   await db.query("insert into public.sms_log (clinic_id, to_mobile, kind, body, credits, status) values ($1, '+639171112222', 'confirmed', 'x', 1, 'logged')", [clinicId]);
   await db.query("insert into public.push_subscriptions (clinic_id, user_id, endpoint, p256dh, auth) values ($1, $2, $3, 'k', 'a')", [clinicId, userId, `https://fcm.googleapis.com/fcm/send/${clinicId}`]);
+  await db.query("insert into public.clinic_invites (clinic_id, token_hash, created_by) values ($1, $2, $3)", [clinicId, hashInviteToken(clinicId), userId]);
 }
 
 beforeAll(async () => {
@@ -101,7 +104,17 @@ describe("signed-in staff", () => {
     const { rows } = await db.query<{ proname: string }>(
       "select proname from pg_proc where pronamespace = 'public'::regnamespace and has_function_privilege('authenticated', oid, 'execute') order by 1",
     );
-    expect(rows.map((r) => r.proname)).toEqual(["create_booking", "create_clinic", "is_clinic_member", "move_appointment", "set_appointment_status"]);
+    expect(rows.map((r) => r.proname)).toEqual([
+      "accept_invite",
+      "clinic_week_stats",
+      "create_booking",
+      "create_clinic",
+      "is_clinic_member",
+      "is_clinic_owner",
+      "move_appointment",
+      "remove_member",
+      "set_appointment_status",
+    ]);
   });
 });
 

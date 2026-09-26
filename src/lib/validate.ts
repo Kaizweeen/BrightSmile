@@ -1,6 +1,6 @@
 export const RESERVED_SLUGS = new Set([
   "a", "app", "api", "auth", "login", "signup", "onboarding", "forgot",
-  "reset-password", "privacy", "terms", "admin", "static", "_next",
+  "reset-password", "privacy", "terms", "admin", "static", "_next", "join",
 ]);
 
 export const LIMITS = {
