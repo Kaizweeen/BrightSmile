@@ -109,6 +109,15 @@ describe("the words", () => {
     expect(statusLine(billingStatus(trial, lapsedNow), lapsedNow)).toBe("Your plan ended Fri Oct 9. Online booking reopens when you pay.");
   });
 
+  it("tells staff their clinic's owner pays, not them (teams spec 6.5)", () => {
+    const graceNow = at(trialEnd, 2 * DAY);
+    expect(statusLine(billingStatus(trial, graceNow), graceNow, false)).toBe("Your plan ended Fri Oct 9. Online booking pauses in 1 day unless your clinic's owner pays.");
+    const monday = manilaInstant("2026-10-12", 60); // days === 0: booking pauses today
+    expect(statusLine(billingStatus(trial, monday), monday, false)).toBe("Your plan ended Fri Oct 9. Online booking pauses today unless your clinic's owner pays.");
+    const lapsedNow = at(trialEnd, 4 * DAY);
+    expect(statusLine(billingStatus(trial, lapsedNow), lapsedNow, false)).toBe("Your plan ended Fri Oct 9. Online booking reopens when your clinic's owner pays.");
+  });
+
   it("counts grace days on the Manila calendar, to the date the banner names", () => {
     // The trial ended Fri Oct 9, 10:00 AM, so booking pauses Mon Oct 12, 10:00 AM.
     const saturday = manilaInstant("2026-10-10", 60); // 1:00 AM, 2 days and 9 hours before the pause

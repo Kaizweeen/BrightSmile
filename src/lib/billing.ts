@@ -81,16 +81,22 @@ export function billingDate(instant: Date, now: Date): string {
   return year === manilaDate(now).slice(0, 4) ? formatDate(instant) : `${formatDate(instant)}, ${year}`;
 }
 
-/** The Billing page's status line (spec 7.1). */
-export function statusLine(state: BillingState, now: Date): string {
+/**
+ * The Billing page's status line (spec 7.1). Staff cannot pay, so a lapsed or soon-to-pause clinic tells them their
+ * clinic's owner pays, the same way bannerText does (teams spec 6.5).
+ */
+export function statusLine(state: BillingState, now: Date, owner = true): string {
   const ends = billingDate(state.endsAt, now);
   if (state.status === "active") return `Paid until ${ends}.`;
   if (state.status === "trial") return `Free trial until ${ends}.`;
-  if (state.status === "lapsed") return `Your plan ended ${ends}. Online booking reopens when you pay.`;
+  if (state.status === "lapsed") {
+    return owner ? `Your plan ended ${ends}. Online booking reopens when you pay.` : `Your plan ended ${ends}. Online booking reopens when your clinic's owner pays.`;
+  }
   // Manila calendar days to the pause, so the count always agrees with the date the banner names.
   const days = (Date.parse(manilaDate(state.pausesAt)) - Date.parse(manilaDate(now))) / DAY_MS;
-  if (days === 0) return `Your plan ended ${ends}. Online booking pauses today.`;
-  return `Your plan ended ${ends}. Online booking pauses in ${days} ${days === 1 ? "day" : "days"}.`;
+  const who = owner ? "" : " unless your clinic's owner pays";
+  if (days === 0) return `Your plan ended ${ends}. Online booking pauses today${who}.`;
+  return `Your plan ended ${ends}. Online booking pauses in ${days} ${days === 1 ? "day" : "days"}${who}.`;
 }
 
 /**

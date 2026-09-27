@@ -30,7 +30,7 @@ export default async function BillingPage({ searchParams }: Props) {
           <div className="chip-row">
             <span className={`chip ${STATUS_CHIP[state.status]}`}>{STATUS_LABEL[state.status]}</span>
           </div>
-          <p className="mt-2">{statusLine(state, now)}</p>
+          <p className="mt-2">{statusLine(state, now, false)}</p>
           <p className="f-hint mt-2">Your clinic&apos;s owner handles the plan and payments.</p>
         </section>
       </>
