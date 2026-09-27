@@ -1,0 +1,36 @@
+import { describe, expect, it } from "vitest";
+import { branchSmsNameProblem, smsClinicName } from "@/lib/branches";
+import { renderSms } from "@/lib/sms/templates";
+
+describe("smsClinicName", () => {
+  it("is the clinic's name for texts alone while the clinic has one active branch", () => {
+    expect(smsClinicName("Bright Dental", "Makati", 1)).toBe("Bright Dental");
+  });
+
+  it("adds the branch's short name once the clinic has 2 or more active branches", () => {
+    expect(smsClinicName("Bright Dental", "Makati", 2)).toBe("Bright Dental Makati");
+    expect(smsClinicName("Bright Dental", null, 3)).toBe("Bright Dental");
+  });
+});
+
+describe("branchSmsNameProblem", () => {
+  it("allows a short name that keeps the pair within the 20 characters every text has room for", () => {
+    // "Bright Dental" is 13 characters, so a space and 6 more make 20.
+    expect(branchSmsNameProblem("Bright Dental", "Makati")).toBeNull();
+    expect(branchSmsNameProblem("Bright Dental", " Pasig ")).toBeNull();
+  });
+
+  it("refuses a short name that would push the pair past 20 characters, or an empty one", () => {
+    expect(branchSmsNameProblem("Bright Dental", "Quezon C")).toBe("Use 1 to 6 characters, so the clinic and branch names fit in a text together.");
+    expect(branchSmsNameProblem("Bright Dental", "  ")).toBe("Use 1 to 6 characters, so the clinic and branch names fit in a text together.");
+    expect(branchSmsNameProblem("Bright Smile Dental", "M")).toBe("Shorten the clinic's name for texts first, so a branch name fits beside it.");
+  });
+
+  it("keeps the confirmation text whole with the longest pair it allows", () => {
+    const clinic = smsClinicName("C".repeat(13), "B".repeat(6), 2);
+    expect(branchSmsNameProblem("C".repeat(13), "B".repeat(6))).toBeNull();
+    expect(clinic).toHaveLength(20);
+    const text = renderSms("confirmed", { clinic, first: "Juan", date: "Thu Sep 24", time: "10:00 AM", link: "https://brightsmile.ph/a/Ab12Cd34Ef56" });
+    expect(text.startsWith(`${clinic}: Juan's visit`)).toBe(true);
+  });
+});
