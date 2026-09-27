@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { parseSubscription, planPushPayload, pushPayload, sendPush, vapidSender } from "@/lib/push";
+import { parseSubscription, planPushPayload, pushPayload, sendPush, vapidSender, weeklyPushPayload } from "@/lib/push";
 import { manilaInstant } from "@/lib/time";
 
 const start = manilaInstant("2026-09-24", 600);
@@ -34,6 +34,22 @@ describe("planPushPayload", () => {
       body: "Pay in BrightSmile to keep online booking open.",
       url: "/app/requests",
     });
+  });
+});
+
+describe("weeklyPushPayload", () => {
+  it("sums up last week in counts only, and asks for Reports", () => {
+    expect(weeklyPushPayload("Bright Dental", 12, 3)).toEqual({
+      title: "Last week at Bright Dental",
+      body: "12 visits, 3 no-shows (20%). Tap to see Reports.",
+      url: "/app/reports",
+      type: "weekly",
+    });
+    expect(weeklyPushPayload("Bright Dental", 1, 1).body).toBe("1 visit, 1 no-show (50%). Tap to see Reports.");
+  });
+
+  it("gives no rate when nobody came or was marked a no-show", () => {
+    expect(weeklyPushPayload("Bright Dental", 0, 0).body).toBe("0 visits, 0 no-shows. Tap to see Reports.");
   });
 });
 

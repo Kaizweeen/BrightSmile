@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { needsReminder, type Status } from "@/lib/appointments";
-import { billingStatus, NOTICE_DAYS } from "@/lib/billing";
-import { addDays, formatTime, manilaDate, manilaInstant } from "@/lib/time";
+import { billingFromRow, billingStatus, NOTICE_DAYS, type BillingRow } from "@/lib/billing";
+import { addDays, formatTime, manilaDate, manilaInstant, weekday } from "@/lib/time";
 
 /**
  * Spec 11: Vercel Cron sends `Authorization: Bearer {CRON_SECRET}`. Both sides are hashed first, so the
@@ -103,4 +103,26 @@ export function renewalNotices(rows: RenewalRow[], now: Date): Renewal[] {
     const noticed = r.renewal_notice_for !== null && new Date(r.renewal_notice_for).getTime() === endsAt.getTime();
     return left > 0 && left <= NOTICE_DAYS * 24 * 60 * 60 * 1000 && !noticed ? [{ clinicId: r.clinic_id, endsAt }] : [];
   });
+}
+
+/** A clinic as the Monday summary reads it. */
+export type WeeklyRow = { id: string; name: string; created_at: string; weekly_report_for: string | null };
+
+/** Today's Manila date when it is a Monday, the day the weekly summary goes out (teams spec 6.4), otherwise null. */
+export function reportMonday(now: Date): string | null {
+  const today = manilaDate(now);
+  return weekday(today) === 1 ? today : null;
+}
+
+/**
+ * Teams spec 6.4: the clinics due this Monday's summary: still taking bookings (not lapsed, billing spec 5; a clinic
+ * without a billing row counts as a trial that ended at signup) and not yet claimed for this Monday. The daily job
+ * checks the day with reportMonday and skips clinics without an appointment last week.
+ */
+export function weeklyCandidates(clinics: WeeklyRow[], billing: (BillingRow & { clinic_id: string })[], now: Date): WeeklyRow[] {
+  const today = manilaDate(now);
+  const rows = new Map(billing.map((b) => [b.clinic_id, b]));
+  return clinics.filter(
+    (c) => (c.weekly_report_for === null || c.weekly_report_for < today) && billingStatus(billingFromRow(rows.get(c.id) ?? null, c.created_at), now).open,
+  );
 }

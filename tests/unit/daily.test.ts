@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { isCronAuthorized, lowCreditThreshold, reminders, reminderWindow, renewalNotices, type ReminderRow, type RenewalRow } from "@/lib/daily";
+import {
+  isCronAuthorized,
+  lowCreditThreshold,
+  reminders,
+  reminderWindow,
+  renewalNotices,
+  reportMonday,
+  weeklyCandidates,
+  type ReminderRow,
+  type RenewalRow,
+  type WeeklyRow,
+} from "@/lib/daily";
 import { manilaInstant } from "@/lib/time";
 
 const SECRET = "s3cret-s3cret-s3cret-s3cret";
@@ -109,5 +120,36 @@ describe("lowCreditThreshold", () => {
     expect(lowCreditThreshold("abc")).toBe(500);
     expect(lowCreditThreshold("-5")).toBe(500);
     expect(lowCreditThreshold("1.5")).toBe(500);
+  });
+});
+
+describe("reportMonday and weeklyCandidates", () => {
+  const monday = manilaInstant("2026-10-05", 9 * 60); // the cron time, 01:00 UTC
+  const open = { trial_ends_at: manilaInstant("2026-10-20", 0).toISOString(), paid_through: null };
+  const clinic = (id: string, weekly_report_for: string | null = null): WeeklyRow => ({
+    id,
+    name: `Clinic ${id}`,
+    created_at: "2026-09-01T00:00:00Z",
+    weekly_report_for,
+  });
+
+  it("is Monday on the Manila calendar, whatever the UTC date", () => {
+    expect(reportMonday(monday)).toBe("2026-10-05");
+    expect(reportMonday(manilaInstant("2026-10-05", 30))).toBe("2026-10-05"); // 12:30 AM in Manila is still Sunday in UTC
+    expect(reportMonday(manilaInstant("2026-10-04", 23 * 60 + 30))).toBeNull(); // Sunday 11:30 PM in Manila
+    expect(reportMonday(manilaInstant("2026-10-06", 9 * 60))).toBeNull();
+  });
+
+  it("picks clinics still taking bookings that have no summary for this Monday yet", () => {
+    const clinics = [clinic("c1"), clinic("c2", "2026-09-28"), clinic("c3", "2026-10-05"), clinic("c4"), clinic("c5"), clinic("c6")];
+    const billing = [
+      { clinic_id: "c1", ...open },
+      { clinic_id: "c2", ...open },
+      { clinic_id: "c3", ...open },
+      { clinic_id: "c4", trial_ends_at: manilaInstant("2026-09-20", 0).toISOString(), paid_through: null }, // paused since Sep 23
+      { clinic_id: "c6", trial_ends_at: manilaInstant("2026-10-03", 0).toISOString(), paid_through: null }, // in grace until Oct 6
+    ];
+    // c5 has no billing row: a trial that ended at signup (Sep 1), so it is paused too.
+    expect(weeklyCandidates(clinics, billing, monday).map((c) => c.id)).toEqual(["c1", "c2", "c6"]);
   });
 });

@@ -2,12 +2,14 @@ import "server-only";
 import * as webpush from "web-push";
 import { logError } from "@/lib/log";
 import type { Saved } from "@/lib/staff-input";
+import { formatRate, noShowRate } from "@/lib/reports";
 import { adminClient } from "@/lib/supabase/admin";
 import type { Staff } from "@/lib/supabase/server";
 import { formatDate, formatTime } from "@/lib/time";
 
 export type AlertKind = "request_alert" | "patient_cancel_alert";
-export type PushPayload = { title: string; body: string; url: string };
+/** type "weekly" is the one thing the service worker reads besides the words: it opens Reports instead of Requests. */
+export type PushPayload = { title: string; body: string; url: string; type?: "weekly" };
 export type StoredSubscription = { endpoint: string; p256dh: string; auth: string };
 export type PushSend = (sub: StoredSubscription, body: string) => Promise<unknown>;
 
@@ -20,6 +22,18 @@ export function pushPayload(kind: AlertKind, startsAt: Date, dentist: string | n
 /** Billing spec 7.4: the plan heads-up. Like every push, a tap opens the requests page, where the banner links to Billing. */
 export function planPushPayload(endsAt: Date): PushPayload {
   return { title: `Your BrightSmile plan ends ${formatDate(endsAt)}`, body: "Pay in BrightSmile to keep online booking open.", url: "/app/requests" };
+}
+
+/** Teams spec 6.4: the Monday summary of last week, in counts only. A tap opens Reports (type "weekly"). */
+export function weeklyPushPayload(clinicName: string, visits: number, noShows: number): PushPayload {
+  const rate = noShowRate(visits, noShows);
+  const counts = `${visits} ${visits === 1 ? "visit" : "visits"}, ${noShows} ${noShows === 1 ? "no-show" : "no-shows"}`;
+  return {
+    title: `Last week at ${clinicName}`,
+    body: `${counts}${rate === null ? "" : ` (${formatRate(rate)})`}. Tap to see Reports.`,
+    url: "/app/reports",
+    type: "weekly",
+  };
 }
 
 // The push services of Chrome and Android (FCM), Firefox, Safari and iOS, and Edge on Windows.
@@ -106,7 +120,8 @@ const FAILED = "Something went wrong. Please try again.";
 /**
  * Stores this device's subscription for the signed-in staff member, through their RLS client. The same
  * endpoint again (the browser re-subscribed) updates the keys in place.
- * ponytail: an endpoint already saved by another login on this browser fails RLS and shows FAILED; v1 has one login per clinic.
+ * ponytail: an endpoint another member already saved on this browser (a shared front desk device) fails RLS and shows
+ * FAILED, though the device keeps getting the clinic's alerts through that member's row; let a member take it over if asked.
  */
 export async function saveSubscription(staff: Staff, input: unknown): Promise<Saved> {
   const sub = parseSubscription(input);
