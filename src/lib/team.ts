@@ -12,3 +12,8 @@ export function isInviteToken(value: unknown): value is string {
 export function hashInviteToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
 }
+
+/** The link the owner sends by Messenger or text (teams spec 6.1): {APP_URL}/join/{token}. */
+export function joinLink(appUrl: string, token: string): string {
+  return `${appUrl}/join/${token}`;
+}

@@ -42,6 +42,15 @@ export default async function SettingsPage() {
         {owner && <DentistEditor dentist={null} />}
       </section>
       {owner && <ProcedureEditor procedures={settings.procedures} />}
+      {owner && (
+        <section className="card card-pad settings-section">
+          <h2 className="font-display">Team</h2>
+          <p className="f-hint">Invite staff with a join link, and remove staff who leave.</p>
+          <Link href="/app/settings/team" className="btn btn-soft mt-3">
+            Open Team
+          </Link>
+        </section>
+      )}
       <section className="card card-pad settings-section">
         <h2 className="font-display">Plan and billing</h2>
         <p className="f-hint">{owner ? "See when your plan ends, how to pay, and past payments." : "See when your clinic's plan ends."}</p>
