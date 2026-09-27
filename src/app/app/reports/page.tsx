@@ -22,6 +22,16 @@ async function loadStats(staff: Staff, from: string): Promise<WeekStatsRow[] | n
   return (data ?? []) as WeekStatsRow[];
 }
 
+/** The clinic's dentists, for the per-dentist sections, or null after logging when they cannot be read (teams spec 9). */
+async function loadDentists(staff: Staff): Promise<Dentist[] | null> {
+  const { data, error } = await staff.db.from("dentists").select("id, name").eq("clinic_id", staff.clinicId).order("created_at");
+  if (error) {
+    logError("reports", error);
+    return null;
+  }
+  return (data ?? []) as Dentist[];
+}
+
 /** One week's numbers, each next to its label (teams spec 6.3). */
 function Counts({ counts, monday }: { counts: WeekCounts; monday: string }) {
   const rows: [string, ReactNode][] = [
@@ -128,10 +138,7 @@ export default async function ReportsPage({ searchParams }: Props) {
   const staff = await requireStaff();
   const weeks = reportWeeks(new Date());
   const week = pickWeek((await searchParams).week, weeks);
-  const [stats, dentists] = await Promise.all([
-    loadStats(staff, weeks[weeks.length - 1]),
-    staff.db.from("dentists").select("id, name").eq("clinic_id", staff.clinicId).order("created_at").throwOnError(),
-  ]);
+  const [stats, dentists] = await Promise.all([loadStats(staff, weeks[weeks.length - 1]), loadDentists(staff)]);
 
   return (
     <>
@@ -139,7 +146,7 @@ export default async function ReportsPage({ searchParams }: Props) {
         <h1 className="font-display">Reports</h1>
       </div>
       <Form action="/app/reports" className="card card-pad mb-3 flex flex-wrap items-end gap-2">
-        <label className="min-w-0 flex-1">
+        <label className="w-full min-w-0">
           <span className="f-label">Week</span>
           <select key={week} name="week" defaultValue={week} className="f-input">
             {weeks.map((w, i) => (
@@ -153,12 +160,12 @@ export default async function ReportsPage({ searchParams }: Props) {
           Show
         </button>
       </Form>
-      {stats === null ? (
+      {stats === null || dentists === null ? (
         <div className="card empty-note" role="alert">
           Reports are not available right now.
         </div>
       ) : (
-        <Report stats={stats} dentists={dentists.data as Dentist[]} weeks={weeks} week={week} />
+        <Report stats={stats} dentists={dentists} weeks={weeks} week={week} />
       )}
     </>
   );
