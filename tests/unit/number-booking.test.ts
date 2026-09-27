@@ -8,6 +8,7 @@ import {
   bookForNumber,
   cancelForNumber,
   changeForNumber,
+  changeScope,
   checkVerification,
   numberAppointments,
   numberPatients,
@@ -20,10 +21,19 @@ import { sendSms } from "@/lib/sms/send";
 // Booking flow spec 8: nothing is shown or changed for a number this phone has not verified. The fake secret-key
 // client records every table and function it is asked for, so "touches nothing" is checked, not assumed. Reads
 // answer fake.single (maybeSingle) or fake.list (throwOnError); writes answer one updated row.
+//
+// Each from(table) call also gets its own filters log: [method, column, value] for every eq/is/in/gt on that
+// query. The old fake ignored these arguments entirely (every query answered fake.single/fake.list regardless of
+// what it was filtered by), so deleting the clinic or mobile filter from a reader in src/lib/number-booking.ts
+// still passed every test here. Recording them lets the IDOR guard tests below assert the filters were really
+// there, not just that some query happened to run.
+type Filter = [method: string, column: string, value: unknown];
+
 const fake = vi.hoisted(() => ({
   single: {} as Record<string, unknown>,
   list: {} as Record<string, unknown[]>,
   tables: [] as string[],
+  queries: [] as { table: string; filters: Filter[] }[],
   rpcs: [] as { name: string; args: Record<string, unknown> }[],
   rpcAnswer: {} as Record<string, { data: unknown; error: { code: string } | null }>,
 }));
@@ -32,13 +42,21 @@ vi.mock("@/lib/supabase/admin", () => ({
   adminClient: () => ({
     from: (table: string) => {
       fake.tables.push(table);
+      const entry = { table, filters: [] as Filter[] };
+      fake.queries.push(entry);
       let writing = false;
+      const record =
+        (method: string) =>
+        (column: string, value: unknown): typeof query => {
+          entry.filters.push([method, column, value]);
+          return query;
+        };
       const query = {
         select: () => query,
-        eq: () => query,
-        is: () => query,
-        in: () => query,
-        gt: () => query,
+        eq: record("eq"),
+        is: record("is"),
+        in: record("in"),
+        gt: record("gt"),
         order: () => query,
         limit: () => query,
         update: () => {
@@ -85,6 +103,7 @@ beforeEach(() => {
   fake.single = { clinics: { id: CLINIC, sms_name: "Bright Dental", min_notice_minutes: 120 } };
   fake.list = {};
   fake.tables = [];
+  fake.queries = [];
   fake.rpcs = [];
   fake.rpcAnswer = {};
   vi.mocked(bookingOpen).mockResolvedValue(true);
@@ -288,5 +307,53 @@ describe("booking, changing, and cancelling by number", () => {
     fake.single.appointments = owned("2026-10-27T01:00:00.000Z");
     expect(await cancelForNumber("bright-dental", request.mobile, VISIT, verified)).toBe("cancelled");
     expect(cancelByPatient).toHaveBeenCalledWith("AbCdEfGhIjKl", now);
+  });
+
+  // IDOR regression guard: the fake above used to ignore every eq/is/in/gt call, so a reader that dropped its
+  // clinic, mobile, or not-anonymized filter still passed. These check the filters the four readers put on their
+  // query, not just the rows they return, for ownedAppointment (through changeScope), whoFor (through
+  // bookForNumber's patientId path), numberPatients, and numberAppointments.
+  describe("every reader filters by clinic, the number, and live patients (IDOR guard)", () => {
+    const queryFor = (table: string) => fake.queries.find((q) => q.table === table);
+    const hasClinic = (f: Filter[]) => f.some(([m, c, v]) => m === "eq" && c === "clinic_id" && v === CLINIC);
+    const hasNumber = (f: Filter[], column: string) => f.some(([m, c, v]) => m === "eq" && c === column && v === MOBILE);
+    const hasLive = (f: Filter[], column: string) => f.some(([m, c, v]) => m === "is" && c === column && v === null);
+
+    it("numberPatients", async () => {
+      fake.list.patients = [];
+      await numberPatients("bright-dental", request.mobile, verified);
+      const q = queryFor("patients")!;
+      expect(hasClinic(q.filters)).toBe(true);
+      expect(hasNumber(q.filters, "mobile")).toBe(true);
+      expect(hasLive(q.filters, "anonymized_at")).toBe(true);
+    });
+
+    it("numberAppointments", async () => {
+      fake.list.appointments = [];
+      fake.list.procedures = [];
+      await numberAppointments("bright-dental", request.mobile, verified);
+      const q = queryFor("appointments")!;
+      expect(hasClinic(q.filters)).toBe(true);
+      expect(hasNumber(q.filters, "patients.mobile")).toBe(true);
+      expect(hasLive(q.filters, "patients.anonymized_at")).toBe(true);
+    });
+
+    it("whoFor, choosing one of the number's patients (through bookForNumber)", async () => {
+      fake.rpcAnswer.create_booking = { data: VISIT, error: null };
+      await bookForNumber("bright-dental", request, verified);
+      const q = queryFor("patients")!;
+      expect(hasClinic(q.filters)).toBe(true);
+      expect(hasNumber(q.filters, "mobile")).toBe(true);
+      expect(hasLive(q.filters, "anonymized_at")).toBe(true);
+    });
+
+    it("ownedAppointment, for the number's own appointment (through changeScope)", async () => {
+      fake.single.appointments = owned("2026-10-27T01:00:00.000Z");
+      await changeScope("bright-dental", request.mobile, VISIT, verified);
+      const q = queryFor("appointments")!;
+      expect(hasClinic(q.filters)).toBe(true);
+      expect(hasNumber(q.filters, "patients.mobile")).toBe(true);
+      expect(hasLive(q.filters, "patients.anonymized_at")).toBe(true);
+    });
   });
 });
