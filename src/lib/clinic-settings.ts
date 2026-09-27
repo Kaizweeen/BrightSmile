@@ -119,6 +119,13 @@ export async function saveProfile(staff: Staff, input: unknown): Promise<Saved> 
     const { error } = await staff.db.from("clinics").update(parsed.value).eq("id", staff.clinicId);
     if (error?.code === "23505") return { ok: false, field: "slug", error: "That booking link is taken. Try another." };
     if (error) throw error;
+    // Until Settings has Branches (plan 8), a clinic with one branch keeps that branch's address and map link in step
+    // with the profile, so the booking page never shows an address the owner already changed.
+    const { data: branches } = await staff.db.from("branches").select("id").eq("clinic_id", staff.clinicId).throwOnError();
+    const only = branches as { id: string }[];
+    if (only.length === 1) {
+      await staff.db.from("branches").update({ address: parsed.value.address, maps_url: parsed.value.maps_url }).eq("id", only[0].id).throwOnError();
+    }
     return { ok: true };
   } catch (e) {
     return failure("saveProfile", e);
@@ -144,6 +151,19 @@ export async function saveDentist(staff: Staff, id: string | null, input: unknow
   if (!parsed.ok) return parsed;
   const { name, sms_name, hours } = parsed.value;
   try {
+    // Each block at its branch (booking flow spec 4); a block that names none goes to the first active branch.
+    const { data: branchRows } = await staff.db
+      .from("branches")
+      .select("id")
+      .eq("clinic_id", staff.clinicId)
+      .eq("active", true)
+      .order("sort")
+      .order("created_at")
+      .throwOnError();
+    const open = (branchRows as { id: string }[]).map((b) => b.id);
+    if (open.length === 0 || hours.some((h) => h.branch_id !== null && !open.includes(h.branch_id))) {
+      return { ok: false, field: "hours", error: "Choose an open branch for each block." };
+    }
     let dentistId: string;
     if (id === null) {
       const { data } = await staff.db
@@ -174,7 +194,7 @@ export async function saveDentist(staff: Staff, id: string | null, input: unknow
       .throwOnError();
     await staff.db
       .from("working_hours")
-      .insert(hours.map((h) => ({ clinic_id: staff.clinicId, dentist_id: dentistId, ...h })))
+      .insert(hours.map((h) => ({ clinic_id: staff.clinicId, dentist_id: dentistId, ...h, branch_id: h.branch_id ?? open[0] })))
       .throwOnError();
     const oldIds = (old as { id: string }[]).map((o) => o.id);
     if (oldIds.length > 0) await staff.db.from("working_hours").delete().in("id", oldIds).throwOnError();

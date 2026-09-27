@@ -136,19 +136,51 @@ export async function loadDay(staff: Staff, date: string, dentistId: string | nu
 }
 
 /**
- * Open start times for staff (New and Move): the clinic's slot spacing inside the dentist's hours, minus
- * appointments and time off. No minimum notice and a 365 day window, since those rules protect the public
- * page. Move passes ignoreId so the visit's own time counts as free (spec 8.4).
+ * The branch staff times are for (booking flow spec 4): a moved visit's own branch, otherwise the clinic's first
+ * active branch, where create_booking puts a New appointment that names none (until plan 8 asks for one).
+ */
+async function staffBranch(staff: Staff, appointmentId?: string): Promise<string | null> {
+  if (appointmentId) {
+    const { data } = await staff.db
+      .from("appointments")
+      .select("branch_id")
+      .eq("id", appointmentId)
+      .eq("clinic_id", staff.clinicId)
+      .maybeSingle()
+      .throwOnError();
+    return (data as { branch_id: string } | null)?.branch_id ?? null;
+  }
+  const { data } = await staff.db
+    .from("branches")
+    .select("id")
+    .eq("clinic_id", staff.clinicId)
+    .eq("active", true)
+    .order("sort")
+    .order("created_at")
+    .limit(1)
+    .maybeSingle()
+    .throwOnError();
+  return (data as { id: string } | null)?.id ?? null;
+}
+
+/**
+ * Open start times for staff (New and Move): the clinic's slot spacing inside the dentist's hours at one branch
+ * (staffBranch, unless named), minus appointments and time off at every branch. No minimum notice and a 365 day
+ * window, since those rules protect the public page. Move passes ignoreId so the visit's own time counts as free
+ * (spec 8.4).
  */
 export async function staffOpenStarts(
   staff: Staff,
-  q: { dentistId: string; date: string; duration: number; ignoreId?: string },
+  q: { dentistId: string; date: string; duration: number; ignoreId?: string; branchId?: string },
   now: Date,
 ): Promise<Date[]> {
   // Values can come straight from a form, so check them before they reach a query.
   const validDate = /^\d{4}-\d{2}-\d{2}$/.test(q.date) && addDays(q.date, 0) === q.date;
   const validDuration = Number.isInteger(q.duration) && q.duration >= 5 && q.duration <= 9600;
-  if (!isUuid(q.dentistId) || !validDate || !validDuration || (q.ignoreId !== undefined && !isUuid(q.ignoreId))) return [];
+  const validIds = [q.ignoreId, q.branchId].every((id) => id === undefined || isUuid(id));
+  if (!isUuid(q.dentistId) || !validDate || !validDuration || !validIds) return [];
+  const branchId = q.branchId ?? (await staffBranch(staff, q.ignoreId));
+  if (!branchId) return [];
   const [clinic, hours, busy] = await Promise.all([
     staff.db.from("clinics").select("slot_minutes").eq("id", staff.clinicId).single().throwOnError(),
     staff.db
@@ -156,6 +188,7 @@ export async function staffOpenStarts(
       .select("start_time, end_time")
       .eq("clinic_id", staff.clinicId)
       .eq("dentist_id", q.dentistId)
+      .eq("branch_id", branchId)
       .eq("weekday", weekday(q.date))
       .throwOnError(),
     busyBetween(staff.db, q.dentistId, manilaInstant(q.date, 0), manilaInstant(addDays(q.date, 1), 0)),

@@ -5,7 +5,13 @@ import { cleanBirthday, cleanText, LIMITS } from "@/lib/validate";
 export type PublicDentist = { id: string; name: string; smsName: string; hours: Block[][] };
 export type PublicProcedure = { id: string; name: string; minutes: number };
 
-/** Everything the public booking page receives (spec 6): no patients and no busy intervals. */
+/** A branch as patients see it (booking flow spec 4): where to go. */
+export type PublicBranch = { id: string; name: string; address: string; mapsUrl: string | null };
+
+/**
+ * Everything the public booking page receives (spec 6): no patients and no busy intervals. It is loaded for one
+ * branch (booking flow spec 4): the dentists and their hours are that branch's; branches lists every active one.
+ */
 export type PublicClinic = {
   id: string;
   slug: string;
@@ -15,6 +21,8 @@ export type PublicClinic = {
   address: string;
   mapsUrl: string | null;
   rules: BookingRules;
+  branch: PublicBranch;
+  branches: PublicBranch[];
   dentists: PublicDentist[];
   procedures: PublicProcedure[];
 };
@@ -27,6 +35,8 @@ export type BookingInput = Selection & Details & { startsAt: string };
 export type BookingPayload = {
   clinicId: string;
   slug: string;
+  /** Absent in codes requested before branches: they book at the clinic's first active branch. */
+  branchId?: string;
   dentistId: string;
   startsAt: string;
   endsAt: string;
@@ -112,6 +122,7 @@ export function parseBookingInput(
     payload: {
       clinicId: clinic.id,
       slug: clinic.slug,
+      branchId: clinic.branch.id,
       dentistId: chosen.dentist.id,
       startsAt: start.toISOString(),
       endsAt: new Date(start.getTime() + chosen.duration * 60_000).toISOString(),

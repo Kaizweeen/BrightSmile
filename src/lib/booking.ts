@@ -92,6 +92,7 @@ async function finalize(clinic: PublicClinic, p: BookingPayload, now: Date): Pro
   const token = newToken();
   const { data: appointmentId, error } = await adminClient().rpc("create_booking", {
     p_clinic_id: clinic.id,
+    p_branch_id: clinic.branch.id,
     p_dentist_id: p.dentistId,
     p_starts_at: p.startsAt,
     p_ends_at: p.endsAt,
@@ -261,7 +262,7 @@ export async function verifyCode(
     if (marked.length === 0) return done({ status: "used" });
     verifiedMobile = row.mobile;
 
-    const clinic = await loadClinic({ id: row.booking.clinicId });
+    const clinic = await loadClinic({ id: row.booking.clinicId }, row.booking.branchId);
     if (!clinic) return done({ status: "unavailable" });
     return done(await finalize(clinic, row.booking, now));
   } catch (e) {

@@ -65,10 +65,36 @@ describe("parseDentist", () => {
         name: "Dr. Ben Lim",
         sms_name: "Dr. Lim",
         hours: [
-          { weekday: 1, start_time: "09:00", end_time: "12:00" },
-          { weekday: 1, start_time: "13:00", end_time: "17:00" },
+          { weekday: 1, start_time: "09:00", end_time: "12:00", branch_id: null },
+          { weekday: 1, start_time: "13:00", end_time: "17:00", branch_id: null },
         ],
       },
+    });
+  });
+
+  it("keeps each block's branch, and refuses blocks that overlap even at different branches", () => {
+    const makati = "0b6a3c52-8a47-4a55-9a77-6f2b0e1d9c01";
+    const pasig = "7d2e9f10-3b5c-4e8a-b1d4-2c6f8a0e5b92";
+    const monday = (blocks: object[]) => [[], blocks, [], [], [], [], []];
+    const dentist = { name: "Dr. Ben Lim", smsName: "Dr. Lim" };
+    expect(
+      parseDentist({ ...dentist, hours: monday([{ start: "09:00", end: "12:00", branchId: makati }, { start: "13:00", end: "17:00", branchId: pasig }]) }),
+    ).toMatchObject({
+      ok: true,
+      value: {
+        hours: [
+          { weekday: 1, start_time: "09:00", end_time: "12:00", branch_id: makati },
+          { weekday: 1, start_time: "13:00", end_time: "17:00", branch_id: pasig },
+        ],
+      },
+    });
+    expect(
+      parseDentist({ ...dentist, hours: monday([{ start: "09:00", end: "12:00", branchId: makati }, { start: "11:00", end: "13:00", branchId: pasig }]) }),
+    ).toEqual({ ok: false, field: "hours", error: "The blocks on Monday overlap." });
+    expect(parseDentist({ ...dentist, hours: monday([{ start: "09:00", end: "12:00", branchId: "Makati" }]) })).toEqual({
+      ok: false,
+      field: "hours",
+      error: "Choose a branch for each block.",
     });
   });
 

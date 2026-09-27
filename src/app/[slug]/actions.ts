@@ -6,14 +6,17 @@ import * as booking from "@/lib/booking";
 import { resolveSelection } from "@/lib/booking-input";
 import { DEVICE_COOKIE, readDevice, signDevice } from "@/lib/codes";
 import { clientIp } from "@/lib/request";
+import { isUuid } from "@/lib/validate";
 
 // Server Actions are public POST endpoints: every argument is checked here before use.
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 const DEVICE_MAX_AGE = 180 * 86_400;
 
+/** The branch, dentist, and procedures the client picked, checked against the clinic. No branch: the first active one. */
 async function chosen(slug: unknown, selection: unknown) {
-  const clinic = typeof slug === "string" ? await loadClinic({ slug }) : null;
+  const branchId = (selection as { branchId?: unknown } | null | undefined)?.branchId;
+  const clinic = typeof slug === "string" ? await loadClinic({ slug }, isUuid(branchId) ? branchId : undefined) : null;
   const picked = clinic ? resolveSelection(clinic, selection) : null;
   return clinic && picked ? { clinic, picked } : null;
 }

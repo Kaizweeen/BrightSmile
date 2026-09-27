@@ -13,6 +13,8 @@ const clinic: PublicClinic = {
   address: "Makati",
   mapsUrl: null,
   rules: { slotMinutes: 30, minNoticeMinutes: 120, maxDaysAhead: 60 },
+  branch: { id: "b1", name: "Main", address: "Makati", mapsUrl: null },
+  branches: [{ id: "b1", name: "Main", address: "Makati", mapsUrl: null }],
   dentists: [
     { id: "d1", name: "Dr. Ana Reyes", smsName: "Dr. Reyes", hours: week },
     { id: "d2", name: "Dr. Marco Lim", smsName: "Dr. Lim", hours: week },
@@ -79,6 +81,7 @@ describe("parseBookingInput", () => {
       payload: {
         clinicId: "c1",
         slug: "bright-dental",
+        branchId: "b1",
         dentistId: "d2",
         startsAt: "2026-10-01T01:00:00.000Z",
         endsAt: "2026-10-01T02:30:00.000Z",
@@ -93,8 +96,9 @@ describe("parseBookingInput", () => {
   });
 
   it("ignores fields the client has no say over", () => {
-    const result = parseBookingInput(clinic, { ...good, clinicId: "someone-else", endsAt: "2030-01-01T00:00:00Z" }, today);
+    const result = parseBookingInput(clinic, { ...good, clinicId: "someone-else", branchId: "b9", endsAt: "2030-01-01T00:00:00Z" }, today);
     expect(result.ok && result.payload.clinicId).toBe("c1");
+    expect(result.ok && result.payload.branchId).toBe("b1");
     expect(result.ok && result.payload.endsAt).toBe("2026-10-01T02:30:00.000Z");
   });
 
