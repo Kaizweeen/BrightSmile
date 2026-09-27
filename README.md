@@ -45,7 +45,7 @@ Do these in order. Kai creates the accounts; nothing here can be done from code.
 
 ### 2. Supabase production project
 
-Production is the project with ref `fmvqwojzsklinbdmfjkn` (first created as `brightsmile-dev`, and empty at launch). Migrations 1 to 6 are already applied there, so for it start at step 3; migrations 7 and 8 are pasted as described under "Billing" and "Teams and reports" below. Steps 1 and 2 set up any new project, such as the separate development project that the database and e2e tests need.
+Production is the project with ref `fmvqwojzsklinbdmfjkn` (first created as `brightsmile-dev`, and empty at launch). Migrations 1 to 6 are already applied there, so for it start at step 3; migrations 7 to 9 are pasted as described under "Billing", "Teams and reports", and "Branches and the booking engine" below. Steps 1 and 2 set up any new project, such as the separate development project that the database and e2e tests need.
 
 1. Create a new project, region Singapore. From **Project Settings > API Keys** copy the project URL, the publishable key, and the secret key.
 2. Apply the migrations in filename order: open each file in `supabase/migrations`, paste it into the **SQL Editor**, and run it before opening the next.
@@ -60,12 +60,13 @@ Production is the project with ref `fmvqwojzsklinbdmfjkn` (first created as `bri
    | 6 | `20260925000100_otp_issue_lock.sql` |
    | 7 | `20260925000200_billing.sql` |
    | 8 | `20260926000100_teams.sql` |
+   | 9 | `20260928000100_branches_booking.sql` |
 
    Migrations run by hand are not recorded in the project's migration history. Before you ever use `npm run db:push` against this project, link it and mark them as applied, or the CLI will try to run them again:
 
    ```powershell
    npx supabase link --project-ref <production-project-ref>
-   npx supabase migration repair --status applied 20260922000100 20260922000200 20260922000300 20260924000100 20260924000200 20260925000100 20260925000200 20260926000100
+   npx supabase migration repair --status applied 20260922000100 20260922000200 20260922000300 20260924000100 20260924000200 20260925000100 20260925000200 20260926000100 20260928000100
    ```
 
 3. **Authentication > URL Configuration:** Site URL = your `APP_URL` (for example `https://brightsmile.ph`); add `https://brightsmile.ph/**` under Redirect URLs.
@@ -211,3 +212,20 @@ One login belongs to one clinic: someone whose login already has a clinic joins 
 ### Reports and the Monday push
 
 **Reports**, in the dashboard nav, shows a Manila week's (Monday to Sunday) visits, no-shows, no-show rate, cancellations, declined and expired requests, visits nobody marked yet, and online versus staff bookings, per dentist when 2 or more had appointments, and an 8 week table. Every Monday the daily job pushes "Last week at {clinic}" with the week's visits, no-shows, and no-show rate to each clinic that is not paused and had appointments; tapping it opens Reports. There is no text fallback (it would cost a credit per clinic per week). The daily job's JSON reports how many clinics the push reached as `"weekly"`.
+
+## Branches and the booking engine
+
+A clinic can have several branches, each with its own address and calendar, and the server side of the new patient booking flow is in place (spec: `docs/superpowers/specs/2026-09-26-brightsmile-booking-flow-branches-design.md`): patients verify their number first, then book for one of their patients or for someone new with the clinic's patient form and waiver, change a booking (it goes back to the clinic for approval, and the clinic gets a "Changed request" alert), or cancel one. The pages for it come in the next plan; until then every clinic has one branch, "Main", and every page works as before. Once a clinic has 2 or more active branches, patients' texts name the branch after the clinic (for example "Bright Dental Makati").
+
+Answers on the patient form are health information, sensitive personal information under RA 10173: only the clinic's members read them, they never appear in texts, pushes, logs, or reports, and deleting a patient clears all of them. The waiver's wording (`src/lib/waiver.ts`) still needs legal review before the pages show it.
+
+### Apply the branches migration (once, before merging the branches branch)
+
+Every merge to `main` deploys, and the new code reads the new table, columns, and functions, so the migration goes first. The teams migration must already be in production: this migration checks it and refuses to run (it fails on its first statement) if `clinic_invites` does not exist yet.
+
+1. Make sure production's `create_clinic` is still the one in the teams migration and `create_booking` still the one in the hardening migration, because this migration replaces both and a fix made there by hand would be lost. In the production **SQL Editor**, run `select pg_get_functiondef('public.create_clinic(jsonb)'::regprocedure);` and compare the body (between the `$function$` markers) with `create_clinic` in `supabase/migrations/20260926000100_teams.sql`; then run `select pg_get_functiondef(p.oid) from pg_proc p where p.proname = 'create_booking';` and compare it with `create_booking` in `supabase/migrations/20260924000100_hardening.sql`. If either differs, stop and fold the difference into the branches migration first.
+2. Open `supabase/migrations/20260928000100_branches_booking.sql`, paste it into the production **SQL Editor**, and run it. Every clinic gets one branch, "Main", with the clinic's address and map link, holding all its working hours and appointments. `npm test` has already applied it to an offline copy of the schema (`tests/sql`).
+3. Run `notify pgrst, 'reload schema';` so the API sees the new `create_booking` and `change_booking` at once.
+4. Check it: `select count(*) from public.clinics c where (select count(*) from public.branches b where b.clinic_id = c.id and b.active) <> 1;` must return `0`.
+5. Merge the branch right away. Until the deploy finishes, saving a dentist's working hours in Settings fails (the old code names no branch); saving again after the deploy works. Everything else keeps working in between.
+6. If you ever link the project for `npm run db:push`, mark it applied first: `npx supabase migration repair --status applied 20260928000100`.
