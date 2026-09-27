@@ -58,13 +58,27 @@ function logFailure(where: string, e: unknown) {
   console.error(`${where} failed:`, String((e as { message?: unknown } | null)?.message ?? e));
 }
 
-/** Null while the payload's start is still open; otherwise that dentist's fresh open starts on that date (spec 13). */
-async function takenStarts(clinic: PublicClinic, p: BookingPayload, now: Date): Promise<string[] | null> {
-  const dentist = clinic.dentists.find((d) => d.id === p.dentistId);
-  const start = new Date(p.startsAt);
-  const duration = (new Date(p.endsAt).getTime() - start.getTime()) / 60_000;
-  const starts = dentist ? await dayOpenStarts(clinic, dentist, duration, manilaDate(start), now) : [];
+/**
+ * Null while this start is still open for the dentist at the clinic's branch; otherwise that dentist's fresh open
+ * starts on that date (spec 13). ignoreId is an appointment being changed, whose own time counts as free.
+ */
+export async function takenStarts(
+  clinic: PublicClinic,
+  dentistId: string,
+  start: Date,
+  end: Date,
+  now: Date,
+  ignoreId?: string,
+): Promise<string[] | null> {
+  const dentist = clinic.dentists.find((d) => d.id === dentistId);
+  const duration = (end.getTime() - start.getTime()) / 60_000;
+  const starts = dentist ? await dayOpenStarts(clinic, dentist, duration, manilaDate(start), now, ignoreId) : [];
   return starts.some((s) => s.getTime() === start.getTime()) ? null : starts.map((s) => s.toISOString());
+}
+
+/** takenStarts for the booking page's stored payload. */
+function payloadTaken(clinic: PublicClinic, p: BookingPayload, now: Date): Promise<string[] | null> {
+  return takenStarts(clinic, p.dentistId, new Date(p.startsAt), new Date(p.endsAt), now);
 }
 
 /** This mobile's future pending requests, joined through patients since appointments hold no mobile of their own. */
@@ -82,7 +96,7 @@ async function pendingCount(mobile: string, now: Date, clinicId?: string): Promi
 }
 
 /** Caps one mobile's pending online requests, so it can't flood a clinic's (or the platform's) queue. */
-async function overBookingCap(clinicId: string, mobile: string, now: Date): Promise<boolean> {
+export async function overBookingCap(clinicId: string, mobile: string, now: Date): Promise<boolean> {
   const [atClinic, total] = await Promise.all([pendingCount(mobile, now, clinicId), pendingCount(mobile, now)]);
   return atClinic >= BOOKING_CAPS.perClinic || total >= BOOKING_CAPS.total;
 }
@@ -90,7 +104,7 @@ async function overBookingCap(clinicId: string, mobile: string, now: Date): Prom
 /** Spec 9.1 steps 5 and 6: one transaction creates the request, then the clinic is alerted. */
 async function finalize(clinic: PublicClinic, p: BookingPayload, now: Date): Promise<Finalized> {
   if (await overBookingCap(clinic.id, p.mobile, now)) return { status: "too_many" };
-  const fresh = await takenStarts(clinic, p, now);
+  const fresh = await payloadTaken(clinic, p, now);
   if (fresh) return { status: "taken", starts: fresh };
 
   const token = newToken();
@@ -115,7 +129,7 @@ async function finalize(clinic: PublicClinic, p: BookingPayload, now: Date): Pro
     p_user_id: null,
   });
   // 23P01: the overlap guard caught a booking that landed between the check above and this insert.
-  if (error?.code === "23P01") return { status: "taken", starts: (await takenStarts(clinic, p, now)) ?? [] };
+  if (error?.code === "23P01") return { status: "taken", starts: (await payloadTaken(clinic, p, now)) ?? [] };
   if (error) throw error;
 
   const dentist = clinic.dentists.find((d) => d.id === p.dentistId)!;
@@ -202,7 +216,7 @@ export async function requestBooking(
     if (!parsed.ok) return { status: "invalid", errors: parsed.errors };
 
     if (ctx.verifiedMobiles.includes(parsed.payload.mobile)) return await finalize(clinic, parsed.payload, ctx.now);
-    const starts = await takenStarts(clinic, parsed.payload, ctx.now);
+    const starts = await payloadTaken(clinic, parsed.payload, ctx.now);
     if (starts) return { status: "taken", starts };
     return await issueCode(clinic, parsed.payload.mobile, parsed.payload, ctx);
   } catch (e) {
