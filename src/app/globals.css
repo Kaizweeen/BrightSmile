@@ -784,7 +784,8 @@ a {
   bottom: 0;
   z-index: 50;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  /* Six tabs, 60px each on a 360px phone; minmax(0, 1fr) keeps a long label from widening the bar past the screen. */
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   background: #fff;
   border-top: 1px solid var(--border);
   padding-bottom: env(safe-area-inset-bottom);
@@ -796,7 +797,7 @@ a {
   justify-content: center;
   gap: 6px;
   min-height: 56px;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-2);
 }
