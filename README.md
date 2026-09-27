@@ -45,7 +45,7 @@ Do these in order. Kai creates the accounts; nothing here can be done from code.
 
 ### 2. Supabase production project
 
-Production is the project with ref `fmvqwojzsklinbdmfjkn` (first created as `brightsmile-dev`, and empty at launch). Migrations 1 to 6 are already applied there, so for it start at step 3; migration 7 is pasted as described under "Billing" below. Steps 1 and 2 set up any new project, such as the separate development project that the database and e2e tests need.
+Production is the project with ref `fmvqwojzsklinbdmfjkn` (first created as `brightsmile-dev`, and empty at launch). Migrations 1 to 6 are already applied there, so for it start at step 3; migrations 7 and 8 are pasted as described under "Billing" and "Teams and reports" below. Steps 1 and 2 set up any new project, such as the separate development project that the database and e2e tests need.
 
 1. Create a new project, region Singapore. From **Project Settings > API Keys** copy the project URL, the publishable key, and the secret key.
 2. Apply the migrations in filename order: open each file in `supabase/migrations`, paste it into the **SQL Editor**, and run it before opening the next.
@@ -59,12 +59,13 @@ Production is the project with ref `fmvqwojzsklinbdmfjkn` (first created as `bri
    | 5 | `20260924000200_default_function_privileges.sql` |
    | 6 | `20260925000100_otp_issue_lock.sql` |
    | 7 | `20260925000200_billing.sql` |
+   | 8 | `20260926000100_teams.sql` |
 
    Migrations run by hand are not recorded in the project's migration history. Before you ever use `npm run db:push` against this project, link it and mark them as applied, or the CLI will try to run them again:
 
    ```powershell
    npx supabase link --project-ref <production-project-ref>
-   npx supabase migration repair --status applied 20260922000100 20260922000200 20260922000300 20260924000100 20260924000200 20260925000100 20260925000200
+   npx supabase migration repair --status applied 20260922000100 20260922000200 20260922000300 20260924000100 20260924000200 20260925000100 20260925000200 20260926000100
    ```
 
 3. **Authentication > URL Configuration:** Site URL = your `APP_URL` (for example `https://brightsmile.ph`); add `https://brightsmile.ph/**` under Redirect URLs.
@@ -184,3 +185,29 @@ If the webhook fails:
 
 - A 401 on `POST /api/paymongo/webhook` in Vercel's request logs means `PAYMONGO_WEBHOOK_SECRET` does not match this webhook (test and live webhooks have different secrets).
 - A log line saying a paid checkout is for a clinic that no longer exists names the checkout session: refund it in PayMongo.
+
+## Teams and reports
+
+A clinic's owner invites staff with a join link (spec: `docs/superpowers/specs/2026-09-26-brightsmile-teams-reports-design.md`). Staff handle requests, the schedule, new appointments, patients, and dentists' time off; only the owner changes the clinic profile and booking rules, dentists, working hours, procedures, billing, and the team. The database enforces this, not only the pages. Staff seats are free. Every clinic also gets a Reports page and a Monday 9:00 AM push that sums up the week before.
+
+### Apply the teams migration (once, before merging the teams branch)
+
+Every merge to `main` deploys, and the new code reads the new columns and functions, so the migration goes first. The billing migration must already be in production.
+
+1. Make sure production's `create_clinic` is still the one in the billing migration, because this migration replaces it and a fix made there by hand would be lost. Run `select pg_get_functiondef('public.create_clinic(jsonb)'::regprocedure);` in the production **SQL Editor** and compare the body (between the `$function$` markers) with `create_clinic` in `supabase/migrations/20260925000200_billing.sql`. If they differ, stop and fold the difference into the teams migration first.
+2. Make sure no clinic uses the booking link `join`, which becomes reserved: `select id, name from public.clinics where slug = 'join';` must return no rows. If it returns one, change that clinic's booking link first, or the migration stops at `clinics_slug_not_reserved`.
+3. Open `supabase/migrations/20260926000100_teams.sql`, paste it into the production **SQL Editor**, and run it. Every existing member stays the owner of their clinic and gets their login email copied onto their membership. `npm test` has already applied it to an offline copy of the schema (`tests/sql`).
+4. Check it: `select count(*) from public.clinic_members where email is null or role <> 'owner';` must return `0`.
+5. If you ever link the project for `npm run db:push`, mark it applied first: `npx supabase migration repair --status applied 20260926000100`.
+
+### Invite staff
+
+1. As the owner, open **Settings**, then **Open Team**, and press **Create join link**. Copy the link and send it by Messenger or text. It works once, for 7 days, and is shown only once; make another if it is lost.
+2. The staff member opens it, creates an account (or logs in), confirms their email in the same browser, and presses **Join**. They land on Requests. If they confirmed in another browser and see the clinic setup instead, they open the join link again there.
+3. On the Team page, **Revoke** stops an unused link at once, and **Remove** ends a staff member's access on their next page load and stops their devices getting the clinic's alerts.
+
+One login belongs to one clinic: someone whose login already has a clinic joins with another email.
+
+### Reports and the Monday push
+
+**Reports**, in the dashboard nav, shows a Manila week's (Monday to Sunday) visits, no-shows, no-show rate, cancellations, declined and expired requests, visits nobody marked yet, and online versus staff bookings, per dentist when 2 or more worked, and an 8 week table. Every Monday the daily job pushes "Last week at {clinic}" with the week's visits, no-shows, and no-show rate to each clinic that is not paused and had appointments; tapping it opens Reports. There is no text fallback (it would cost a credit per clinic per week). The daily job's JSON reports how many clinics the push reached as `"weekly"`.
