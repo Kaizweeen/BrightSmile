@@ -10,7 +10,7 @@ import { adminClient } from "@/lib/supabase/admin";
 import { manilaDate } from "@/lib/time";
 
 type Finalized = { status: "sent"; token: string } | { status: "taken"; starts: string[] } | { status: "too_many" };
-type CodeIssued = { status: "code"; requestId: string } | { status: "limited" } | { status: "sms_failed" };
+export type CodeIssued = { status: "code"; requestId: string } | { status: "limited" } | { status: "sms_failed" };
 
 export type BookingOutcome =
   | Finalized
@@ -36,11 +36,15 @@ export type ResendOutcome =
   | { status: "unavailable" };
 
 type Ctx = { ip: string; now: Date };
+/** A code sent for a number alone (booking flow spec 3.2): no booking comes with it. */
+export type VerifyRequest = { clinicId: string; verify: true };
+/** What otp_requests.booking holds: the booking page's request, or a number's verification. */
+export type StoredRequest = BookingPayload | VerifyRequest;
 type OtpRow = {
   id: string;
   mobile: string;
   code_hash: string;
-  booking: BookingPayload;
+  booking: StoredRequest;
   attempts: number;
   expires_at: string;
   verified_at: string | null;
@@ -144,7 +148,7 @@ async function callIssueOtp(
   ip: string,
   id: string,
   codeHash: string,
-  booking: BookingPayload,
+  booking: StoredRequest,
   now: Date,
   resendOf: string | null,
 ): Promise<IssueResult> {
@@ -165,19 +169,22 @@ async function callIssueOtp(
   return result.status === "wait" ? { status: "wait", seconds: result.wait_seconds ?? OTP.resendMs / 1000 } : (result as IssueResult);
 }
 
-async function sendCode(clinic: PublicClinic, mobile: string, code: string, id: string): Promise<CodeIssued> {
+async function sendCode(clinic: Pick<PublicClinic, "id" | "smsName">, mobile: string, code: string, id: string): Promise<CodeIssued> {
   const sent = await sendSms({ kind: "otp", to: mobile, vars: { clinic: clinic.smsName, code }, clinicId: clinic.id });
   return sent === "failed" ? { status: "sms_failed" } : { status: "code", requestId: id };
 }
 
-/** Spec 10.3: rolling-hour limits, then a stored request holding the payload and the code hash, then the text. */
-async function issueCode(clinic: PublicClinic, booking: BookingPayload, { ip, now }: Ctx): Promise<CodeIssued> {
+/**
+ * Spec 10.3: rolling-hour limits, then a stored request holding the payload (the booking page's request, or a number's
+ * verification, booking flow spec 3.2) and the code hash, then the text. Both kinds share every limit.
+ */
+export async function issueCode(clinic: Pick<PublicClinic, "id" | "smsName">, mobile: string, stored: StoredRequest, { ip, now }: Ctx): Promise<CodeIssued> {
   const id = randomUUID();
   const code = newCode();
-  const result = await callIssueOtp(booking.mobile, ip, id, hashCode(id, code), booking, now, null);
+  const result = await callIssueOtp(mobile, ip, id, hashCode(id, code), stored, now, null);
   if (result.status === "limited") return { status: "limited" };
   if (result.status !== "ok") throw new Error(`unexpected issue_otp status for a new request: ${result.status}`);
-  return sendCode(clinic, booking.mobile, code, id);
+  return sendCode(clinic, mobile, code, id);
 }
 
 /** Spec 9.1 step 3: validate, then book straight away for a verified device, or send a code. */
@@ -197,11 +204,71 @@ export async function requestBooking(
     if (ctx.verifiedMobiles.includes(parsed.payload.mobile)) return await finalize(clinic, parsed.payload, ctx.now);
     const starts = await takenStarts(clinic, parsed.payload, ctx.now);
     if (starts) return { status: "taken", starts };
-    return await issueCode(clinic, parsed.payload, ctx);
+    return await issueCode(clinic, parsed.payload.mobile, parsed.payload, ctx);
   } catch (e) {
     logFailure("requestBooking", e);
     return { status: "unavailable" };
   }
+}
+
+type Spent =
+  | { status: "ok"; row: OtpRow }
+  | { status: "wrong"; attemptsLeft: number }
+  | { status: "expired" | "locked" | "used" | "paused" };
+
+/**
+ * Spec 9.1 step 4 and booking flow spec 3.2: checks a code, spends an attempt, and marks it used. A code sent with a
+ * booking page request and a code sent for a number alone each work only for their own purpose. Billing spec 7.5: a
+ * lapsed clinic takes no code, checked before the attempt or the code is spent.
+ */
+export async function spendCode(requestId: string, code: string, now: Date, purpose: "booking" | "verify"): Promise<Spent> {
+  if (!UUID.test(requestId)) return { status: "expired" };
+  const db = adminClient();
+  const { data, error } = await db
+    .from("otp_requests")
+    .select("id, mobile, code_hash, booking, attempts, expires_at, verified_at")
+    .eq("id", requestId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return { status: "expired" };
+  const row = data as OtpRow;
+  if (("verify" in row.booking) !== (purpose === "verify")) return { status: "expired" };
+
+  const status = checkCode(
+    {
+      id: row.id,
+      code_hash: row.code_hash,
+      attempts: row.attempts,
+      expires_at: new Date(row.expires_at),
+      verified_at: row.verified_at ? new Date(row.verified_at) : null,
+    },
+    code,
+    now,
+  );
+  if (status === "used" || status === "expired" || status === "locked") return { status };
+  if (!(await bookingOpen(row.booking.clinicId, now))) return { status: "paused" };
+
+  // Spend an attempt before acting on the comparison. The update only matches while attempts is
+  // unchanged, so parallel guesses share the same 5 attempts instead of each getting their own.
+  const { data: claimed } = await db
+    .from("otp_requests")
+    .update({ attempts: row.attempts + 1 })
+    .eq("id", row.id)
+    .eq("attempts", row.attempts)
+    .is("verified_at", null)
+    .select("id")
+    .throwOnError();
+  const attemptsLeft = Math.max(0, OTP.maxAttempts - row.attempts - 1);
+  if (claimed.length === 0 || status === "wrong") return { status: "wrong", attemptsLeft };
+
+  const { data: marked } = await db
+    .from("otp_requests")
+    .update({ verified_at: now.toISOString() })
+    .eq("id", row.id)
+    .is("verified_at", null)
+    .select("id")
+    .throwOnError();
+  return marked.length === 0 ? { status: "used" } : { status: "ok", row };
 }
 
 /** Spec 9.1 step 4: check the code, mark it verified, then book the payload stored with it. */
@@ -212,59 +279,14 @@ export async function verifyCode(
 ): Promise<{ outcome: VerifyOutcome; verifiedMobile: string | null }> {
   let verifiedMobile: string | null = null;
   const done = (outcome: VerifyOutcome) => ({ outcome, verifiedMobile });
-  if (!UUID.test(requestId)) return done({ status: "expired" });
   try {
-    const db = adminClient();
-    const { data, error } = await db
-      .from("otp_requests")
-      .select("id, mobile, code_hash, booking, attempts, expires_at, verified_at")
-      .eq("id", requestId)
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) return done({ status: "expired" });
-    const row = data as OtpRow;
-
-    const status = checkCode(
-      {
-        id: row.id,
-        code_hash: row.code_hash,
-        attempts: row.attempts,
-        expires_at: new Date(row.expires_at),
-        verified_at: row.verified_at ? new Date(row.verified_at) : null,
-      },
-      code,
-      now,
-    );
-    if (status === "used" || status === "expired" || status === "locked") return done({ status });
-    // Billing spec 7.5: a lapsed clinic takes no requests. Checked before the attempt or the code is spent.
-    if (!(await bookingOpen(row.booking.clinicId, now))) return done({ status: "paused" });
-
-    // Spend an attempt before acting on the comparison. The update only matches while attempts is
-    // unchanged, so parallel guesses share the same 5 attempts instead of each getting their own.
-    const { data: claimed } = await db
-      .from("otp_requests")
-      .update({ attempts: row.attempts + 1 })
-      .eq("id", row.id)
-      .eq("attempts", row.attempts)
-      .is("verified_at", null)
-      .select("id")
-      .throwOnError();
-    const attemptsLeft = Math.max(0, OTP.maxAttempts - row.attempts - 1);
-    if (claimed.length === 0 || status === "wrong") return done({ status: "wrong", attemptsLeft });
-
-    const { data: marked } = await db
-      .from("otp_requests")
-      .update({ verified_at: now.toISOString() })
-      .eq("id", row.id)
-      .is("verified_at", null)
-      .select("id")
-      .throwOnError();
-    if (marked.length === 0) return done({ status: "used" });
-    verifiedMobile = row.mobile;
-
-    const clinic = await loadClinic({ id: row.booking.clinicId }, row.booking.branchId);
+    const spent = await spendCode(requestId, code, now, "booking");
+    if (spent.status !== "ok") return done(spent);
+    verifiedMobile = spent.row.mobile;
+    const booking = spent.row.booking as BookingPayload;
+    const clinic = await loadClinic({ id: booking.clinicId }, booking.branchId);
     if (!clinic) return done({ status: "unavailable" });
-    return done(await finalize(clinic, row.booking, now));
+    return done(await finalize(clinic, booking, now));
   } catch (e) {
     logFailure("verifyCode", e);
     return done({ status: "unavailable" });
