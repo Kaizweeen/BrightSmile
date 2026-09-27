@@ -26,7 +26,7 @@ import { addDays } from "@/lib/time";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const REMINDER_ROW =
-  "id, clinic_id, status, starts_at, confirmed_at, reminder_sent_at, manage_token, patient:patients(first_name, mobile, anonymized_at), dentist:dentists(sms_name), clinic:clinics(sms_name)";
+  "id, clinic_id, status, starts_at, confirmed_at, reminder_sent_at, manage_token, patient:patients(first_name, mobile, anonymized_at), dentist:dentists(sms_name), branch:branches(sms_name), clinic:clinics(sms_name)";
 
 /**
  * Spec 11 step 1. Each reminder claims reminder_sent_at with a compare-and-set before its text goes out,
@@ -52,12 +52,17 @@ export async function sendReminders(now: Date): Promise<number> {
   if (dentistError) throw dentistError;
   const active = new Map<string, number>();
   for (const { clinic_id } of (dentists ?? []) as { clinic_id: string }[]) active.set(clinic_id, (active.get(clinic_id) ?? 0) + 1);
+  // Booking flow spec 4: a clinic with 2 or more active branches names the branch in its texts.
+  const { data: branchRows, error: branchError } = await db.from("branches").select("clinic_id").eq("active", true).in("clinic_id", clinicIds);
+  if (branchError) throw branchError;
+  const branches = new Map<string, number>();
+  for (const { clinic_id } of (branchRows ?? []) as { clinic_id: string }[]) branches.set(clinic_id, (branches.get(clinic_id) ?? 0) + 1);
   // Billing spec 7.5: a lapsed clinic's patients get no reminders.
   const paused = new Set([...(await loadBillings(db, clinicIds))].filter(([, billing]) => !billingStatus(billing, now).open).map(([id]) => id));
 
   const app = appUrl();
   let sent = 0;
-  for (const r of reminders(rows, active, now, paused)) {
+  for (const r of reminders(rows, active, now, paused, branches)) {
     const { data: claimed, error: claimError } = await db
       .from("appointments")
       .update({ reminder_sent_at: now.toISOString() })

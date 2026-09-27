@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { needsReminder, type Status } from "@/lib/appointments";
 import { billingFromRow, billingStatus, NOTICE_DAYS, type BillingRow } from "@/lib/billing";
+import { smsClinicName } from "@/lib/branches";
 import { addDays, formatTime, manilaDate, manilaInstant, weekday } from "@/lib/time";
 
 /**
@@ -30,6 +31,7 @@ export type ReminderRow = {
   manage_token: string;
   patient: { first_name: string; mobile: string | null; anonymized_at: string | null } | null;
   dentist: { sms_name: string } | null;
+  branch: { sms_name: string } | null;
   clinic: { sms_name: string } | null;
 };
 
@@ -48,10 +50,17 @@ const date = (value: string | null) => (value ? new Date(value) : null);
 
 /**
  * Spec 11 step 1: needsReminder decides which visits are due; a patient without a mobile (or deleted)
- * gets nothing. Texts name the dentist only when the clinic has 2 or more active dentists (spec 10.1).
+ * gets nothing. Texts name the dentist only when the clinic has 2 or more active dentists (spec 10.1), and the
+ * branch after the clinic's name only when it has 2 or more active branches (booking flow spec 4).
  * A clinic whose booking is paused gets no reminders (billing spec 7.5).
  */
-export function reminders(rows: ReminderRow[], activeDentists: Map<string, number>, now: Date, paused: Set<string> = new Set()): Reminder[] {
+export function reminders(
+  rows: ReminderRow[],
+  activeDentists: Map<string, number>,
+  now: Date,
+  paused: Set<string> = new Set(),
+  activeBranches: Map<string, number> = new Map(),
+): Reminder[] {
   return rows.flatMap((r) => {
     if (paused.has(r.clinic_id)) return [];
     const startsAt = new Date(r.starts_at);
@@ -68,7 +77,7 @@ export function reminders(rows: ReminderRow[], activeDentists: Map<string, numbe
         clinicId: r.clinic_id,
         to: patient.mobile,
         token: r.manage_token,
-        clinic: r.clinic.sms_name,
+        clinic: smsClinicName(r.clinic.sms_name, r.branch?.sms_name, activeBranches.get(r.clinic_id) ?? 1),
         first: patient.first_name,
         time: formatTime(startsAt),
         dentist: named ? r.dentist!.sms_name : null,

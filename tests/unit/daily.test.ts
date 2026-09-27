@@ -57,6 +57,7 @@ describe("reminders", () => {
     manage_token: "AbCdEfGhIjKl",
     patient: { first_name: "Ana", mobile: "+639171112222", anonymized_at: null },
     dentist: { sms_name: "Dr. Reyes" },
+    branch: { sms_name: "Makati" },
     clinic: { sms_name: "Bright Dental" },
   };
   const one = new Map([["c1", 1]]);
@@ -79,6 +80,11 @@ describe("reminders", () => {
       { ...row, patient: null },
     ];
     expect(reminders(skipped, one, now)).toEqual([]);
+  });
+
+  it("names the branch after the clinic once the clinic has 2 or more active branches", () => {
+    expect(reminders([row], one, now, new Set(), new Map([["c1", 2]]))[0].clinic).toBe("Bright Dental Makati");
+    expect(reminders([row], one, now, new Set(), new Map([["c1", 1]]))[0].clinic).toBe("Bright Dental");
   });
 
   it("sends nothing for a clinic whose booking is paused", () => {

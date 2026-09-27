@@ -1,6 +1,7 @@
 export type SmsKind =
   | "otp"
   | "request_alert"
+  | "change_alert"
   | "confirmed"
   | "declined"
   | "moved"
@@ -57,6 +58,7 @@ export function renderSms(kind: SmsKind, v: SmsVars): string {
   const texts: Record<SmsKind, () => string> = {
     otp: () => `Your code for ${clinic} is ${v.code}. It expires in 5 minutes. Don't share it with anyone.`,
     request_alert: () => `New request: ${who}, ${v.date} ${v.time}${withDentist}. Approve at ${v.appUrl}/app/requests`,
+    change_alert: () => `Changed request: ${who}, ${v.date} ${v.time}${withDentist}. Approve at ${v.appUrl}/app/requests`,
     confirmed: () => `${clinic}: ${first}'s visit on ${v.date}, ${v.time}${withDentist} is confirmed. View or cancel: ${v.link}`,
     declined: () => `${clinic} can't take ${v.date}, ${v.time}.${reason} Rebook: ${v.bookLink}`,
     moved: () => `${clinic}: ${first}'s visit moved to ${v.date}, ${v.time}${withDentist}. View or cancel: ${v.link}`,

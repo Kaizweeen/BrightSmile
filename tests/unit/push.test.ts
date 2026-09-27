@@ -25,6 +25,10 @@ describe("pushPayload", () => {
     });
   });
 
+  it("describes a changed request, which the clinic approves again", () => {
+    expect(pushPayload("change_alert", start, null)).toEqual({ title: "Booking request changed", body: "Thu Sep 24, 10:00 AM", url: "/app/requests" });
+  });
+
   it("has nowhere to put a patient's name (spec 10.4)", () => {
     expect(Object.keys(pushPayload("request_alert", start, null)).sort()).toEqual(["body", "title", "url"]);
   });

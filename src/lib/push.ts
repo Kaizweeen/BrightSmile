@@ -7,16 +7,22 @@ import { adminClient } from "@/lib/supabase/admin";
 import type { Staff } from "@/lib/supabase/server";
 import { formatDate, formatTime } from "@/lib/time";
 
-export type AlertKind = "request_alert" | "patient_cancel_alert";
+export type AlertKind = "request_alert" | "change_alert" | "patient_cancel_alert";
 /** type "weekly" is the one thing the service worker reads besides the words: it opens Reports instead of Requests. */
 export type PushPayload = { title: string; body: string; url: string; type?: "weekly" };
 export type StoredSubscription = { endpoint: string; p256dh: string; auth: string };
 export type PushSend = (sub: StoredSubscription, body: string) => Promise<unknown>;
 
+const ALERT_TITLE: Record<AlertKind, string> = {
+  request_alert: "New booking request",
+  change_alert: "Booking request changed",
+  patient_cancel_alert: "Request cancelled",
+};
+
 /** Spec 10.4: date, time, and dentist only, never a patient's name. Tapping opens the requests page. */
 export function pushPayload(kind: AlertKind, startsAt: Date, dentist: string | null): PushPayload {
   const when = `${formatDate(startsAt)}, ${formatTime(startsAt)}${dentist ? ` with ${dentist}` : ""}`;
-  return { title: kind === "request_alert" ? "New booking request" : "Request cancelled", body: when, url: "/app/requests" };
+  return { title: ALERT_TITLE[kind], body: when, url: "/app/requests" };
 }
 
 /** Billing spec 7.4: the plan heads-up. Like every push, a tap opens the requests page, where the banner links to Billing. */

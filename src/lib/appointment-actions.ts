@@ -1,6 +1,7 @@
 import "server-only";
 import { appUrl } from "@/lib/app-url";
 import { canMarkAttendance, canTransition, type Status } from "@/lib/appointments";
+import { smsClinicName } from "@/lib/branches";
 import { newToken } from "@/lib/codes";
 import { staffOpenStarts } from "@/lib/dashboard";
 import { sendSms, type SmsStatus } from "@/lib/sms/send";
@@ -30,11 +31,12 @@ export type Row = {
   manage_token: string;
   patient: { first_name: string; mobile: string | null; anonymized_at: string | null };
   dentist: { sms_name: string };
+  branch: { sms_name: string };
   clinic: { sms_name: string; slug: string };
 };
 
 const ROW =
-  "id, status, starts_at, ends_at, dentist_id, manage_token, patient:patients(first_name, mobile, anonymized_at), dentist:dentists(sms_name), clinic:clinics(sms_name, slug)";
+  "id, status, starts_at, ends_at, dentist_id, manage_token, patient:patients(first_name, mobile, anonymized_at), dentist:dentists(sms_name), branch:branches(sms_name), clinic:clinics(sms_name, slug)";
 
 /** Logs the error message only, never patient details (spec 12). */
 export function logFailure(where: string, e: unknown) {
@@ -63,6 +65,19 @@ export async function showsDentist(staff: Staff): Promise<boolean> {
     .eq("active", true);
   if (error) throw error;
   return (count ?? 0) > 1;
+}
+
+/** The short names for texts of the clinic's active branches, first branch first (booking flow spec 4). */
+export async function activeBranchNames(staff: Staff): Promise<string[]> {
+  const { data, error } = await staff.db
+    .from("branches")
+    .select("sms_name")
+    .eq("clinic_id", staff.clinicId)
+    .eq("active", true)
+    .order("sort")
+    .order("created_at");
+  if (error) throw error;
+  return (data as { sms_name: string }[]).map((b) => b.sms_name);
 }
 
 export type PatientText = {
@@ -103,15 +118,25 @@ export async function textPatient(staff: Staff, t: PatientText): Promise<SmsStat
   });
 }
 
-/** The text for an existing appointment. A deleted (anonymized) patient has no mobile, so gets no text. */
-export function rowText(row: Row, kind: PatientText["kind"], dentist: string | null, startsAt: Date, reason = ""): PatientText {
+/**
+ * The text for an existing appointment. A deleted (anonymized) patient has no mobile, so gets no text. With 2 or more
+ * active branches the clinic field names the appointment's branch (booking flow spec 4).
+ */
+export function rowText(
+  row: Row,
+  kind: PatientText["kind"],
+  dentist: string | null,
+  startsAt: Date,
+  activeBranches: number,
+  reason = "",
+): PatientText {
   return {
     kind,
     appointmentId: row.id,
     token: row.manage_token,
     first: row.patient.first_name,
     mobile: row.patient.anonymized_at ? null : row.patient.mobile,
-    clinicSmsName: row.clinic.sms_name,
+    clinicSmsName: smsClinicName(row.clinic.sms_name, row.branch.sms_name, activeBranches),
     slug: row.clinic.slug,
     dentist,
     startsAt,
@@ -133,7 +158,7 @@ export async function changeStatus(staff: Staff, id: string, to: StaffTarget, re
   const reason = cleanText(reasonInput, LIMITS.reason, true);
   if (reason === null) return { ok: false, error: `Keep the reason to ${LIMITS.reason} characters or fewer.` };
   try {
-    const [row, dentistShown] = await Promise.all([loadRow(staff, id), showsDentist(staff)]);
+    const [row, dentistShown, branches] = await Promise.all([loadRow(staff, id), showsDentist(staff), activeBranchNames(staff)]);
     if (!row) return { ok: false, error: MESSAGES.gone };
     const startsAt = new Date(row.starts_at);
     if (row.status === to || !canTransition(row.status, to, "staff")) return { ok: false, error: MESSAGES.notNow };
@@ -158,7 +183,7 @@ export async function changeStatus(staff: Staff, id: string, to: StaffTarget, re
 
     const kind = TEXT_OF[to];
     const text = kind
-      ? await textPatient(staff, rowText(row, kind, dentistShown ? row.dentist.sms_name : null, startsAt, reason))
+      ? await textPatient(staff, rowText(row, kind, dentistShown ? row.dentist.sms_name : null, startsAt, branches.length, reason))
       : "none";
     return { ok: true, text };
   } catch (e) {
@@ -213,7 +238,12 @@ export async function moveAppointment(staff: Staff, id: string, slotInput: unkno
   const slot = parseSlot(slotInput);
   if (!slot) return { ok: false, error: "Choose a time." };
   try {
-    const [row, dentist, dentistShown] = await Promise.all([loadRow(staff, id), activeDentist(staff, slot.dentistId), showsDentist(staff)]);
+    const [row, dentist, dentistShown, branches] = await Promise.all([
+      loadRow(staff, id),
+      activeDentist(staff, slot.dentistId),
+      showsDentist(staff),
+      activeBranchNames(staff),
+    ]);
     if (!row) return { ok: false, error: MESSAGES.gone };
     const oldStart = new Date(row.starts_at);
     if (row.status !== "confirmed" || !canTransition(row.status, "confirmed", "staff") || oldStart <= now) {
@@ -238,7 +268,7 @@ export async function moveAppointment(staff: Staff, id: string, slotInput: unkno
     if (error) throw error;
     if (!moved) return { ok: false, error: MESSAGES.changed };
 
-    const text = await textPatient(staff, rowText(row, "moved", dentistShown ? dentist.sms_name : null, slot.startsAt));
+    const text = await textPatient(staff, rowText(row, "moved", dentistShown ? dentist.sms_name : null, slot.startsAt, branches.length));
     return { ok: true, text };
   } catch (e) {
     logFailure("moveAppointment", e);
@@ -257,7 +287,7 @@ export async function createAppointment(staff: Staff, input: unknown, now: Date)
   if (!parsed.ok) return { ok: false, error: Object.values(parsed.errors)[0] };
   const b = parsed.value;
   try {
-    const [dentist, procedures, clinic, dentistShown] = await Promise.all([
+    const [dentist, procedures, clinic, dentistShown, branches] = await Promise.all([
       activeDentist(staff, b.slot.dentistId),
       staff.db
         .from("procedures")
@@ -268,6 +298,7 @@ export async function createAppointment(staff: Staff, input: unknown, now: Date)
         .throwOnError(),
       staff.db.from("clinics").select("sms_name, slug").eq("id", staff.clinicId).single().throwOnError(),
       showsDentist(staff),
+      activeBranchNames(staff),
     ]);
     if (!dentist) return { ok: false, error: NO_DENTIST };
     const chosen = b.procedureIds.map((pid) => (procedures.data as ProcedureRow[]).find((p) => p.id === pid));
@@ -327,7 +358,8 @@ export async function createAppointment(staff: Staff, input: unknown, now: Date)
           token,
           first: person.first,
           mobile: person.mobile,
-          clinicSmsName: sms_name,
+          // create_booking put it at the first active branch (staff name none until plan 8).
+          clinicSmsName: smsClinicName(sms_name, branches[0], branches.length),
           slug,
           dentist: dentistShown ? dentist.sms_name : null,
           startsAt,
