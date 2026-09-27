@@ -183,11 +183,11 @@ export async function changeStatus(staff: Staff, id: string, to: StaffTarget, re
     if (!changed) return { ok: false, error: MESSAGES.changed };
 
     const kind = TEXT_OF[to];
-    // Approving or declining texts the time (and the dentist, when shown): re-read the row so a patient's own
+    // Approving, declining, or cancelling texts the time (and the dentist, when shown): re-read the row so a patient's own
     // change, landing between the first read above and this compare-and-set, never texts the time or dentist it
     // replaced. The branch cannot change underneath an appointment, but the re-read row carries it too, at no
     // extra query.
-    const textRow = kind === "confirmed" || kind === "declined" ? ((await loadRow(staff, id)) ?? row) : row;
+    const textRow = kind === "confirmed" || kind === "declined" || kind === "cancelled" ? ((await loadRow(staff, id)) ?? row) : row;
     const text = kind
       ? await textPatient(staff, rowText(textRow, kind, dentistShown ? textRow.dentist.sms_name : null, new Date(textRow.starts_at), branches.length, reason))
       : "none";
