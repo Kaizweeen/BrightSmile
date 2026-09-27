@@ -162,9 +162,13 @@ export function flow(state: FlowState, action: FlowAction): FlowState {
     case "time":
       if (!at("time")) return state;
       return state.editing ? finish({ startsAt: action.startsAt }) : go({ step: "summary", startsAt: action.startsAt });
-    case "change":
+    case "change": {
       if (!at("summary", "details")) return state;
-      return go({ step: action.part === "patient" ? "who" : action.part, editing: true });
+      // Spec 3.3 step 3: with no patients to choose from, "Change patient" opens the new patient form directly,
+      // the same place a first-time verify with no patients goes, instead of a who step with nothing to list.
+      const part = action.part === "patient" ? (state.hasPatients ? "who" : "form") : action.part;
+      return go({ step: part, editing: true });
+    }
     case "taken":
       return at("summary", "details") ? stay({ step: "time", startsAt: null, editing: true }) : state;
     case "appointment": {

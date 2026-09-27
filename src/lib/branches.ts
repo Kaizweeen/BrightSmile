@@ -3,10 +3,14 @@ import { LIMITS } from "@/lib/validate";
 /**
  * The clinic field of a text about an appointment (booking flow spec 4): the clinic's name for texts, followed by the
  * branch's short name when the clinic has 2 or more active branches, so the patient knows where to go. Every template
- * is sized for a clinic field of at most 20 characters, which branchSmsNameProblem keeps.
+ * is sized for a clinic field of at most 20 characters, which branchSmsNameProblem keeps for a pair saved together.
+ * A clinic can lengthen its own text name afterwards, so this checks the pair again: past 20 characters, it falls
+ * back to the clinic's name alone rather than hand renderSms a pair it would have to clip.
  */
 export function smsClinicName(clinicSmsName: string, branchSmsName: string | null | undefined, activeBranches: number): string {
-  return activeBranches >= 2 && branchSmsName ? `${clinicSmsName} ${branchSmsName}` : clinicSmsName;
+  if (activeBranches < 2 || !branchSmsName) return clinicSmsName;
+  const combined = `${clinicSmsName} ${branchSmsName}`;
+  return combined.length > LIMITS.clinicSmsName ? clinicSmsName : combined;
 }
 
 /** Why a branch's short name for texts cannot be used beside this clinic's name for texts, or null (spec 4). */

@@ -159,6 +159,7 @@ export async function saveDentist(staff: Staff, id: string | null, input: unknow
       .eq("active", true)
       .order("sort")
       .order("created_at")
+      .order("id")
       .throwOnError();
     const open = (branchRows as { id: string }[]).map((b) => b.id);
     if (open.length === 0 || hours.some((h) => h.branch_id !== null && !open.includes(h.branch_id))) {

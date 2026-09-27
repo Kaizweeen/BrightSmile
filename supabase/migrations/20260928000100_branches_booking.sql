@@ -230,7 +230,7 @@ declare
 begin
   select b.id into v_branch from public.branches b
   where b.clinic_id = p_clinic_id and b.active and (p_branch_id is null or b.id = p_branch_id)
-  order by b.sort, b.created_at
+  order by b.sort, b.created_at, b.id
   limit 1;
   if v_branch is null then
     raise exception 'branch not found' using errcode = 'BSBRA';

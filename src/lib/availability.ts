@@ -39,7 +39,7 @@ export async function loadClinic(by: { slug: string } | { id: string }, branchId
   const c = data as ClinicRow;
 
   const [branches, dentists, hours, procedures] = await Promise.all([
-    db.from("branches").select("id, name, address, maps_url").eq("clinic_id", c.id).eq("active", true).order("sort").order("created_at").throwOnError(),
+    db.from("branches").select("id, name, address, maps_url").eq("clinic_id", c.id).eq("active", true).order("sort").order("created_at").order("id").throwOnError(),
     db.from("dentists").select("id, name, sms_name").eq("clinic_id", c.id).eq("active", true).order("created_at").order("name").throwOnError(),
     db.from("working_hours").select("dentist_id, branch_id, weekday, start_time, end_time").eq("clinic_id", c.id).throwOnError(),
     db.from("procedures").select("id, name, duration_minutes").eq("clinic_id", c.id).eq("active", true).order("name").throwOnError(),

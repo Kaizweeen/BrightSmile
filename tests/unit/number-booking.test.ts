@@ -45,18 +45,24 @@ vi.mock("@/lib/supabase/admin", () => ({
       const entry = { table, filters: [] as Filter[] };
       fake.queries.push(entry);
       let writing = false;
-      const record =
-        (method: string) =>
-        (column: string, value: unknown): typeof query => {
-          entry.filters.push([method, column, value]);
-          return query;
-        };
       const query = {
         select: () => query,
-        eq: record("eq"),
-        is: record("is"),
-        in: record("in"),
-        gt: record("gt"),
+        eq: (column: string, value: unknown) => {
+          entry.filters.push(["eq", column, value]);
+          return query;
+        },
+        is: (column: string, value: unknown) => {
+          entry.filters.push(["is", column, value]);
+          return query;
+        },
+        in: (column: string, value: unknown) => {
+          entry.filters.push(["in", column, value]);
+          return query;
+        },
+        gt: (column: string, value: unknown) => {
+          entry.filters.push(["gt", column, value]);
+          return query;
+        },
         order: () => query,
         limit: () => query,
         update: () => {

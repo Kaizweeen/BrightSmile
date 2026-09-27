@@ -157,6 +157,7 @@ async function staffBranch(staff: Staff, appointmentId?: string): Promise<string
     .eq("active", true)
     .order("sort")
     .order("created_at")
+    .order("id")
     .limit(1)
     .maybeSingle()
     .throwOnError();

@@ -11,6 +11,13 @@ describe("smsClinicName", () => {
     expect(smsClinicName("Bright Dental", "Makati", 2)).toBe("Bright Dental Makati");
     expect(smsClinicName("Bright Dental", null, 3)).toBe("Bright Dental");
   });
+
+  it("is the clinic's name alone, never a clipped pair, once the combined pair would be longer than 20 characters", () => {
+    // branchSmsNameProblem keeps a new pair within 20 characters, but a clinic can lengthen its text name after a
+    // branch's short name was already saved against the old, shorter one: 15 + 1 + 10 is 26, past the 20 every
+    // template is sized for, so this must fall back to the clinic's name alone, not a pair renderSms would clip.
+    expect(smsClinicName("C".repeat(15), "B".repeat(10), 2)).toBe("C".repeat(15));
+  });
 });
 
 describe("branchSmsNameProblem", () => {

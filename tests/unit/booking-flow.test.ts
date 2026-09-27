@@ -81,6 +81,13 @@ describe("book an appointment (spec 3.3)", () => {
     expect(s).toMatchObject({ step: "summary", patientId: null, form: FORM, editing: false });
   });
 
+  it("changes the patient straight to the form, with no who step, when the number had no patients to choose from (spec 3.3 step 3)", () => {
+    const noPatients = run([bookOne, verified(false), { type: "form", form: FORM }, services(false), { type: "time", startsAt: NINE }]);
+    expect(steps([{ type: "change", part: "patient" }], noPatients)).toEqual(["form"]);
+    const s = run([{ type: "change", part: "patient" }, { type: "form", form: { ...FORM, first: "Mia" } }], noPatients);
+    expect(s).toMatchObject({ step: "summary", patientId: null, form: { ...FORM, first: "Mia" }, editing: false });
+  });
+
   it("picks a time again when the server says the time was taken, then returns to the summary", () => {
     const s = flow(summary, { type: "taken" });
     expect(s).toMatchObject({ step: "time", startsAt: null, editing: true });

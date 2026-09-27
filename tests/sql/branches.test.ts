@@ -2,6 +2,12 @@ import type { PGlite } from "@electric-sql/pglite";
 import { beforeAll, describe, expect, it } from "vitest";
 import { addStaff, asService, asUser, freshDb, migrate, MIGRATIONS, newClinic } from "./harness";
 
+// Two fixed ids, chosen (not gen_random_uuid()) so a test can insert them in the opposite order from their
+// text order: a plan that forgets the id tiebreak and happens to return rows in insertion order would then
+// pick TIE_HIGH, not TIE_LOW.
+const TIE_LOW = "00000000-0000-4000-8000-000000000001";
+const TIE_HIGH = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+
 type Clinic = { userId: string; clinicId: string };
 
 const BRANCHES = "20260928000100_branches_booking.sql";
@@ -24,7 +30,7 @@ async function sqlstate(run: Promise<unknown>): Promise<string> {
 }
 
 const one = async (sql: string, params: unknown[] = []) => (await db.query<{ id: string }>(sql, params)).rows[0].id;
-const mainBranch = (clinicId: string) => one("select id from public.branches where clinic_id = $1 order by sort, created_at limit 1", [clinicId]);
+const mainBranch = (clinicId: string) => one("select id from public.branches where clinic_id = $1 order by sort, created_at, id limit 1", [clinicId]);
 const firstDentist = (clinicId: string) => one("select id from public.dentists where clinic_id = $1 order by created_at limit 1", [clinicId]);
 const token = () => `Tok${String(++tokens).padStart(9, "0")}`;
 
@@ -273,6 +279,21 @@ describe("create_booking", () => {
       { branch_id: main, patient_id: expect.any(String) },
       { branch_id: main, patient_id: (rows[0] as { patient_id: string }).patient_id },
     ]);
+  });
+
+  it("breaks a tie on sort and created_at by id, so the first active branch never depends on the plan", async () => {
+    const clinic = await newClinic(db);
+    // Main sorts last, out of the tie: sort alone would otherwise pick it before High or Low are compared.
+    await db.query("update public.branches set sort = 1 where clinic_id = $1", [clinic.clinicId]);
+    // High and Low tie on sort and created_at; inserted in reverse of id order, so a query that fell back to
+    // insertion or physical order would return High, not the Low that "order by sort, created_at, id" must.
+    await db.query(
+      `insert into public.branches (id, clinic_id, name, sms_name, sort, created_at) values
+       ($1, $3, 'High', 'High', 0, '2030-01-01T00:00:00Z'), ($2, $3, 'Low', 'Low', 0, '2030-01-01T00:00:00Z')`,
+      [TIE_HIGH, TIE_LOW, clinic.clinicId],
+    );
+    const id = await book(clinic, "2030-03-14T09:00:00+08:00");
+    expect((await db.query("select branch_id from public.appointments where id = $1", [id])).rows).toEqual([{ branch_id: TIE_LOW }]);
   });
 
   it("stores the branch it is given, and refuses one that is inactive", async () => {
