@@ -7,7 +7,7 @@ export type Role = "owner" | "staff";
 /**
  * The signed-in user's own membership, or null when the account has no clinic, or when the query itself fails (logged,
  * never thrown, since a signed-in visitor with an unreadable membership should read as having none rather than crash
- * the page). It filters by the user's id because members can read every membership of their clinic (teams spec 5):
+ * the page). It filters by the user's id because the owner reads every membership of their clinic (teams spec 5):
  * unfiltered, a clinic with two members returns two rows and maybeSingle fails. The proxy and signedInStaff both use it.
  */
 export async function ownMembership(db: SupabaseClient, userId: string): Promise<{ clinicId: string; role: Role } | null> {

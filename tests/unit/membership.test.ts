@@ -8,7 +8,7 @@ vi.mock("@/lib/log", () => ({ logError: vi.fn() }));
 type Row = { clinic_id: string; user_id: string; role: string };
 
 /**
- * clinic_members as PostgREST serves it once members can read every membership of their clinic (teams spec 5):
+ * clinic_members as PostgREST serves it to an owner, who reads every membership of their clinic (teams spec 5):
  * each filter narrows the rows, and maybeSingle fails when more than one row is left, as PostgREST does. Only the
  * columns named in select() come back, as PostgREST does, so a query that leans on an unselected column would fail here.
  */

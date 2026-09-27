@@ -142,6 +142,6 @@ A new daily job step. On Mondays (Manila), for each clinic that is not lapsed (p
 2. `push_subscriptions` gains a foreign key on `(clinic_id, user_id)` to `clinic_members`, `on delete cascade`, so a person's push subscriptions always go with their membership, however it ends.
 3. The teams migration's first statement checks that `clinic_billing` exists, so pasting it before the billing migration fails fast instead of leaving `clinic_members` half migrated.
 4. The owner's "for all" policy on `dentists`, `working_hours`, and `procedures` splits into separate insert, update, and delete policies, so Supabase's advisor no longer sees two permissive select policies stacked on one table.
-11. Logging in through a still-open join link returns to it, even for an account that already has a clinic, so it sees why it cannot join instead of landing on `/app` with no explanation.
-12. The Monday push loop counts a clinic as failed, not sent, when `sendPush` cannot even read its subscriptions (a negative result), rather than only ever counting a successful push as the alternative to sent.
-14. The member refusal (an account that already has a clinic) names the clinic when it can still be looked up, instead of a plain "a clinic".
+5. Logging in through a still-open join link returns to it, even for an account that already has a clinic, so it sees why it cannot join instead of landing on `/app` with no explanation.
+6. The Monday push loop counts a clinic as failed, not sent, when `sendPush` cannot even read its subscriptions (a negative result), rather than only ever counting a successful push as the alternative to sent.
+7. The member refusal (an account that already has a clinic) names the clinic when it can still be looked up, instead of a plain "a clinic".

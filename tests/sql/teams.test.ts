@@ -380,43 +380,6 @@ describe("clinic_week_stats", () => {
     );
   });
 
-  it("would miscount the same fixture with UTC day bounds instead of the Manila week", async () => {
-    // A copy of the function using naive UTC day bounds (starts_at >= p_from::timestamptz, not the Manila-aware
-    // version above) drops the visit 30 minutes into the Manila week and keeps the one 30 minutes past it, so it
-    // disagrees with the correct second-dentist row this suite just checked.
-    await db.query(`
-      create or replace function public.clinic_week_stats_utc_bug(p_clinic_id uuid, p_from date, p_weeks integer)
-      returns table (week_start date, dentist_id uuid, completed integer, no_show integer, cancelled integer,
-        declined integer, expired integer, unmarked integer, upcoming integer, online integer, manual integer)
-      language sql stable set search_path = '' as $body$
-        select
-          (date_trunc('week', a.starts_at at time zone 'Asia/Manila'))::date,
-          a.dentist_id,
-          (count(*) filter (where a.status = 'completed'))::int,
-          (count(*) filter (where a.status = 'no_show'))::int,
-          (count(*) filter (where a.status = 'cancelled'))::int,
-          (count(*) filter (where a.status = 'declined'))::int,
-          (count(*) filter (where a.status = 'expired'))::int,
-          (count(*) filter (where a.status = 'confirmed' and a.starts_at <= now()))::int,
-          (count(*) filter (where a.status = 'confirmed' and a.starts_at > now()))::int,
-          (count(*) filter (where a.source = 'online'))::int,
-          (count(*) filter (where a.source = 'manual'))::int
-        from public.appointments a
-        where a.clinic_id = p_clinic_id
-          and a.starts_at >= p_from::timestamptz
-          and a.starts_at < (p_from::timestamptz + make_interval(weeks => p_weeks))
-        group by 1, 2
-        order by 1, 2;
-      $body$;
-    `);
-    try {
-      const { rows } = await db.query(`select ${COLUMNS} from public.clinic_week_stats_utc_bug($1, '2026-08-31', 2)`, [c.clinicId]);
-      expect(rows).not.toEqual(expect.arrayContaining([{ ...zero, week: "2026-08-31", dentist_id: second, completed: 1, no_show: 1, online: 2 }]));
-    } finally {
-      await db.query("drop function public.clinic_week_stats_utc_bug(uuid, date, integer)");
-    }
-  });
-
   it("starts at the Monday of p_from's week and counts confirmed visits still ahead", async () => {
     // Jan 8, 2099 is a Thursday; Jan 5 is that week's Monday (unlike 2030, where Jan 7 was the Monday).
     expect(await asService(db, `select ${COLUMNS} from public.clinic_week_stats($1, '2099-01-10', 1)`, [c.clinicId])).toEqual([

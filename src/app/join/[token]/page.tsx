@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import type { ReactNode } from "react";
 import JoinButton from "./JoinButton";
 import { continueToJoin, logOutToJoin } from "../actions";
@@ -68,6 +69,9 @@ export default async function JoinPage({ params }: Props) {
             Log out
           </button>
         </form>
+        <Link href="/app" className="btn btn-ghost wide-btn mt-3">
+          Go to your clinic
+        </Link>
       </Card>
     );
   }

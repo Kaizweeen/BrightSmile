@@ -146,7 +146,7 @@ export default async function ReportsPage({ searchParams }: Props) {
         <h1 className="font-display">Reports</h1>
       </div>
       <Form action="/app/reports" className="card card-pad mb-3 flex flex-wrap items-end gap-2">
-        <label className="w-full min-w-0">
+        <label className="w-full min-w-0 sm:w-auto sm:flex-1">
           <span className="f-label">Week</span>
           <select key={week} name="week" defaultValue={week} className="f-input">
             {weeks.map((w, i) => (

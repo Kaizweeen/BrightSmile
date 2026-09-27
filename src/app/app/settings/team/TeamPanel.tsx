@@ -13,6 +13,7 @@ export type InviteRow = { id: string; created: string; expires: string };
  */
 export default function TeamPanel({ members, invites }: { members: MemberRow[]; invites: InviteRow[] }) {
   const [link, setLink] = useState<string | null>(null);
+  const [linkId, setLinkId] = useState<string | null>(null);
   const [copyNote, setCopyNote] = useState("");
   const [confirming, setConfirming] = useState<string | null>(null);
   const [memberResult, setMemberResult] = useState<Saved | null>(null);
@@ -27,6 +28,7 @@ export default function TeamPanel({ members, invites }: { members: MemberRow[]; 
       setLinkResult(r.ok ? null : r);
       if (r.ok) {
         setLink(r.link);
+        setLinkId(r.id);
         setCopyNote("");
       }
     });
@@ -139,8 +141,8 @@ export default function TeamPanel({ members, invites }: { members: MemberRow[]; 
                     startTransition(async () => {
                       const r = await revokeInviteAction(i.id);
                       setLinkResult(r);
-                      // A revoked link is never shown again, whether or not it is the one still on screen.
-                      if (r.ok) setLink(null);
+                      // Revoking the link still on screen hides it; revoking an older one leaves the new link to copy.
+                      if (r.ok && i.id === linkId) setLink(null);
                     })
                   }
                 >

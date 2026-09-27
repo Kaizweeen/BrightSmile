@@ -11,7 +11,7 @@ import { isUuid } from "@/lib/validate";
 
 export type TeamMember = { userId: string; email: string | null; role: Role; joinedAt: string };
 export type OpenInvite = { id: string; createdAt: string; expiresAt: string };
-export type NewInvite = { ok: true; link: string } | { ok: false; error: string };
+export type NewInvite = { ok: true; link: string; id: string } | { ok: false; error: string };
 
 const GENERIC = "Something went wrong. Please try again.";
 const USED = "That link was already used or revoked. Reload the page.";
@@ -55,12 +55,16 @@ export async function loadTeam(owner: Staff, now: Date): Promise<{ members: Team
  */
 export async function createInvite(owner: Staff): Promise<NewInvite> {
   const token = newToken();
-  const { error } = await owner.db.from("clinic_invites").insert({ clinic_id: owner.clinicId, token_hash: hashInviteToken(token) });
-  if (error) {
+  const { data, error } = await owner.db
+    .from("clinic_invites")
+    .insert({ clinic_id: owner.clinicId, token_hash: hashInviteToken(token) })
+    .select("id")
+    .single();
+  if (error || !data) {
     logError("createInvite", error);
     return { ok: false, error: GENERIC };
   }
-  return { ok: true, link: joinLink(appUrl(), token) };
+  return { ok: true, link: joinLink(appUrl(), token), id: (data as { id: string }).id };
 }
 
 /** Revokes an open join link of this clinic; it stops working at once (teams spec 2.4). */

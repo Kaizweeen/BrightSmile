@@ -315,3 +315,4 @@ create policy "owner reads payments" on public.payments
 alter table public.push_subscriptions
   add constraint push_subscriptions_member_fk
   foreign key (clinic_id, user_id) references public.clinic_members (clinic_id, user_id) on delete cascade;
+create index push_subscriptions_member on public.push_subscriptions (clinic_id, user_id);

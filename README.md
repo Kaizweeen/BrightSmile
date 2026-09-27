@@ -188,7 +188,7 @@ If the webhook fails:
 
 ## Teams and reports
 
-A clinic's owner invites staff with a join link (spec: `docs/superpowers/specs/2026-09-26-brightsmile-teams-reports-design.md`). Staff handle requests, the schedule, new appointments, patients, and dentists' time off; only the owner changes the clinic profile and booking rules, dentists, working hours, procedures, billing, and the team. The database enforces this, not only the pages. Staff cannot see the clinic's payment history or its colleagues' emails either, only their own membership row and the owner (RA 10173 data minimization); the Team page itself is owner only. Staff seats are free. Every clinic also gets a Reports page and a Monday 9:00 AM push that sums up the week before.
+A clinic's owner invites staff with a join link (spec: `docs/superpowers/specs/2026-09-26-brightsmile-teams-reports-design.md`). Staff handle requests, the schedule, new appointments, patients, and dentists' time off; only the owner changes the clinic profile and booking rules, dentists, working hours, procedures, billing, and the team. The database enforces this, not only the pages. Staff cannot see the clinic's payment history or its colleagues' emails either: a staff member reads only their own membership row, and the owner reads every membership and payment (RA 10173 data minimization); the Team page itself is owner only. Staff seats are free. Every clinic also gets a Reports page and a Monday 9:00 AM push that sums up the week before.
 
 ### Apply the teams migration (once, before merging the teams branch)
 

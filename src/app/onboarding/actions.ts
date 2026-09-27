@@ -1,10 +1,8 @@
 "use server";
 
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { parseOnboarding, type OnboardingField } from "@/lib/onboarding";
 import { serverClient } from "@/lib/supabase/server";
-import { JOIN_COOKIE } from "@/lib/team";
 
 export type OnboardingResult = { ok: true; slug: string } | { ok: false; field: OnboardingField | "form"; error: string };
 
@@ -17,12 +15,9 @@ export async function createClinic(input: unknown): Promise<OnboardingResult> {
   if (!auth?.claims?.sub) return { ok: false, field: "form", error: "Your session ended. Log in again to finish." };
 
   const { error } = await db.rpc("create_clinic", { p: parsed.payload });
-  if (!error) {
-    // This account made its own clinic instead of joining one: a join cookie left over from an old link should not
-    // keep dogging it (teams spec 6.2).
-    (await cookies()).delete(JOIN_COOKIE);
-    return { ok: true, slug: parsed.payload.slug };
-  }
+  // No join cookie cleanup here: any cookie change in a Server Action re-renders the page, which would send the new
+  // owner to /app before onboarding's last screen. A leftover cookie is harmless, since every reader needs an open link.
+  if (!error) return { ok: true, slug: parsed.payload.slug };
   if (error.message.includes("clinics_slug_key")) {
     return { ok: false, field: "slug", error: "That booking link is taken. Try another." };
   }

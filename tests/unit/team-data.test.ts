@@ -20,14 +20,15 @@ describe("createInvite", () => {
     const inserted: unknown[] = [];
     const db = {
       from: (table: string) => ({
-        insert: async (row: unknown) => {
+        insert: (row: unknown) => {
           inserted.push({ table, row });
-          return { error: null };
+          return { select: () => ({ single: async () => ({ data: { id: "4d3c2b1a-0f9e-4d8c-8b7a-6f5e4d3c2b1a" }, error: null }) }) };
         },
       }),
     };
     const result = await createInvite(owner(db));
     if (!result.ok) throw new Error(result.error);
+    expect(result.id).toBe("4d3c2b1a-0f9e-4d8c-8b7a-6f5e4d3c2b1a");
     const token = result.link.replace("https://bsmile.vercel.app/join/", "");
     expect(token).toMatch(/^[A-Za-z0-9]{12}$/);
     expect(inserted).toEqual([{ table: "clinic_invites", row: { clinic_id: CLINIC, token_hash: hashInviteToken(token) } }]);
@@ -35,7 +36,7 @@ describe("createInvite", () => {
 
   it("says something went wrong, and logs where, when the link cannot be saved", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-    const db = { from: () => ({ insert: async () => ({ error: { message: "JWT expired" } }) }) };
+    const db = { from: () => ({ insert: () => ({ select: () => ({ single: async () => ({ data: null, error: { message: "JWT expired" } }) }) }) }) };
     expect(await createInvite(owner(db))).toEqual({ ok: false, error: "Something went wrong. Please try again." });
     expect(logged.mock.calls).toEqual([["createInvite failed:", "JWT expired"]]);
   });
