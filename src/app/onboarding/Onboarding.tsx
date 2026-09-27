@@ -163,6 +163,7 @@ export default function Onboarding({ appUrl }: { appUrl: string }) {
               Your clinic
             </h1>
             <p className="sub">Patients see this on your booking page.</p>
+            <p className="note-box mb-6">Joining a clinic&apos;s team instead? Open the join link the clinic sent you.</p>
 
             <Field label="Clinic name" error={errors.name}>
               <input

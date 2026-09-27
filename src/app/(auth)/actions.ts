@@ -1,9 +1,11 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { appUrl } from "@/lib/app-url";
 import { hasRecentRecoverySession } from "@/lib/reset-session";
 import { serverClient } from "@/lib/supabase/server";
+import { JOIN_COOKIE } from "@/lib/team";
 import { cleanEmail, passwordProblem } from "@/lib/validate";
 
 export type AuthState = { error?: string; sent?: string; email?: string; expired?: boolean };
@@ -31,7 +33,11 @@ export async function signUp(_state: AuthState, form: FormData): Promise<AuthSta
     return { error: GENERIC, email };
   }
   // With email confirmation on, no session comes back until the link is opened.
-  if (!data.session) return { sent: `We sent a confirmation link to ${email}. Open it to set up your clinic.` };
+  if (!data.session) {
+    // Teams spec 6.2: after a join link, the confirmation leads to the clinic's team when opened in this browser.
+    const next = (await cookies()).has(JOIN_COOKIE) ? "Open it on this device to join your clinic's team." : "Open it to set up your clinic.";
+    return { sent: `We sent a confirmation link to ${email}. ${next}` };
+  }
   redirect("/onboarding");
 }
 

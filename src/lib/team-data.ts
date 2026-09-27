@@ -4,8 +4,9 @@ import { newToken } from "@/lib/codes";
 import { logError } from "@/lib/log";
 import type { Role } from "@/lib/membership";
 import type { Saved } from "@/lib/staff-input";
+import { adminClient } from "@/lib/supabase/admin";
 import type { Staff } from "@/lib/supabase/server";
-import { hashInviteToken, joinLink } from "@/lib/team";
+import { hashInviteToken, isInviteToken, joinLink } from "@/lib/team";
 import { isUuid } from "@/lib/validate";
 
 export type TeamMember = { userId: string; email: string | null; role: Role; joinedAt: string };
@@ -88,4 +89,23 @@ export async function removeMember(owner: Staff, userId: string): Promise<Saved>
   if (error.code === "BSNOS") return { ok: false, error: GONE };
   logError("removeMember", error);
   return { ok: false, error: GENERIC };
+}
+
+/**
+ * The clinic behind an open join link (not used, revoked, or expired), or null (teams spec 6.2, 7). Through the secret
+ * key, because the visitor is not a member of that clinic; it finds the link by the token's hash and reveals only the name.
+ * Throws on a database error.
+ */
+export async function inviteClinicName(token: unknown, now: Date): Promise<string | null> {
+  if (!isInviteToken(token)) return null;
+  const { data, error } = await adminClient()
+    .from("clinic_invites")
+    .select("clinic:clinics(name)")
+    .eq("token_hash", hashInviteToken(token))
+    .is("accepted_at", null)
+    .is("revoked_at", null)
+    .gt("expires_at", now.toISOString())
+    .maybeSingle();
+  if (error) throw error;
+  return (data as { clinic: { name: string } | null } | null)?.clinic?.name ?? null;
 }

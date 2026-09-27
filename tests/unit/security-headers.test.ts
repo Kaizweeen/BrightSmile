@@ -55,6 +55,7 @@ describe("securityHeaders", () => {
       "/auth/:path*",
       "/api/:path*",
       "/admin/:path*",
+      "/join/:path*",
     ]);
   });
 
@@ -72,13 +73,13 @@ describe("ROBOTS_DISALLOW", () => {
   const blocked = (path: string) => ROBOTS_DISALLOW.some((prefix) => path.startsWith(prefix));
 
   it("keeps crawlers out of the private areas", () => {
-    for (const path of ["/app/requests", "/a/AbCdEfGhIjKl", "/onboarding/", "/auth/confirm", "/api/cron/daily"]) {
+    for (const path of ["/app/requests", "/a/AbCdEfGhIjKl", "/onboarding/", "/auth/confirm", "/api/cron/daily", "/join/AbCdEfGhIjKl"]) {
       expect(blocked(path)).toBe(true);
     }
   });
 
   it("never catches a booking link or a public page", () => {
-    for (const path of ["/", "/demo", "/apple-dental", "/apple-icon.png", "/aura-smile", "/privacy", "/terms", "/manifest.webmanifest", "/login-dental", "/forgot-me-not-dental", "/signupsmile", "/onboarding-clinic", "/reset-password-care"]) {
+    for (const path of ["/", "/demo", "/apple-dental", "/apple-icon.png", "/aura-smile", "/privacy", "/terms", "/manifest.webmanifest", "/login-dental", "/forgot-me-not-dental", "/signupsmile", "/onboarding-clinic", "/reset-password-care", "/join-dental", "/joinsmile"]) {
       expect(blocked(path)).toBe(false);
     }
   });

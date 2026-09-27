@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { hashInviteToken } from "@/lib/team";
-import { createInvite, removeMember, revokeInvite } from "@/lib/team-data";
+import { createInvite, inviteClinicName, removeMember, revokeInvite } from "@/lib/team-data";
+
+const admin = vi.hoisted(() => ({ client: null as unknown }));
 
 vi.mock("@/lib/app-url", () => ({ appUrl: () => "https://bsmile.vercel.app" }));
+vi.mock("@/lib/supabase/admin", () => ({ adminClient: () => admin.client }));
 
 const CLINIC = "3f1c2d4e-5a6b-4c7d-8e9f-0a1b2c3d4e5f";
 const STAFF_ID = "7d2e9f10-3b5c-4e8a-b1d4-2c6f8a0e5b92";
@@ -54,5 +57,42 @@ describe("revokeInvite and removeMember", () => {
     const db = { from: never, rpc: never };
     expect((await revokeInvite(owner(db), "not-an-id")).ok).toBe(false);
     expect((await removeMember(owner(db), "not-an-id")).ok).toBe(false);
+  });
+});
+
+/** The secret-key client, recording each call of the query it builds; maybeSingle answers `row`. */
+function recording(row: unknown): unknown[][] {
+  const calls: unknown[][] = [];
+  const query: Record<string, unknown> = { maybeSingle: async () => ({ data: row, error: null }) };
+  for (const name of ["from", "select", "eq", "is", "gt"]) {
+    query[name] = (...args: unknown[]) => {
+      calls.push([name, ...args]);
+      return query;
+    };
+  }
+  admin.client = query;
+  return calls;
+}
+
+describe("inviteClinicName", () => {
+  it("names the clinic only for an open link, found by the token's hash", async () => {
+    const calls = recording({ clinic: { name: "Bright Dental" } });
+    expect(await inviteClinicName("AbCdEfGhIjKl", new Date("2026-09-26T02:00:00Z"))).toBe("Bright Dental");
+    expect(calls).toEqual([
+      ["from", "clinic_invites"],
+      ["select", "clinic:clinics(name)"],
+      ["eq", "token_hash", hashInviteToken("AbCdEfGhIjKl")],
+      ["is", "accepted_at", null],
+      ["is", "revoked_at", null],
+      ["gt", "expires_at", "2026-09-26T02:00:00.000Z"],
+    ]);
+  });
+
+  it("is null for a link that no longer works, and asks nothing for a malformed token", async () => {
+    recording(null);
+    expect(await inviteClinicName("AbCdEfGhIjKl", new Date())).toBeNull();
+    const calls = recording(null);
+    expect(await inviteClinicName("../../admin", new Date())).toBeNull();
+    expect(calls).toEqual([]);
   });
 });

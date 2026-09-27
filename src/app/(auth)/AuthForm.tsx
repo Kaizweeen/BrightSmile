@@ -5,7 +5,7 @@ import { useActionState } from "react";
 import Field from "@/components/Field";
 import type { AuthState } from "./actions";
 
-type Mode = "signup" | "login" | "forgot" | "reset";
+type Mode = "signup" | "join" | "login" | "forgot" | "reset";
 type Props = {
   mode: Mode;
   action: (state: AuthState, form: FormData) => Promise<AuthState>;
@@ -18,6 +18,7 @@ const COPY: Record<Mode, { title: string; sub: string; button: string }> = {
     sub: "Step 1 of 4. Next you set up your clinic, your dentist, and your procedures.",
     button: "Create account",
   },
+  join: { title: "Create your account", sub: "Then you join your clinic's team on BrightSmile.", button: "Create account" },
   login: { title: "Log in", sub: "Welcome back to BrightSmile.", button: "Log in" },
   forgot: { title: "Reset your password", sub: "We will email you a link to set a new one.", button: "Send reset link" },
   reset: { title: "Set a new password", sub: "Use at least 8 characters.", button: "Save password" },
@@ -85,7 +86,7 @@ export default function AuthForm({ mode, action, notice }: Props) {
         )}
 
         <p className="f-hint mt-4">
-          {mode === "signup" && (
+          {(mode === "signup" || mode === "join") && (
             <>
               Already have an account?{" "}
               <Link href="/login" className="link">
