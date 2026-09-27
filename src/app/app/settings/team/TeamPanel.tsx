@@ -13,19 +13,21 @@ export type InviteRow = { id: string; created: string; expires: string };
  */
 export default function TeamPanel({ members, invites }: { members: MemberRow[]; invites: InviteRow[] }) {
   const [link, setLink] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copyNote, setCopyNote] = useState("");
   const [confirming, setConfirming] = useState<string | null>(null);
   const [memberResult, setMemberResult] = useState<Saved | null>(null);
   const [linkResult, setLinkResult] = useState<Saved | null>(null);
   const [pending, startTransition] = useTransition();
+  // Its own transition, so removing a member or revoking a link never flips this button's label to "One moment...".
+  const [creating, startCreating] = useTransition();
 
   function create() {
-    startTransition(async () => {
+    startCreating(async () => {
       const r = await createInviteAction();
       setLinkResult(r.ok ? null : r);
       if (r.ok) {
         setLink(r.link);
-        setCopied(false);
+        setCopyNote("");
       }
     });
   }
@@ -34,9 +36,9 @@ export default function TeamPanel({ members, invites }: { members: MemberRow[]; 
     if (!link) return;
     try {
       await navigator.clipboard.writeText(link);
-      setCopied(true);
+      setCopyNote("Copied.");
     } catch {
-      setCopied(false);
+      setCopyNote("Copy did not work. Select the link and copy it.");
     }
   }
 
@@ -51,7 +53,7 @@ export default function TeamPanel({ members, invites }: { members: MemberRow[]; 
           {members.map((m) => (
             <Fragment key={m.userId}>
               <div className="member-row cursor-default">
-                <span className="nm">
+                <span className="nm min-w-0 [overflow-wrap:anywhere]">
                   {m.email ?? "No email on file"}
                   <span className="meta block">Joined {m.joined}</span>
                 </span>
@@ -64,7 +66,7 @@ export default function TeamPanel({ members, invites }: { members: MemberRow[]; 
               </div>
               {confirming === m.userId && (
                 <div className="note-box warn">
-                  <p>
+                  <p className="[overflow-wrap:anywhere]">
                     Remove {m.email ?? "this staff member"}? They lose access at once, and their devices stop getting this clinic&apos;s alerts.
                   </p>
                   <div className="action-row">
@@ -113,7 +115,7 @@ export default function TeamPanel({ members, invites }: { members: MemberRow[]; 
                 Copy link
               </button>
               <span className="f-hint" role="status">
-                {copied ? "Copied." : ""}
+                {copyNote}
               </span>
             </div>
           </div>
@@ -133,7 +135,14 @@ export default function TeamPanel({ members, invites }: { members: MemberRow[]; 
                   type="button"
                   className="btn btn-ghost"
                   disabled={pending}
-                  onClick={() => startTransition(async () => setLinkResult(await revokeInviteAction(i.id)))}
+                  onClick={() =>
+                    startTransition(async () => {
+                      const r = await revokeInviteAction(i.id);
+                      setLinkResult(r);
+                      // A revoked link is never shown again, whether or not it is the one still on screen.
+                      if (r.ok) setLink(null);
+                    })
+                  }
                 >
                   Revoke
                 </button>
@@ -146,8 +155,8 @@ export default function TeamPanel({ members, invites }: { members: MemberRow[]; 
             {linkResult.error}
           </p>
         )}
-        <button type="button" className="btn btn-primary mt-4" disabled={pending} onClick={create}>
-          {pending ? "One moment..." : "Create join link"}
+        <button type="button" className="btn btn-primary mt-4" disabled={creating} onClick={create}>
+          {creating ? "One moment..." : "Create join link"}
         </button>
       </section>
     </>
