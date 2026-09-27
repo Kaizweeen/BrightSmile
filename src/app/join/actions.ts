@@ -5,12 +5,19 @@ import { redirect } from "next/navigation";
 import { logError } from "@/lib/log";
 import { serverClient } from "@/lib/supabase/server";
 import { INVITE_DAYS, isInviteToken, JOIN_COOKIE, joinRefusal } from "@/lib/team";
+import { inviteClinicName } from "@/lib/team-data";
 
 export type JoinState = { error?: string };
 
 const GONE = "This join link no longer works. Ask the clinic for a new one.";
 const MEMBER = "This account already belongs to a clinic. Log out and use another email to join.";
 const TRY_AGAIN = "Something went wrong. Try the link again.";
+
+/** The member refusal, naming the clinic when its name can still be looked up (falls back to the plain text). */
+async function memberRefusal(token: string): Promise<string> {
+  const name = await inviteClinicName(token, new Date()).catch(() => null);
+  return name ? `This account already belongs to a clinic. Log out and use another email to join ${name}.` : MEMBER;
+}
 
 /** Carries the join link through sign-up or log-in: HttpOnly, SameSite=Lax, for 7 days (teams spec 6.2). */
 async function rememberInvite(token: string): Promise<void> {
@@ -51,7 +58,7 @@ export async function joinClinic(_state: JoinState, form: FormData): Promise<Joi
     return { error: TRY_AGAIN };
   }
   (await cookies()).delete(JOIN_COOKIE);
-  if (refusal) return { error: refusal === "member" ? MEMBER : GONE };
+  if (refusal) return { error: refusal === "member" ? await memberRefusal(token) : GONE };
   redirect("/app/requests");
 }
 
