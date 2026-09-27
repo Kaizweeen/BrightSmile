@@ -9,6 +9,7 @@ type Clinic = { userId: string; clinicId: string };
 const SEEDED = [
   "appointment_events",
   "appointments",
+  "branches",
   "clinic_invites",
   "clinic_members",
   "dentists",
@@ -30,8 +31,8 @@ async function seed({ userId, clinicId }: Clinic) {
   const dentist = await one("select id from public.dentists where clinic_id = $1", [clinicId]);
   const patient = await one("insert into public.patients (clinic_id, first_name, last_name, mobile) values ($1, 'Ana', 'Cruz', '+639171112222') returning id", [clinicId]);
   const appointment = await one(
-    `insert into public.appointments (clinic_id, dentist_id, patient_id, starts_at, ends_at, status, procedure_names, source, manage_token)
-     values ($1, $2, $3, '2030-01-07T09:00:00+08:00', '2030-01-07T09:30:00+08:00', 'confirmed', '{Consultation}', 'online', $4) returning id`,
+    `insert into public.appointments (clinic_id, branch_id, dentist_id, patient_id, starts_at, ends_at, status, procedure_names, source, manage_token)
+     values ($1, (select id from public.branches where clinic_id = $1), $2, $3, '2030-01-07T09:00:00+08:00', '2030-01-07T09:30:00+08:00', 'confirmed', '{Consultation}', 'online', $4) returning id`,
     [clinicId, dentist, patient, `T${clinicId.replace(/-/g, "").slice(0, 11)}`],
   );
   await db.query("insert into public.appointment_events (clinic_id, appointment_id, to_status, actor) values ($1, $2, 'confirmed', 'staff')", [clinicId, appointment]);
@@ -128,9 +129,10 @@ describe("the offline engine", () => {
 describe("double booking guard", () => {
   const insert = (clinic: Clinic, start: string, end: string, status: string) =>
     db.query(
-      `insert into public.appointments (clinic_id, dentist_id, patient_id, starts_at, ends_at, status, procedure_names, source, manage_token)
-       select $1, d.id, p.id, $2, $3, $4, '{Consultation}', 'manual', substr(md5(random()::text), 1, 12)
-       from public.dentists d join public.patients p on p.clinic_id = d.clinic_id where d.clinic_id = $1 limit 1`,
+      `insert into public.appointments (clinic_id, branch_id, dentist_id, patient_id, starts_at, ends_at, status, procedure_names, source, manage_token)
+       select $1, b.id, d.id, p.id, $2, $3, $4, '{Consultation}', 'manual', substr(md5(random()::text), 1, 12)
+       from public.dentists d join public.patients p on p.clinic_id = d.clinic_id join public.branches b on b.clinic_id = d.clinic_id
+       where d.clinic_id = $1 limit 1`,
       [clinic.clinicId, start, end, status],
     );
 

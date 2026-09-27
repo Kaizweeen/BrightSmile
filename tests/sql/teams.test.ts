@@ -51,7 +51,10 @@ describe("create_clinic", () => {
       () => "insert into public.clinic_members (clinic_id, user_id, email)\n  values (v_clinic, v_user, (select u.email from auth.users u where u.id = v_user));",
     );
     expect(expected).not.toBe(billing);
-    expect(await definition(db)).toBe(expected);
+    // Right after the teams migration: later migrations replace create_clinic again.
+    const after = await freshDb(MIGRATIONS.indexOf(TEAMS) + 1);
+    expect(await definition(after)).toBe(expected);
+    await after.close();
   });
 });
 
@@ -154,7 +157,7 @@ describe("the clinic's setup", () => {
       a.clinicId,
     ]);
     expect(
-      await asUser(db, a.userId, "insert into public.working_hours (clinic_id, dentist_id, weekday, start_time, end_time) values ($1, $2, 2, '09:00', '12:00') returning weekday", [
+      await asUser(db, a.userId, "insert into public.working_hours (clinic_id, dentist_id, branch_id, weekday, start_time, end_time) select $1, $2, id, 2, '09:00', '12:00' from public.branches where clinic_id = $1 returning weekday", [
         a.clinicId,
         dentist.id,
       ]),
@@ -174,8 +177,9 @@ describe("the day's work", () => {
     const [visit] = await asUser<{ id: string }>(
       db,
       aStaff,
-      `insert into public.appointments (clinic_id, dentist_id, patient_id, starts_at, ends_at, status, procedure_names, source, manage_token)
-       values ($1, $2, $3, '2030-03-04T09:00:00+08:00', '2030-03-04T09:30:00+08:00', 'confirmed', '{Consultation}', 'manual', 'StaffVisit01') returning id`,
+      `insert into public.appointments (clinic_id, branch_id, dentist_id, patient_id, starts_at, ends_at, status, procedure_names, source, manage_token)
+       select $1, id, $2, $3, '2030-03-04T09:00:00+08:00', '2030-03-04T09:30:00+08:00', 'confirmed', '{Consultation}', 'manual', 'StaffVisit01'
+       from public.branches where clinic_id = $1 returning id`,
       [a.clinicId, dentist.id, patient.id],
     );
     expect(await asUser(db, aStaff, "update public.appointments set status = 'completed' where id = $1 returning status", [visit.id])).toEqual([{ status: "completed" }]);
@@ -338,9 +342,9 @@ describe("clinic_week_stats", () => {
   /** One appointment at a Manila time, straight into the table (no slot checks). */
   async function visit(dentistId: string, startsAt: string, status: string, source = "online") {
     await db.query(
-      `insert into public.appointments (clinic_id, dentist_id, patient_id, starts_at, ends_at, status, procedure_names, source, manage_token)
-       select $1, $2, p.id, $3::timestamptz, $3::timestamptz + interval '30 minutes', $4, '{Consultation}', $5, substr(md5(random()::text), 1, 12)
-       from public.patients p where p.clinic_id = $1 limit 1`,
+      `insert into public.appointments (clinic_id, branch_id, dentist_id, patient_id, starts_at, ends_at, status, procedure_names, source, manage_token)
+       select $1, b.id, $2, p.id, $3::timestamptz, $3::timestamptz + interval '30 minutes', $4, '{Consultation}', $5, substr(md5(random()::text), 1, 12)
+       from public.patients p join public.branches b on b.clinic_id = p.clinic_id where p.clinic_id = $1 limit 1`,
       [c.clinicId, dentistId, startsAt, status, source],
     );
   }

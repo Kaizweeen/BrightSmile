@@ -21,7 +21,7 @@ export type OnboardingInput = {
 export type OnboardingField = keyof OnboardingInput;
 export type Problems = Partial<Record<OnboardingField, string>>;
 
-/** The jsonb argument of public.create_clinic (latest definition: supabase/migrations/20260926000100_teams.sql). */
+/** The jsonb argument of public.create_clinic (latest definition: supabase/migrations/20260928000100_branches_booking.sql). */
 export type CreateClinicPayload = {
   name: string;
   sms_name: string;

@@ -22,6 +22,26 @@ export type PatientDetail = {
 };
 
 const GONE = "This patient no longer exists.";
+
+/** The patient form (booking flow spec 6): all of it goes when a patient is anonymized (patients_anonymized_clean). */
+const FORM_CLEARED = {
+  middle_name: null,
+  sex: null,
+  address: null,
+  occupation: null,
+  email: null,
+  guardian_name: null,
+  hmo_number: null,
+  previous_dentist: null,
+  last_visit: null,
+  visit_reason: null,
+  emergency_name: null,
+  emergency_mobile: null,
+  waiver_name: null,
+  waiver_version: null,
+  waiver_at: null,
+  medical: null,
+};
 const GENERIC = "Something went wrong. Please try again.";
 const HAS_UPCOMING = "Cancel this patient's upcoming visits first.";
 
@@ -138,6 +158,7 @@ export async function deletePatient(staff: Staff, id: string, now: Date): Promis
         mobile: null,
         birthday: null,
         hmo: null,
+        ...FORM_CLEARED,
         anonymized_at: now.toISOString(),
       })
       .eq("id", id)
