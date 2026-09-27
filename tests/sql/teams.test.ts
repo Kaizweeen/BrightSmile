@@ -69,20 +69,31 @@ describe("the migration on an existing database", () => {
     await expect(db.query("update public.clinic_members set role = 'admin' where user_id = $1", [aStaff])).rejects.toThrow(/clinic_members_role_check/);
     await expect(db.query("update public.clinics set slug = 'join' where id = $1", [a.clinicId])).rejects.toThrow(/clinics_slug_not_reserved/);
   });
+
+  it("refuses to run before the billing migration, so pasting it out of order fails fast", async () => {
+    const beforeBilling = await freshDb(MIGRATIONS.indexOf("20260925000200_billing.sql"));
+    await expect(migrate(beforeBilling, TEAMS)).rejects.toThrow(/clinic_billing/);
+    await beforeBilling.close();
+  });
 });
 
 describe("memberships", () => {
-  it("show members every membership of their clinic and nobody else's", async () => {
+  it("let the owner see every membership of their clinic; a staff member sees only their own row", async () => {
     const clinicA = [
       { user_id: a.userId, role: "owner" },
       { user_id: aStaff, role: "staff" },
     ];
-    for (const user of [a.userId, aStaff]) {
-      expect(await asUser(db, user, "select user_id, role from public.clinic_members order by role"), user).toEqual(clinicA);
-    }
+    // Two rows for clinic A when the owner reads them: why ownMembership filters by the signed-in user's id, even
+    // for the owner (maybeSingle fails on more than one row).
+    expect(await asUser(db, a.userId, "select user_id, role from public.clinic_members order by role")).toEqual(clinicA);
     expect(await asUser(db, b.userId, "select user_id from public.clinic_members")).toEqual([{ user_id: b.userId }]);
-    // Two rows for clinic A: why ownMembership filters by the signed-in user's id.
-    expect(await asUser(db, aStaff, "select role from public.clinic_members where user_id = $1", [aStaff])).toEqual([{ role: "staff" }]);
+  });
+
+  it("keeps a colleague's email from staff (RA 10173 data minimization): a staff member reads only their own row", async () => {
+    expect(await asUser(db, aStaff, "select user_id, role, email from public.clinic_members")).toEqual([
+      { user_id: aStaff, role: "staff", email: `${aStaff}@example.com` },
+    ]);
+    expect(await asUser(db, aStaff, "select user_id from public.clinic_members where user_id = $1", [a.userId])).toEqual([]);
   });
 
   it("cannot be added, changed, or deleted directly, not even by the owner", async () => {
@@ -127,6 +138,14 @@ describe("the clinic's setup", () => {
     for (const [sql, params] of inserts) {
       await expect(asUser(db, aStaff, sql, params), sql).rejects.toThrow(/row-level security/);
     }
+  });
+
+  it("refuses clinics that staff insert or delete", async () => {
+    // Hardening revokes insert and delete on clinics for authenticated outright, so this fails on the grant, not RLS.
+    await expect(
+      asUser(db, aStaff, "insert into public.clinics (name, sms_name, slug, mobile) values ('Sneaky', 'Sneaky', 'sneaky-clinic', '+639170000009')"),
+    ).rejects.toThrow(/permission denied/);
+    await expect(asUser(db, aStaff, "delete from public.clinics where id = $1", [a.clinicId])).rejects.toThrow(/permission denied/);
   });
 
   it("changes when the owner changes it", async () => {
@@ -279,6 +298,33 @@ describe("remove_member", () => {
     await expect(remove(null, staff)).rejects.toThrow(/permission denied/);
     expect(await asUser(db, c.userId, "select user_id from public.clinic_members")).toHaveLength(3);
   });
+
+  it("takes a person's push subscriptions with their membership through the foreign key alone", async () => {
+    const c = await newClinic(db);
+    const staff = await addStaff(db, c);
+    await db.query("insert into public.push_subscriptions (clinic_id, user_id, endpoint, p256dh, auth) values ($1, $2, $3, 'k', 'a')", [
+      c.clinicId,
+      staff,
+      `https://fcm.googleapis.com/fcm/send/${c.clinicId}-fk`,
+    ]);
+    // Deleting the membership directly (not through remove_member) still takes the subscription with it.
+    await db.query("delete from public.clinic_members where clinic_id = $1 and user_id = $2", [c.clinicId, staff]);
+    const { rows } = await db.query("select user_id from public.push_subscriptions where clinic_id = $1", [c.clinicId]);
+    expect(rows).toEqual([]);
+  });
+});
+
+describe("payments", () => {
+  it("are read by the owner alone, never by staff (RA 10173 data minimization)", async () => {
+    const c = await newClinic(db);
+    const staff = await addStaff(db, c);
+    await db.query(
+      "insert into public.payments (clinic_id, method, amount_centavos, months, reference, paid_through_after) values ($1, 'gcash', 39900, 1, 'REF-0001', now() + interval '1 month')",
+      [c.clinicId],
+    );
+    expect(await asUser(db, c.userId, "select reference from public.payments where clinic_id = $1", [c.clinicId])).toEqual([{ reference: "REF-0001" }]);
+    expect(await asUser(db, staff, "select reference from public.payments where clinic_id = $1", [c.clinicId])).toEqual([]);
+  });
 });
 
 describe("clinic_week_stats", () => {
@@ -316,8 +362,10 @@ describe("clinic_week_stats", () => {
     await visit(first, "2026-09-05T10:00:00+08:00", "confirmed", "manual"); // started, and nobody marked it
     await visit(first, "2026-09-06T23:30:00+08:00", "completed"); // Sunday 11:30 PM Manila (15:30 UTC): still this week
     await visit(second, "2026-09-02T10:00:00+08:00", "no_show");
+    await visit(second, "2026-08-31T00:30:00+08:00", "completed"); // Monday 12:30 AM Manila: the window's lower edge
+    await visit(second, "2026-09-14T00:30:00+08:00", "completed"); // the week after next: outside a 2-week request from Aug 31
     await visit(first, "2026-09-07T00:30:00+08:00", "completed"); // Monday 12:30 AM Manila (Sunday in UTC): the next week
-    await visit(first, "2030-01-08T09:00:00+08:00", "confirmed"); // still ahead
+    await visit(first, "2099-01-08T09:00:00+08:00", "confirmed"); // still ahead (far enough out to outlive this test suite)
   }, 60_000);
 
   it("counts each status in its Manila week, per dentist", async () => {
@@ -326,15 +374,53 @@ describe("clinic_week_stats", () => {
     expect(rows).toEqual(
       expect.arrayContaining([
         { ...zero, week: "2026-08-31", dentist_id: first, completed: 3, no_show: 1, cancelled: 1, declined: 1, expired: 1, unmarked: 1, online: 6, manual: 2 },
-        { ...zero, week: "2026-08-31", dentist_id: second, no_show: 1, online: 1 },
+        { ...zero, week: "2026-08-31", dentist_id: second, completed: 1, no_show: 1, online: 2 },
         { ...zero, week: "2026-09-07", dentist_id: first, completed: 1, online: 1 },
       ]),
     );
   });
 
+  it("would miscount the same fixture with UTC day bounds instead of the Manila week", async () => {
+    // A copy of the function using naive UTC day bounds (starts_at >= p_from::timestamptz, not the Manila-aware
+    // version above) drops the visit 30 minutes into the Manila week and keeps the one 30 minutes past it, so it
+    // disagrees with the correct second-dentist row this suite just checked.
+    await db.query(`
+      create or replace function public.clinic_week_stats_utc_bug(p_clinic_id uuid, p_from date, p_weeks integer)
+      returns table (week_start date, dentist_id uuid, completed integer, no_show integer, cancelled integer,
+        declined integer, expired integer, unmarked integer, upcoming integer, online integer, manual integer)
+      language sql stable set search_path = '' as $body$
+        select
+          (date_trunc('week', a.starts_at at time zone 'Asia/Manila'))::date,
+          a.dentist_id,
+          (count(*) filter (where a.status = 'completed'))::int,
+          (count(*) filter (where a.status = 'no_show'))::int,
+          (count(*) filter (where a.status = 'cancelled'))::int,
+          (count(*) filter (where a.status = 'declined'))::int,
+          (count(*) filter (where a.status = 'expired'))::int,
+          (count(*) filter (where a.status = 'confirmed' and a.starts_at <= now()))::int,
+          (count(*) filter (where a.status = 'confirmed' and a.starts_at > now()))::int,
+          (count(*) filter (where a.source = 'online'))::int,
+          (count(*) filter (where a.source = 'manual'))::int
+        from public.appointments a
+        where a.clinic_id = p_clinic_id
+          and a.starts_at >= p_from::timestamptz
+          and a.starts_at < (p_from::timestamptz + make_interval(weeks => p_weeks))
+        group by 1, 2
+        order by 1, 2;
+      $body$;
+    `);
+    try {
+      const { rows } = await db.query(`select ${COLUMNS} from public.clinic_week_stats_utc_bug($1, '2026-08-31', 2)`, [c.clinicId]);
+      expect(rows).not.toEqual(expect.arrayContaining([{ ...zero, week: "2026-08-31", dentist_id: second, completed: 1, no_show: 1, online: 2 }]));
+    } finally {
+      await db.query("drop function public.clinic_week_stats_utc_bug(uuid, date, integer)");
+    }
+  });
+
   it("starts at the Monday of p_from's week and counts confirmed visits still ahead", async () => {
-    expect(await asService(db, `select ${COLUMNS} from public.clinic_week_stats($1, '2030-01-10', 1)`, [c.clinicId])).toEqual([
-      { ...zero, week: "2030-01-07", dentist_id: first, upcoming: 1, online: 1 },
+    // Jan 8, 2099 is a Thursday; Jan 5 is that week's Monday (unlike 2030, where Jan 7 was the Monday).
+    expect(await asService(db, `select ${COLUMNS} from public.clinic_week_stats($1, '2099-01-10', 1)`, [c.clinicId])).toEqual([
+      { ...zero, week: "2099-01-05", dentist_id: first, upcoming: 1, online: 1 },
     ]);
   });
 

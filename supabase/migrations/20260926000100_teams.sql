@@ -1,24 +1,12 @@
 -- Teams and reports (teams spec section 5): owner and staff roles, join links, the Monday summary's claim, and the
 -- weekly counts behind the Reports page. Staff run the day; only the owner changes the clinic's setup and its team.
 
--- 1. Staff join the owner. The default stays 'owner', which create_clinic relies on.
-alter table public.clinic_members drop constraint clinic_members_role_check;
-alter table public.clinic_members add constraint clinic_members_role_check check (role in ('owner', 'staff'));
+-- Refuses to run before the billing migration: regclass raises when clinic_billing does not exist yet, so pasting
+-- this migration out of order fails fast instead of leaving clinic_members half migrated.
+do $$ begin perform 'public.clinic_billing'::regclass; end $$;
 
--- Each member's login email, copied when the membership is made, so the Team page never reads auth.users.
-alter table public.clinic_members add column email text check (char_length(email) <= 254);
-update public.clinic_members m set email = u.email from auth.users u where u.id = m.user_id;
-
--- Members see every membership of their clinic (the Team page). Nobody writes memberships directly: only
--- create_clinic and accept_invite add them, and only remove_member deletes them.
-drop policy "users see their memberships" on public.clinic_members;
-create policy "members see their clinic's members" on public.clinic_members
-  for select to authenticated
-  using (public.is_clinic_member(clinic_id));
-revoke all on public.clinic_members from authenticated;
-grant select on public.clinic_members to authenticated;
-
--- 2. security definer, like is_clinic_member, so policies can read clinic_members without recursing.
+-- 1. security definer, like is_clinic_member, so policies can read clinic_members without recursing. Defined first
+-- because the clinic_members policy below, and the setup policies further down, both need it.
 create function public.is_clinic_owner(cid uuid)
 returns boolean
 language sql
@@ -34,7 +22,27 @@ $$;
 revoke execute on function public.is_clinic_owner(uuid) from public, anon;
 grant execute on function public.is_clinic_owner(uuid) to authenticated;
 
--- 3. Every member reads the clinic's setup; only the owner changes it (teams spec 4).
+-- 2. Staff join the owner. The default stays 'owner', which create_clinic relies on.
+alter table public.clinic_members drop constraint clinic_members_role_check;
+alter table public.clinic_members add constraint clinic_members_role_check check (role in ('owner', 'staff'));
+
+-- Each member's login email, copied when the membership is made, so the Team page never reads auth.users.
+alter table public.clinic_members add column email text check (char_length(email) <= 254);
+update public.clinic_members m set email = u.email from auth.users u where u.id = m.user_id;
+
+-- Data minimization (RA 10173): a staff member reads only their own membership row, never a colleague's email; the
+-- owner reads every membership of their clinic (the Team page). Nobody writes memberships directly: only
+-- create_clinic and accept_invite add them, and only remove_member deletes them.
+drop policy "users see their memberships" on public.clinic_members;
+create policy "members see their own row, the owner sees the clinic's" on public.clinic_members
+  for select to authenticated
+  using (user_id = (select auth.uid()) or public.is_clinic_owner(clinic_id));
+revoke all on public.clinic_members from authenticated;
+grant select on public.clinic_members to authenticated;
+
+-- 3. Every member reads the clinic's setup; only the owner changes it (teams spec 4). Each "for all" owner policy is
+-- split into insert, update, and delete (never a second select policy), so Supabase's advisor never sees two
+-- permissive select policies stacked on one table.
 drop policy "members update their clinic" on public.clinics;
 create policy "owner updates the clinic" on public.clinics
   for update to authenticated
@@ -44,25 +52,43 @@ drop policy "members manage dentists" on public.dentists;
 create policy "members read dentists" on public.dentists
   for select to authenticated
   using (public.is_clinic_member(clinic_id));
-create policy "owner manages dentists" on public.dentists
-  for all to authenticated
+create policy "owner adds dentists" on public.dentists
+  for insert to authenticated
+  with check (public.is_clinic_owner(clinic_id));
+create policy "owner updates dentists" on public.dentists
+  for update to authenticated
   using (public.is_clinic_owner(clinic_id)) with check (public.is_clinic_owner(clinic_id));
+create policy "owner deletes dentists" on public.dentists
+  for delete to authenticated
+  using (public.is_clinic_owner(clinic_id));
 
 drop policy "members manage working hours" on public.working_hours;
 create policy "members read working hours" on public.working_hours
   for select to authenticated
   using (public.is_clinic_member(clinic_id));
-create policy "owner manages working hours" on public.working_hours
-  for all to authenticated
+create policy "owner adds working hours" on public.working_hours
+  for insert to authenticated
+  with check (public.is_clinic_owner(clinic_id));
+create policy "owner updates working hours" on public.working_hours
+  for update to authenticated
   using (public.is_clinic_owner(clinic_id)) with check (public.is_clinic_owner(clinic_id));
+create policy "owner deletes working hours" on public.working_hours
+  for delete to authenticated
+  using (public.is_clinic_owner(clinic_id));
 
 drop policy "members manage procedures" on public.procedures;
 create policy "members read procedures" on public.procedures
   for select to authenticated
   using (public.is_clinic_member(clinic_id));
-create policy "owner manages procedures" on public.procedures
-  for all to authenticated
+create policy "owner adds procedures" on public.procedures
+  for insert to authenticated
+  with check (public.is_clinic_owner(clinic_id));
+create policy "owner updates procedures" on public.procedures
+  for update to authenticated
   using (public.is_clinic_owner(clinic_id)) with check (public.is_clinic_owner(clinic_id));
+create policy "owner deletes procedures" on public.procedures
+  for delete to authenticated
+  using (public.is_clinic_owner(clinic_id));
 
 -- 4. Join links (teams spec 5, 6.1). Only the token's SHA-256 is stored, so a leaked table holds no working links.
 create table public.clinic_invites (
@@ -207,7 +233,8 @@ grant execute on function public.accept_invite(text) to authenticated;
 
 -- 9. Removing staff (teams spec 5): only the owner of the member's clinic, never an owner row. The person's push
 -- subscriptions for the clinic go in the same transaction, because sendPush reads them with the secret key and would
--- otherwise keep alerting their phone. BSNOS: no such staff member in a clinic the caller owns.
+-- otherwise keep alerting their phone. The foreign key below backs this up for any other way a membership might go
+-- away. BSNOS: no such staff member in a clinic the caller owns.
 create function public.remove_member(p_user_id uuid)
 returns void
 language plpgsql
@@ -276,3 +303,15 @@ as $$
 $$;
 revoke execute on function public.clinic_week_stats(uuid, date, integer) from public, anon;
 grant execute on function public.clinic_week_stats(uuid, date, integer) to authenticated, service_role;
+
+-- 11. Data minimization (RA 10173): staff read no payment history, only the owner (teams spec 4, 5).
+drop policy "members read their payments" on public.payments;
+create policy "owner reads payments" on public.payments
+  for select to authenticated
+  using (public.is_clinic_owner(clinic_id));
+
+-- 12. A removed member's push subscriptions always go with the membership, however the membership ends. Production
+-- has no push_subscriptions rows yet, so adding this now is safe: nothing can already violate it.
+alter table public.push_subscriptions
+  add constraint push_subscriptions_member_fk
+  foreign key (clinic_id, user_id) references public.clinic_members (clinic_id, user_id) on delete cascade;
