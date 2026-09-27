@@ -122,7 +122,8 @@ export async function sendRenewalNotices(now: Date): Promise<number> {
  * Teams spec 6.4: on Mondays (Manila), last week's visits and no-shows to each clinic's devices, by push only. Due: not
  * lapsed and not yet told this Monday (weeklyCandidates), with at least one appointment last week. Each clinic first
  * claims weekly_report_for with a compare-and-set, so a rerun never pushes twice. Returns how many clinics a push reached.
- * A failed count or claim is not retried by this run, so after trying every clinic it throws with their ids.
+ * A failed count, claim, or push (sendPush returning below 0, meaning the clinic's subscriptions could not be read) is
+ * not retried by this run, so after trying every clinic it throws with their ids.
  * ponytail: reads every clinic and billing row (the API returns at most 1000) and counts one clinic at a time; page and batch when clinics near that.
  */
 export async function sendWeeklyReports(now: Date): Promise<number> {
@@ -160,9 +161,11 @@ export async function sendWeeklyReports(now: Date): Promise<number> {
       continue;
     }
     if (!claimed || claimed.length === 0) continue;
-    if ((await sendPush(clinic.id, weeklyPushPayload(clinic.name, week.completed, week.no_show))) > 0) sent++;
+    const delivered = await sendPush(clinic.id, weeklyPushPayload(clinic.name, week.completed, week.no_show));
+    if (delivered > 0) sent++;
+    else if (delivered < 0) failed.push(clinic.id);
   }
-  // A failed count or claim is not retried, so name the clinics (ids only) in the log.
+  // A failed count, claim, or push is not retried, so name the clinics (ids only) in the log.
   if (failed.length > 0) throw new Error(`${failed.length} weekly summaries failed, ${sent} sent (clinics ${failed.join(", ")})`);
   return sent;
 }

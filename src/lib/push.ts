@@ -86,8 +86,11 @@ function gone(e: unknown): boolean {
 }
 
 /**
- * Sends a push to every subscription of the clinic and returns how many push services accepted it.
- * Uses the secret-key client because a patient's booking triggers it. Never throws (spec 13).
+ * Sends a push to every subscription of the clinic and returns how many push services accepted it, or -1 when the
+ * clinic's subscriptions could not even be read. Uses the secret-key client because a patient's booking triggers it.
+ * Never throws (spec 13). Most callers only ask "did this reach at least one device" (result > 0), so 0 and -1 read
+ * the same to them; the Monday push loop (src/lib/daily-job.ts) is the one caller that also treats a negative result
+ * as a failed clinic, worth naming in its own failure log, rather than simply "nobody had push turned on".
  */
 export async function sendPush(clinicId: string, payload: PushPayload, send: PushSend | null = vapidSender()): Promise<number> {
   if (!send) return 0;
@@ -111,7 +114,7 @@ export async function sendPush(clinicId: string, payload: PushPayload, send: Pus
     return results.filter((r) => r.status === "fulfilled").length;
   } catch (e) {
     logError("sendPush", e);
-    return 0;
+    return -1;
   }
 }
 

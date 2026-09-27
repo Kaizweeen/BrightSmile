@@ -120,4 +120,14 @@ describe("sendWeeklyReports", () => {
     await expect(sendWeeklyReports(monday)).rejects.toThrow("2 weekly summaries failed, 0 sent (clinics c1, c2)");
     expect(push.mock.calls.map(([clinicId]) => clinicId)).toEqual(["c3"]);
   });
+
+  it("counts a clinic as failed, not sent, when its subscriptions cannot even be read (sendPush below 0)", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    db.stats.set("c1", { data: [week("d1", 5, 1)], error: null }).set("c2", { data: [week("d1", 1, 0)], error: null }).set("c3", { data: [], error: null });
+    db.claims.set("c1", claimed("c1")).set("c2", claimed("c2"));
+    push.mockResolvedValueOnce(-1).mockResolvedValueOnce(2);
+    await expect(sendWeeklyReports(monday)).rejects.toThrow("1 weekly summaries failed, 1 sent (clinics c1)");
+    // c3 had no appointments last week, so it was never claimed or pushed.
+    expect(push.mock.calls.map(([clinicId]) => clinicId)).toEqual(["c1", "c2"]);
+  });
 });

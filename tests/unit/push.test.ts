@@ -1,6 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { parseSubscription, planPushPayload, pushPayload, sendPush, vapidSender, weeklyPushPayload } from "@/lib/push";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { parseSubscription, planPushPayload, pushPayload, sendPush, vapidSender, weeklyPushPayload, type PushSend } from "@/lib/push";
+import { adminClient } from "@/lib/supabase/admin";
 import { manilaInstant } from "@/lib/time";
+
+vi.mock("@/lib/supabase/admin", () => ({ adminClient: vi.fn() }));
 
 const start = manilaInstant("2026-09-24", 600);
 const keys = { p256dh: `B${"A".repeat(86)}`, auth: "A".repeat(22) };
@@ -106,5 +109,13 @@ describe("vapidSender and sendPush without keys", () => {
     delete process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
     delete process.env.VAPID_PRIVATE_KEY;
     expect(await sendPush("any-clinic", pushPayload("request_alert", start, null))).toBe(0);
+  });
+
+  it("returns -1, not 0, when the clinic's subscriptions cannot even be read", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const failing = { from: () => ({ select: () => ({ eq: async () => ({ data: null, error: { message: "connection reset" } }) }) }) };
+    vi.mocked(adminClient).mockReturnValue(failing as never);
+    const send: PushSend = async () => ({});
+    expect(await sendPush("any-clinic", pushPayload("request_alert", start, null), send)).toBe(-1);
   });
 });
