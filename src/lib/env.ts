@@ -1,4 +1,5 @@
 import { operatorEmails } from "@/lib/admin";
+import { isAndroidCertFingerprint, isAndroidPackageName, parseAndroidCertFingerprints } from "@/lib/android";
 import { normalizeMobile } from "@/lib/phone";
 import { productionModeError, smsMode } from "@/lib/sms/prepare";
 import { cleanEmail } from "@/lib/validate";
@@ -72,6 +73,19 @@ export function envProblems(env: Env): string[] {
   // Test payments must never extend real plans (the webhook also ignores test events in production).
   if (production && env.PAYMONGO_SECRET_KEY?.trim().startsWith("sk_test_")) {
     problems.push("PAYMONGO_SECRET_KEY must be a live key in production, not a test key");
+  }
+  // Play Store spec 3.3: checked in every environment, like the PayMongo pair above, not only in production.
+  if (Boolean(env.ANDROID_PACKAGE_NAME?.trim()) !== Boolean(env.ANDROID_CERT_SHA256?.trim())) {
+    problems.push("ANDROID_PACKAGE_NAME and ANDROID_CERT_SHA256 must be set together, or neither");
+  }
+  if (env.ANDROID_PACKAGE_NAME?.trim() && !isAndroidPackageName(env.ANDROID_PACKAGE_NAME.trim())) {
+    problems.push("ANDROID_PACKAGE_NAME must be a valid Android application id, like com.brightsmile.clinic");
+  }
+  if (env.ANDROID_CERT_SHA256?.trim()) {
+    const fingerprints = parseAndroidCertFingerprints(env.ANDROID_CERT_SHA256);
+    if (fingerprints.length === 0 || !fingerprints.every(isAndroidCertFingerprint)) {
+      problems.push("ANDROID_CERT_SHA256 must be SHA-256 fingerprints (32 colon-separated pairs of uppercase hex digits) separated by commas");
+    }
   }
   return problems;
 }

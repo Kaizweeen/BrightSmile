@@ -143,6 +143,46 @@ describe("billing variables", () => {
   });
 });
 
+describe("Android variables (Play Store app, spec 3.3)", () => {
+  const packageName = "com.brightsmile.clinic";
+  const fingerprint = (pair: string) => Array(32).fill(pair).join(":");
+  const fpA = fingerprint("AB");
+  const fpB = fingerprint("CD");
+  const both = "ANDROID_PACKAGE_NAME and ANDROID_CERT_SHA256 must be set together, or neither";
+  const packageRule = "ANDROID_PACKAGE_NAME must be a valid Android application id, like com.brightsmile.clinic";
+  const fingerprintRule = "ANDROID_CERT_SHA256 must be SHA-256 fingerprints (32 colon-separated pairs of uppercase hex digits) separated by commas";
+
+  it("wants both or neither, in development and in production alike", () => {
+    expect(envProblems({ ...dev, ANDROID_PACKAGE_NAME: packageName })).toEqual([both]);
+    expect(envProblems({ ...production, ANDROID_CERT_SHA256: fpA })).toEqual([both]);
+    expect(envProblems({ ...dev, ANDROID_PACKAGE_NAME: packageName, ANDROID_CERT_SHA256: fpA })).toEqual([]);
+    expect(envProblems({ ...production, ANDROID_PACKAGE_NAME: packageName, ANDROID_CERT_SHA256: fpA })).toEqual([]);
+    expect(envProblems(dev)).toEqual([]);
+  });
+
+  it("refuses a package name that is not a valid Android application id, without repeating it", () => {
+    for (const bad of ["example", "1com.example", "com.bad app", "com..example", "com.example.", "com.Bad-app.example"]) {
+      const problems = envProblems({ ...dev, ANDROID_PACKAGE_NAME: bad, ANDROID_CERT_SHA256: fpA });
+      expect(problems).toEqual([packageRule]);
+      expect(problems.join(" ")).not.toContain(bad);
+    }
+  });
+
+  it("accepts several fingerprints, comma separated and trimmed", () => {
+    expect(envProblems({ ...dev, ANDROID_PACKAGE_NAME: packageName, ANDROID_CERT_SHA256: `${fpA}, ${fpB}` })).toEqual([]);
+  });
+
+  it("refuses a fingerprint that is not 32 colon-separated uppercase hex pairs, without repeating it", () => {
+    for (const bad of [fpA.toLowerCase(), fpA.slice(0, -3), `${fpA}:AB`, "not-a-fingerprint"]) {
+      const problems = envProblems({ ...dev, ANDROID_PACKAGE_NAME: packageName, ANDROID_CERT_SHA256: bad });
+      expect(problems).toEqual([fingerprintRule]);
+      expect(problems.join(" ")).not.toContain(bad);
+    }
+    // One bad fingerprint spoils the whole comma-separated list.
+    expect(envProblems({ ...dev, ANDROID_PACKAGE_NAME: packageName, ANDROID_CERT_SHA256: `${fpA}, not-a-fingerprint` })).toEqual([fingerprintRule]);
+  });
+});
+
 describe("assertEnv", () => {
   it("throws one error listing every problem, and passes a good environment", () => {
     expect(() => assertEnv({})).toThrow(/^BrightSmile environment check failed:\n- NEXT_PUBLIC_SUPABASE_URL is not set\n- /);
