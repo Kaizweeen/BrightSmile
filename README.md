@@ -238,3 +238,61 @@ The booking pages need no migration of their own: they use the branches migratio
 2. Press **Add a branch**. Its short name for texts goes after the clinic's name for texts, and the two must fit in 20 characters together (for example "Bright Dental" leaves 6, enough for "Makati"). Settings says how many characters are left, checks every active branch when a second becomes active, and refuses a clinic name for texts that leaves no room.
 3. Open each dentist in **Settings**: with 2 or more active branches, every block of working hours has a **Branch**. One dentist's blocks may not overlap, even at two branches.
 4. **Move up** and **Move down** set the order patients see. **Deactivate** takes a branch off the booking page; its visits stay on the schedule, and the last active branch cannot be deactivated.
+
+## Play Store app
+
+BrightSmile installs from Google Play as a Trusted Web Activity (spec: `docs/superpowers/specs/2026-09-28-brightsmile-play-store-design.md`): Chrome opens the dashboard full screen, with no browser bar. There is no second codebase and no patient app; the wrapper just opens the site, so it updates whenever the site does. Kai does every step below; nothing here can be done from code.
+
+### 1. Play Console account
+
+Create a Google Play Developer account (a one time USD 25 fee, at https://play.google.com/console/signup).
+
+- A **personal** account created after 13 November 2023 must run a closed test with at least 12 testers opted in for 14 days in a row before Google allows the app to go to production.
+- An **organization** account skips that closed test requirement, but needs a D-U-N-S number (look one up or request one free from Dun & Bradstreet; it can take a few weeks, so start this early).
+
+### 2. Build the app with Bubblewrap
+
+[Bubblewrap](https://github.com/GoogleChromeLabs/bubblewrap) is Google's CLI for building a Trusted Web Activity from a site's web manifest (`src/app/manifest.ts`, served at `/manifest.webmanifest`). Run it in a folder outside this repository: it writes a whole Android project and a signing key, and neither belongs in `brightsmile`.
+
+```powershell
+cd ..
+npx @bubblewrap/cli init --manifest https://<your-domain>/manifest.webmanifest
+```
+
+Answer its prompts:
+
+| Prompt | Answer |
+|---|---|
+| Application ID | Yours to choose, permanent once published. Suggested: `com.brightsmile.clinic` |
+| Application name | `BrightSmile Clinic` |
+| Launcher name | `BrightSmile` |
+| Start URL | `/app/requests?source=play` (adds the flag that hides payments inside the app, spec 3.2; overrides the manifest's own start URL) |
+| Display mode | `standalone` |
+| Enable notifications | Yes (the permission the wrapper needs for the web push that already works on the site) |
+| Signing key | Create a new one. Save the keystore file and both its passwords in a password manager; they must never go into this repository |
+
+Then build the Android App Bundle:
+
+```powershell
+npx @bubblewrap/cli build
+```
+
+This produces `app-release-bundle.aab` for the Play Console, and prints the app's SHA-256 certificate fingerprint (the upload key's; Play App Signing prints a second one in the next section).
+
+### 3. Play Console: create the app and a closed test
+
+1. **Create app**: name "BrightSmile Clinic", app (not game), free.
+2. **Testing > Closed testing**: create a track, upload the `.aab` from Bubblewrap, and add testers by email list or a Google Group.
+3. **Setup > App integrity > Play App Signing**: Google re-signs the app for distribution. Copy both SHA-256 certificate fingerprints it lists, the upload key's and the app signing key's.
+4. In Vercel, **Settings > Environment Variables** (Production), set `ANDROID_PACKAGE_NAME` (the application id from step 2) and `ANDROID_CERT_SHA256` (both fingerprints from step 3, comma separated), then redeploy.
+5. Open `{APP_URL}/.well-known/assetlinks.json` and check it lists the package name and both fingerprints (`src/lib/env.ts` refuses to start if either variable is half set or malformed).
+6. Open the closed test's opt-in link on an Android phone, install the app, open it, and confirm there is no browser address bar.
+
+### 4. Store listing and declarations
+
+- Icon: 512 px, already at `public/brand/icon-512.png`.
+- Feature graphic: 1024x500, Kai provides.
+- Phone screenshots: a few, of the dashboard.
+- Privacy policy URL: `{APP_URL}/privacy`.
+- **Data safety** form: what the app collects and shares. It matches what the site already does: contact details and appointment and health information from patients, login details from staff, nothing sold (see `/privacy`).
+- **Health apps declaration**: required, because the dashboard shows patients' health information from the patient form (`src/lib/intake.ts`).

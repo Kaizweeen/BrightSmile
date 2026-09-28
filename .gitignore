@@ -60,3 +60,13 @@ supabase/traces/
 /test-results/
 /playwright-report/
 /blob-report/
+
+# Play Store app: Bubblewrap always builds in a folder outside this repository (README, "Play Store app").
+# These only guard against its signing key or build output landing here if it is ever run inside by mistake.
+*.keystore
+*.jks
+.gradle/
+/app/build/
+*.apk
+*.aab
+twa-manifest*.bak
