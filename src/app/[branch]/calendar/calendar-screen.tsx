@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { BookingPanel, type BookingIntent } from "@/components/calendar/booking-panel";
 import { DayGrid } from "@/components/calendar/day-grid";
 import { VisitPanel } from "@/components/calendar/visit-panel";
 import { WeekGrid } from "@/components/calendar/week-grid";
@@ -17,18 +18,20 @@ import { addDays, formatDay, formatTime, manilaInstant } from "@/lib/time";
 import { dayRange, offGrid, weekDates, type VisitJson } from "@/lib/visits";
 
 export type CalendarProps = {
-  branch: { code: string; name: string; hours: OperatingHours };
+  branch: { id: string; code: string; name: string; hours: OperatingHours };
   chairs: { number: number; label: string }[];
   date: string;
   view: "day" | "week";
   today: string;
   staff: Subject;
+  canBook: boolean;
 };
 
 /** Spec 10: the branch calendar, refreshed every 30 seconds and after every change. */
-export function CalendarScreen({ branch, chairs, date, view, today, staff }: CalendarProps) {
+export function CalendarScreen({ branch, chairs, date, view, today, staff, canBook }: CalendarProps) {
   const router = useRouter();
   const [openId, setOpenId] = useState<string | null>(null);
+  const [intent, setIntent] = useState<BookingIntent | null>(null);
   const days = view === "week" ? weekDates(date) : [date];
   const from = manilaInstant(days[0], 0).toISOString();
   const to = manilaInstant(addDays(days[days.length - 1], 1), 0).toISOString();
@@ -55,6 +58,14 @@ export function CalendarScreen({ branch, chairs, date, view, today, staff }: Cal
           <p className="text-sm text-muted-foreground">{`${branch.name}${view === "day" && date === today ? ", today" : ""}`}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {canBook && (
+            <>
+              <Button onClick={() => setIntent({ kind: "new", date: date < today ? today : date })}>New booking</Button>
+              <Button variant="outline" onClick={() => setIntent({ kind: "new", date: today, walkIn: true })}>
+                Walk-in
+              </Button>
+            </>
+          )}
           <Button variant="outline" onClick={() => go(addDays(date, -step))}>
             Previous
           </Button>
@@ -82,7 +93,14 @@ export function CalendarScreen({ branch, chairs, date, view, today, staff }: Cal
       ) : view === "week" ? (
         <WeekGrid days={days} today={today} chairs={chairs} visits={list} onOpen={(v) => setOpenId(v.id)} onDay={(day) => go(day, "day")} />
       ) : (
-        <DayGrid date={date} range={dayRange(branch.hours, date, inGrid)} chairs={columns} visits={inGrid} onOpen={(v) => setOpenId(v.id)} />
+        <DayGrid
+          date={date}
+          range={dayRange(branch.hours, date, inGrid)}
+          chairs={columns}
+          visits={inGrid}
+          onOpen={(v) => setOpenId(v.id)}
+          onSlot={canBook && date >= today ? (chairNumber, minutes) => setIntent({ kind: "new", date, minutes, chairNumber }) : undefined}
+        />
       )}
       {view === "day" && off.length > 0 && (
         <section className="grid gap-2">
@@ -103,7 +121,17 @@ export function CalendarScreen({ branch, chairs, date, view, today, staff }: Cal
           </ul>
         </section>
       )}
-      <VisitPanel visitId={openId} branch={branch.code} staff={staff} onClose={() => setOpenId(null)} />
+      <VisitPanel
+        visitId={openId}
+        branch={branch.code}
+        staff={staff}
+        onClose={() => setOpenId(null)}
+        onMove={(visit) => {
+          setOpenId(null);
+          setIntent({ kind: "move", visit });
+        }}
+      />
+      {intent && <BookingPanel intent={intent} branch={branch} chairs={chairs} today={today} onClose={() => setIntent(null)} />}
     </div>
   );
 }

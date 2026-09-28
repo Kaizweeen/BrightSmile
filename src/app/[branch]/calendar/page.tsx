@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
+import { can } from "@/lib/permissions";
 import { manilaDate } from "@/lib/time";
 import { dateParam } from "@/lib/visits";
 import { branchByCode, listChairs } from "@/server/branches";
@@ -27,12 +28,13 @@ export default async function CalendarPage({
   const chairs = (await listChairs(branch.id)).filter((c) => c.active).map((c) => ({ number: c.number, label: c.label }));
   return (
     <CalendarScreen
-      branch={{ code: branch.code, name: branch.name, hours: branch.operatingHours }}
+      branch={{ id: branch.id, code: branch.code, name: branch.name, hours: branch.operatingHours }}
       chairs={chairs}
       date={date}
       view={query.view === "week" ? "week" : "day"}
       today={today}
       staff={staff}
+      canBook={can(staff, "appointment.book", { branchId: branch.id })}
     />
   );
 }
