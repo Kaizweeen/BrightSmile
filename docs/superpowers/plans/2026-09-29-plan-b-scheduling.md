@@ -3147,6 +3147,7 @@ export function PatientSearch({ onPick, autoFocus }: { onPick: (patient: Patient
 ```tsx
 "use client";
 
+import { useId } from "react";
 import { TextField } from "@/components/text-field";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
@@ -3212,6 +3213,7 @@ export function PatientFields({
   alertsOnly?: boolean;
   showConsent?: boolean;
 }) {
+  const alertsError = `${useId()}-error`;
   const text = (key: TextKey, label: string, props: React.ComponentProps<"input"> = {}) => (
     <TextField label={label} value={value[key]} onChange={(event) => onChange({ ...value, [key]: event.target.value })} error={errors[key]} {...props} />
   );
@@ -3239,10 +3241,16 @@ export function PatientFields({
         <Textarea
           value={value.medicalAlerts}
           maxLength={500}
+          aria-invalid={errors.medicalAlerts ? true : undefined}
+          aria-describedby={errors.medicalAlerts ? alertsError : undefined}
           onChange={(event) => onChange({ ...value, medicalAlerts: event.target.value })}
           placeholder="For example: hypertension, on blood thinners, pregnant"
         />
-        {errors.medicalAlerts && <span className="text-destructive">{errors.medicalAlerts}</span>}
+        {errors.medicalAlerts && (
+          <span id={alertsError} className="text-destructive">
+            {errors.medicalAlerts}
+          </span>
+        )}
       </label>
     </fieldset>
   );
@@ -3328,11 +3336,14 @@ export function AddPatientDialog({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [candidates, setCandidates] = useState<PatientHit[] | null>(null);
 
-  const finish = (patient: Added) => {
-    onAdded(patient);
+  const reset = () => {
     setDraft(EMPTY_PATIENT);
     setErrors({});
     setCandidates(null);
+  };
+  const finish = (patient: Added) => {
+    onAdded(patient);
+    reset();
     onOpenChange(false);
   };
   const add = useMutation({
@@ -3354,7 +3365,14 @@ export function AddPatientDialog({
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // Closing without adding starts the next patient fresh, never on an old draft or duplicate warning.
+        if (!next) reset();
+        onOpenChange(next);
+      }}
+    >
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Add a patient</DialogTitle>

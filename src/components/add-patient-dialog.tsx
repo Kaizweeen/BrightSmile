@@ -29,11 +29,14 @@ export function AddPatientDialog({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [candidates, setCandidates] = useState<PatientHit[] | null>(null);
 
-  const finish = (patient: Added) => {
-    onAdded(patient);
+  const reset = () => {
     setDraft(EMPTY_PATIENT);
     setErrors({});
     setCandidates(null);
+  };
+  const finish = (patient: Added) => {
+    onAdded(patient);
+    reset();
     onOpenChange(false);
   };
   const add = useMutation({
@@ -55,7 +58,14 @@ export function AddPatientDialog({
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // Closing without adding starts the next patient fresh, never on an old draft or duplicate warning.
+        if (!next) reset();
+        onOpenChange(next);
+      }}
+    >
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Add a patient</DialogTitle>
