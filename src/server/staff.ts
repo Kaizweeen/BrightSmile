@@ -20,6 +20,11 @@ const RESET_MINUTES = 15;
 const RESET_PREFIX = "staff-reset:";
 const SEVEN_DAYS_AGO = sql`now() - interval '7 days'`;
 
+/** Spec 6.3: an expired request is deleted the next time a join or approval screen loads. */
+function deleteExpiredRequests(tx: Db = db) {
+  return tx.delete(users).where(and(eq(users.status, "pending"), lt(users.createdAt, SEVEN_DAYS_AGO)));
+}
+
 export const joinSchema = z.object({
   name: personNameSchema,
   username: usernameSchema,
@@ -65,7 +70,9 @@ export async function requestToJoin(code: string, input: z.infer<typeof joinSche
   if (!branch) throw new ApiError(404, "qr_replaced", "This QR code no longer works. Ask the owner for the current one.");
   const passwordHash = await hashPassword(input.password);
   return db.transaction(async (tx) => {
-    await tx.delete(users).where(and(eq(users.status, "pending"), lt(users.createdAt, SEVEN_DAYS_AGO)));
+    // One join at a time, so two requests cannot both pass the per-connection and per-branch counts below. Joins are rare.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('dentasync.join'))`);
+    await deleteExpiredRequests(tx);
     const [fromIp] = await tx
       .select({ n: count() })
       .from(auditLog)
@@ -115,6 +122,7 @@ export type JoinRequestView = {
 
 export async function listJoinRequests(actor: Staff): Promise<JoinRequestView[]> {
   requireCan(actor, "staff.view");
+  await deleteExpiredRequests();
   const rows = await db
     .select({ id: users.id, name: users.name, username: users.username, role: users.role, branchId: branches.id, branchName: branches.name, createdAt: users.createdAt })
     .from(users)
@@ -238,13 +246,15 @@ export async function updateStaff(actor: Staff, userId: string, patch: z.infer<t
     const current = (await tx.select({ id: userBranches.branchId }).from(userBranches).where(eq(userBranches.userId, userId))).map((row) => row.id);
     const targetRole = target.role as Role;
     if (target.id === actor.id) {
-      // The owner may change their own title and whether they see patients, and nothing else about themselves.
-      if (actor.role !== "owner" || patch.role || patch.branchIds || patch.status) throw forbidden("Ask the owner to change your own access.");
+      // Only the owner (settings.edit) edits themselves: their title and whether they see patients, nothing else.
+      if (!can(actor, "settings.edit") || patch.role || patch.branchIds || patch.status) throw forbidden("Ask the owner to change your own access.");
     } else {
       requireCan(actor, "staff.manage", { userId, userRole: targetRole, branchIds: current });
     }
     if (patch.seesPatients !== undefined && targetRole !== "owner") {
-      throw new ApiError(400, "invalid", "Only the owner's own access to patients can be switched.");
+      throw new ApiError(400, "invalid", "Only the owner's own access to patients can be switched.", {
+        fields: { seesPatients: "Only the owner's own access to patients can be switched." },
+      });
     }
 
     const set: Partial<typeof users.$inferInsert> = { updatedAt: new Date() };
@@ -258,6 +268,9 @@ export async function updateStaff(actor: Staff, userId: string, patch: z.infer<t
     }
     if (patch.branchIds) {
       const wanted = [...new Set(patch.branchIds)];
+      if (actor.role !== "owner" && wanted.some((branchId) => !current.includes(branchId) && !covers(actor, branchId))) {
+        throw forbidden("You can only give branches you work at.");
+      }
       // A manager changes only the branches they cover; the person keeps their other branches.
       const next = [
         ...new Set(

@@ -79,6 +79,16 @@ describe("joining by QR", () => {
     expect((await join(branch.joinCode, newcomer("fresh.one"), "10.0.0.11")).status).toBe(201);
     expect(await userRow(old.id)).toBeUndefined();
   });
+
+  it("deletes expired requests when the approval screen loads, and refuses their sign-in", async () => {
+    const branch = await makeBranch();
+    const old = await makeUser({ role: "dentist", status: "pending", requestedBranchId: branch.id });
+    await db.update(users).set({ createdAt: new Date(Date.now() - 8 * 86_400_000) }).where(eq(users.id, old.id));
+    await expect(signIn(old.username)).rejects.toThrow();
+    const { cookie } = await ownerCookie();
+    expect((await call(requestsRoute.GET, request("/api/v1/join-requests", { cookie }))).status).toBe(200);
+    expect(await userRow(old.id)).toBeUndefined();
+  });
 });
 
 describe("approving", () => {
@@ -185,6 +195,16 @@ describe("changing staff", () => {
     const none = await patch(cookie, dentist.id, { branchIds: [] });
     expect(none.status).toBe(400);
     expect((await none.json()).error.fields).toEqual({ branchIds: "Keep at least one branch." });
+  });
+
+  it("refuses a branch the manager does not cover", async () => {
+    const a = await makeBranch();
+    const b = await makeBranch();
+    const manager = await makeUser({ role: "manager", branchIds: [a.id] });
+    const dentist = await makeUser({ role: "dentist", branchIds: [a.id] });
+    const res = await patch(await signIn(manager.username), dentist.id, { branchIds: [a.id, b.id] });
+    expect(res.status).toBe(403);
+    expect(await branchesOf(dentist.id)).toEqual([a.id]);
   });
 
   it("lists the staff each person may see", async () => {

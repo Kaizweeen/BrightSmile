@@ -29,10 +29,12 @@ export const auth = betterAuth({
   databaseHooks: {
     session: {
       create: {
-        // A disabled account cannot sign in (spec 6.5). A pending one can, to see the waiting page.
+        // A disabled account cannot sign in (spec 6.5), nor a join request older than 7 days (spec 6.3). A pending one
+        // can, to see the waiting page.
         before: async (session) => {
-          const [user] = await db.select({ status: users.status }).from(users).where(eq(users.id, session.userId));
-          return user?.status === "disabled" ? false : undefined;
+          const [user] = await db.select({ status: users.status, createdAt: users.createdAt }).from(users).where(eq(users.id, session.userId));
+          const expired = user?.status === "pending" && user.createdAt.getTime() < Date.now() - 7 * 86_400_000;
+          return user?.status === "disabled" || expired ? false : undefined;
         },
       },
     },
