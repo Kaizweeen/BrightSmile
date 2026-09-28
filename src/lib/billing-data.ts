@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { bannerText, billingFromRow, billingStatus, manilaMonthStart, type Billing, type BillingRow, type BillingState } from "@/lib/billing";
+import { bannerText, billingFromRow, billingStatus, manilaMonthStart, neutralBannerText, type Billing, type BillingRow, type BillingState } from "@/lib/billing";
 import { logError } from "@/lib/log";
 import { adminClient } from "@/lib/supabase/admin";
 import type { Member } from "@/lib/supabase/server";
@@ -33,13 +33,19 @@ export async function bookingOpen(clinicId: string, now: Date): Promise<boolean>
   return billingStatus(await loadBilling(adminClient(), clinicId), now).open;
 }
 
+export type Banner = { text: string; neutralText: string };
+
 /**
- * The dashboard banner, or null, in the owner's or the staff's words (teams spec 6.5). Never throws: a failed billing
- * read must not take the dashboard down.
+ * The dashboard banner, or null, in the owner's or the staff's words (teams spec 6.5), plus the neutral words for
+ * the Play app (spec 3.2); the client picks which to show (src/app/app/BillingBanner.tsx). Never throws: a failed
+ * billing read must not take the dashboard down.
  */
-export async function billingBanner(member: Member, now: Date): Promise<string | null> {
+export async function billingBanner(member: Member, now: Date): Promise<Banner | null> {
   try {
-    return bannerText(billingStatus(await loadBilling(member.db, member.clinicId), now), now, member.role === "owner");
+    const state = billingStatus(await loadBilling(member.db, member.clinicId), now);
+    const neutralText = neutralBannerText(state, now);
+    if (neutralText === null) return null;
+    return { text: bannerText(state, now, member.role === "owner") ?? neutralText, neutralText };
   } catch (e) {
     logError("billingBanner", e);
     return null;

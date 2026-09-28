@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import AppNav from "./AppNav";
+import BillingBanner from "./BillingBanner";
+import PlaySource from "./PlaySource";
 import { billingBanner } from "@/lib/billing-data";
 import { requireStaff } from "@/lib/supabase/server";
 
@@ -22,6 +24,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
 
   return (
     <div className="app-shell">
+      <PlaySource />
       <a href="#main" className="skip-link">
         Skip to content
       </a>
@@ -35,7 +38,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       <main id="main" className="app-main">
         {banner && (
           <p className="note-box warn mb-4">
-            {banner}
+            <BillingBanner text={banner.text} neutralText={banner.neutralText} />
             {staff.role === "owner" && (
               <>
                 {" "}

@@ -35,12 +35,17 @@ describe("pushPayload", () => {
 });
 
 describe("planPushPayload", () => {
-  it("says when the plan ends and opens the requests page", () => {
+  it("says when the plan ends and opens the requests page, with no call to pay (Play Store spec 3.2)", () => {
     expect(planPushPayload(manilaInstant("2026-10-09", 600))).toEqual({
       title: "Your BrightSmile plan ends Fri Oct 9",
-      body: "Pay in BrightSmile to keep online booking open.",
+      body: "Online booking pauses 3 days after that.",
       url: "/app/requests",
     });
+  });
+
+  it("never asks anyone to pay: the Play app can only show facts (Google Play's payments policy)", () => {
+    const { body } = planPushPayload(manilaInstant("2026-10-09", 600));
+    for (const banned of ["GCash", "Pay", "₱"]) expect(body).not.toContain(banned);
   });
 });
 

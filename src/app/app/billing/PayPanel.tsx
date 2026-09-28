@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { payOnline, type PayState } from "./actions";
 import { amountCentavos, formatPesos, MONTH_CHOICES } from "@/lib/billing";
+import { inPlayApp } from "@/lib/play-app";
 
 type Props = {
   activeDentists: number;
@@ -17,7 +18,14 @@ const monthsText = (months: number) => (months === 1 ? "1 month" : `${months} mo
 export default function PayPanel({ activeDentists, slug, gcash, online }: Props) {
   const [months, setMonths] = useState<number>(1);
   const [state, formAction, pending] = useActionState<PayState, FormData>(payOnline, {});
+  const [play] = useState(inPlayApp);
   const amount = formatPesos(amountCentavos(activeDentists, months));
+
+  // Play Store spec 3.2 (Google Play's payments policy): no prices, GCash details, or Pay online inside the Play
+  // app. The Billing page's own status line, above this panel, already tells the owner where their plan stands.
+  // Billing is only ever reached by in-app navigation, well after PlaySource has stored the flag, so reading it
+  // once at mount (not on every render) is already correct here; see the note in BillingBanner.tsx.
+  if (play) return null;
 
   return (
     <>

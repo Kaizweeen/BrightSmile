@@ -7,6 +7,7 @@ import {
   billingStatus,
   formatPesos,
   manilaMonthStart,
+  neutralBannerText,
   parseMonths,
   pausedMessage,
   statusLine,
@@ -151,6 +152,36 @@ describe("the words", () => {
 
   it("tells patients of a paused clinic to call", () => {
     expect(pausedMessage("Bright Dental", "09171234567")).toBe("Bright Dental is not taking online requests right now. Call 09171234567 to book.");
+  });
+});
+
+describe("neutralBannerText (Play Store spec 3.2)", () => {
+  it("states the same facts as bannerText, with no call to pay or ask the owner", () => {
+    const early = at(trialEnd, -3 * DAY - 1);
+    expect(neutralBannerText(billingStatus(trial, early), early)).toBeNull();
+    const threeDays = at(trialEnd, -3 * DAY);
+    expect(neutralBannerText(billingStatus(trial, threeDays), threeDays)).toBe("Your plan ends on Fri Oct 9.");
+    const grace = at(trialEnd, DAY);
+    expect(neutralBannerText(billingStatus(trial, grace), grace)).toBe("Your plan ended. Online booking pauses on Mon Oct 12.");
+    const lapsed = at(trialEnd, 3 * DAY);
+    expect(neutralBannerText(billingStatus(trial, lapsed), lapsed)).toBe("Online booking is paused.");
+  });
+
+  it("is null exactly when bannerText is null, in every state", () => {
+    for (const offset of [-4 * DAY, -3 * DAY, -1, 0, DAY, 3 * DAY, 10 * DAY]) {
+      const now = at(trialEnd, offset);
+      const state = billingStatus(trial, now);
+      expect(neutralBannerText(state, now) === null).toBe(bannerText(state, now) === null);
+    }
+  });
+
+  it("never contains a price, GCash, Pay, or a peso sign", () => {
+    for (const offset of [-3 * DAY, 0, DAY, 3 * DAY, 10 * DAY]) {
+      const now = at(trialEnd, offset);
+      const text = neutralBannerText(billingStatus(trial, now), now);
+      if (text === null) continue;
+      for (const banned of ["GCash", "Pay", "₱"]) expect(text).not.toContain(banned);
+    }
   });
 });
 

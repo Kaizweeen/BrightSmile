@@ -99,16 +99,31 @@ export function statusLine(state: BillingState, now: Date, owner = true): string
   return `Your plan ended ${ends}. Online booking pauses in ${days} ${days === 1 ? "day" : "days"}${who}.`;
 }
 
+/** The dashboard banner's facts, with no call to pay and no mention of who pays: shared by bannerText and neutralBannerText. */
+function bannerFacts(state: BillingState, now: Date): string | null {
+  if (state.status === "lapsed") return "Online booking is paused.";
+  if (state.status === "grace") return `Your plan ended. Online booking pauses on ${billingDate(state.pausesAt, now)}.`;
+  if (state.endsAt.getTime() - now.getTime() <= NOTICE_DAYS * DAY_MS) return `Your plan ends on ${billingDate(state.endsAt, now)}.`;
+  return null;
+}
+
 /**
  * The dashboard banner (spec 7.5), or null when the plan has more than 3 days left. Staff cannot pay, so they get
  * "Ask your clinic's owner to renew." in place of the payment prompt (teams spec 6.5).
  */
 export function bannerText(state: BillingState, now: Date, owner = true): string | null {
-  const ask = owner ? "" : " Ask your clinic's owner to renew.";
-  if (state.status === "lapsed") return owner ? "Online booking is paused. Pay to reopen it." : `Online booking is paused.${ask}`;
-  if (state.status === "grace") return `Your plan ended. Online booking pauses on ${billingDate(state.pausesAt, now)}.${ask}`;
-  if (state.endsAt.getTime() - now.getTime() <= NOTICE_DAYS * DAY_MS) return `Your plan ends on ${billingDate(state.endsAt, now)}.${ask}`;
-  return null;
+  const facts = bannerFacts(state, now);
+  if (facts === null) return null;
+  if (state.status === "lapsed") return owner ? "Online booking is paused. Pay to reopen it." : `${facts} Ask your clinic's owner to renew.`;
+  return owner ? facts : `${facts} Ask your clinic's owner to renew.`;
+}
+
+/**
+ * Play Store spec 3.2: the banner's facts only, with no call to pay and no "ask the owner" either, for the Play
+ * app, where Google Play's payments policy forbids steering to another way to pay. Owner or staff see the same words.
+ */
+export function neutralBannerText(state: BillingState, now: Date): string | null {
+  return bannerFacts(state, now);
 }
 
 /** What a lapsed clinic's booking page and booking actions say (spec 7.5). */
