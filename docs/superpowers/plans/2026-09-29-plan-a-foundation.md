@@ -5232,6 +5232,22 @@ describe("time off", () => {
     expect(res.status).toBe(400);
     expect((await res.json()).error.fields).toEqual({ endsAt: "The end must be after the start" });
   });
+
+  it("refuses times without an offset, which would be read in the server's time zone", async () => {
+    const { dentist } = await setting();
+    const { cookie } = await ownerCookie();
+    const res = await call(
+      timeOffListRoute.POST,
+      request(`/api/v1/dentists/${dentist.id}/time-off`, {
+        method: "POST",
+        cookie,
+        body: { startsAt: "2026-10-05T09:00:00", endsAt: "2026-10-05T12:00:00", reason: "" },
+      }),
+      { id: dentist.id },
+    );
+    expect(res.status).toBe(400);
+    expect(Object.keys((await res.json()).error.fields).sort()).toEqual(["endsAt", "startsAt"]);
+  });
 });
 ```
 
