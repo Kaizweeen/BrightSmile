@@ -4,6 +4,7 @@ import BranchEditor from "./BranchEditor";
 import { AccountForms, ProfileForm, RulesForm } from "./ClinicForms";
 import DentistEditor from "./DentistEditor";
 import ProcedureEditor from "./ProcedureEditor";
+import WebOnly from "../WebOnly";
 import PushSetup from "@/components/PushSetup";
 import { appUrl } from "@/lib/app-url";
 import { loadSettings } from "@/lib/clinic-settings";
@@ -57,7 +58,13 @@ export default async function SettingsPage() {
       )}
       <section className="card card-pad settings-section">
         <h2 className="font-display">Plan and billing</h2>
-        <p className="f-hint">{owner ? "See when your plan ends, how to pay, and past payments." : "See when your clinic's plan ends."}</p>
+        <p className="f-hint">
+          {owner ? (
+            <WebOnly fallback="See when your plan ends.">See when your plan ends, how to pay, and past payments.</WebOnly>
+          ) : (
+            "See when your clinic's plan ends."
+          )}
+        </p>
         <Link href="/app/billing" className="btn btn-soft mt-3">
           Open Billing
         </Link>

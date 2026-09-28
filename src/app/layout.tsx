@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Poppins } from "next/font/google";
+import PlaySource from "./app/PlaySource";
 import "./globals.css";
 
 // Same pairing and weights as Planorama, so the two projects set type identically.
@@ -40,6 +41,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en" className={`${inter.variable} ${poppins.variable}`}>
       <body>
         <div dangerouslySetInnerHTML={{ __html: `<!--${DIRECTION_CONTRACT}-->` }} />
+        {/* Play Store spec 3.2: runs on every page, not just the dashboard, so a signed-out launch (login,
+            signup, onboarding, a join link) still remembers ?source=play (item 1) or the TWA's referrer (item 4). */}
+        <PlaySource packageName={process.env.ANDROID_PACKAGE_NAME} />
         {children}
       </body>
     </html>

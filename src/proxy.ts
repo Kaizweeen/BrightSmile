@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { ownMembership } from "@/lib/membership";
-import { guardRedirect } from "@/lib/routes";
+import { guardRedirect, keepPlaySource } from "@/lib/routes";
 
 /** Refreshes the staff session and keeps visitors on the right side of /app and /onboarding. */
 export async function proxy(request: NextRequest) {
@@ -27,7 +27,10 @@ export async function proxy(request: NextRequest) {
 
   const target = guardRedirect(request.nextUrl.pathname, { signedIn, hasClinic });
   if (!target) return response;
-  const redirect = NextResponse.redirect(new URL(target, request.url));
+  // Play Store spec 3.2: a signed-out launch from the Play app hits /login before PlaySource ever runs client
+  // side, so this redirect must keep the flag itself, not just rely on the client-side navigations PlaySource covers.
+  const redirectUrl = keepPlaySource(new URL(target, request.url), request.nextUrl.searchParams.get("source"));
+  const redirect = NextResponse.redirect(redirectUrl);
   response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
   return redirect;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { guardRedirect, safeNext } from "@/lib/routes";
+import { guardRedirect, keepPlaySource, safeNext } from "@/lib/routes";
 
 const out = { signedIn: false, hasClinic: false };
 const noClinic = { signedIn: true, hasClinic: false };
@@ -60,5 +60,17 @@ describe("safeNext", () => {
     expect(safeNext("https://evil.example", "/app")).toBe("/app");
     expect(safeNext("/\\evil.example", "/app")).toBe("/app");
     expect(safeNext("/app?x=1", "/app")).toBe("/app");
+  });
+});
+
+describe("keepPlaySource", () => {
+  it("adds source=play to a redirect when the incoming request had it (spec 3.2: a signed-out Play launch must not lose the flag at /login)", () => {
+    const url = keepPlaySource(new URL("https://brightsmile.ph/login"), "play");
+    expect(url.toString()).toBe("https://brightsmile.ph/login?source=play");
+  });
+
+  it("leaves an ordinary redirect alone", () => {
+    expect(keepPlaySource(new URL("https://brightsmile.ph/login"), null).toString()).toBe("https://brightsmile.ph/login");
+    expect(keepPlaySource(new URL("https://brightsmile.ph/login"), "browser").toString()).toBe("https://brightsmile.ph/login");
   });
 });

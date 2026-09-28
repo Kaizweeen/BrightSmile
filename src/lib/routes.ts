@@ -18,3 +18,12 @@ export function guardRedirect(path: string, visitor: Visitor): string | null {
 export function safeNext(value: string | null, fallback: string): string {
   return value && /^\/(?!\/)[A-Za-z0-9\-/]*$/.test(value) ? value : fallback;
 }
+
+/**
+ * Play Store spec 3.2: keeps `?source=play` on a redirect the proxy issues. A signed-out launch from the Play
+ * app hits guardRedirect's /login before PlaySource ever runs, so the flag must survive this redirect too.
+ */
+export function keepPlaySource(target: URL, incomingSource: string | null): URL {
+  if (incomingSource === "play") target.searchParams.set("source", "play");
+  return target;
+}

@@ -1,22 +1,13 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import WebOnly from "@/app/app/WebOnly";
-import { inPlayApp } from "@/lib/play-app";
 import { billingStatus, neutralStatusLine } from "@/lib/billing";
-
-vi.mock("@/lib/play-app", () => ({ inPlayApp: vi.fn(() => false) }));
 
 const html = (fallback?: string) => renderToStaticMarkup(createElement(WebOnly, { fallback }, "₱399 a month"));
 
 describe("WebOnly", () => {
-  it("shows its children in a browser", () => {
-    vi.mocked(inPlayApp).mockReturnValue(false);
-    expect(html("Paid until Fri Oct 9.")).toBe("₱399 a month");
-  });
-
-  it("shows only the fallback inside the Play app", () => {
-    vi.mocked(inPlayApp).mockReturnValue(true);
+  it("fails closed: server rendering always shows only the fallback, never the children", () => {
     expect(html("Paid until Fri Oct 9.")).toBe("Paid until Fri Oct 9.");
     expect(html()).toBe("");
   });

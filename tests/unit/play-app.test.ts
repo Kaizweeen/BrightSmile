@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inPlayApp, rememberPlaySource } from "@/lib/play-app";
+import { inPlayApp, isPlayReferrer, rememberPlaySource } from "@/lib/play-app";
 
 type Store = { getItem(key: string): string | null; setItem(key: string, value: string): void };
 
@@ -53,5 +53,47 @@ describe("rememberPlaySource and inPlayApp (Play Store spec 3.2)", () => {
     const store = throwingStore();
     expect(() => rememberPlaySource("?source=play", store)).not.toThrow();
     expect(inPlayApp(store)).toBe(false);
+  });
+});
+
+describe("inPlayApp reading the current URL directly (Play Store spec 3.2 item 2)", () => {
+  it("is true on the very first render, from ?source=play in the URL, with nothing stored yet", () => {
+    expect(inPlayApp(fakeStore(), "?source=play")).toBe(true);
+  });
+
+  it("does not mistake an unrelated query string for the Play source", () => {
+    expect(inPlayApp(fakeStore(), "?utm_source=play")).toBe(false);
+    expect(inPlayApp(fakeStore(), "")).toBe(false);
+  });
+
+  it("is still true once the URL carries nothing, as long as the session stored it earlier", () => {
+    const store = fakeStore();
+    rememberPlaySource("?source=play", store);
+    expect(inPlayApp(store, "")).toBe(true);
+  });
+
+  it("is false on the server, where there is no store or URL at all", () => {
+    expect(inPlayApp(null, null)).toBe(false);
+  });
+});
+
+describe("isPlayReferrer (Play Store spec 3.2 item 4)", () => {
+  it("matches a Trusted Web Activity's referrer for exactly this package", () => {
+    expect(isPlayReferrer("android-app://com.brightsmile.clinic/", "com.brightsmile.clinic")).toBe(true);
+  });
+
+  it("does not match another app's android-app referrer", () => {
+    expect(isPlayReferrer("android-app://com.other.app/", "com.brightsmile.clinic")).toBe(false);
+  });
+
+  it("does not match a partial or differently shaped referrer", () => {
+    expect(isPlayReferrer("android-app://com.brightsmile.clinic", "com.brightsmile.clinic")).toBe(false);
+    expect(isPlayReferrer("https://bsmile.vercel.app/", "com.brightsmile.clinic")).toBe(false);
+    expect(isPlayReferrer("", "com.brightsmile.clinic")).toBe(false);
+  });
+
+  it("does nothing when the package name is unset", () => {
+    expect(isPlayReferrer("android-app://com.brightsmile.clinic/", undefined)).toBe(false);
+    expect(isPlayReferrer("", undefined)).toBe(false);
   });
 });

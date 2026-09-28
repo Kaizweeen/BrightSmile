@@ -34,7 +34,9 @@ export default async function BillingPage({ searchParams }: Props) {
           <p className="mt-2">
             <WebOnly fallback={neutralStatusLine(state, now)}>{statusLine(state, now, false)}</WebOnly>
           </p>
-          <p className="f-hint mt-2">Your clinic&apos;s owner handles the plan and payments.</p>
+          <WebOnly>
+            <p className="f-hint mt-2">Your clinic&apos;s owner handles the plan and payments.</p>
+          </WebOnly>
         </section>
       </>
     );
