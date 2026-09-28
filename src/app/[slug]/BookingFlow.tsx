@@ -21,7 +21,7 @@ import {
 import { pausedMessage } from "@/lib/billing";
 import type { PublicClinic, PublicDentist } from "@/lib/booking-input";
 import { flow, START, type FlowAction, type Path } from "@/lib/booking-flow";
-import { intakeInput } from "@/lib/intake";
+import { intakeInput, type IntakeForm } from "@/lib/intake";
 import type { NumberAppointment, NumberPatient, Refused } from "@/lib/number-booking";
 import { localMobile, normalizeMobile } from "@/lib/phone";
 import { fitsAnyBlock, mergeWeeks } from "@/lib/slots";
@@ -59,15 +59,24 @@ function initials(name: string) {
     .join("");
 }
 
-/** One line of a summary: what it is, its value, and its Change button when it can change (spec 3.3 step 7). */
-function Row({ k, v, onChange }: { k: string; v: ReactNode; onChange?: () => void }) {
+/**
+ * One line of a summary: what it is, its value, and its Change button when it can change (spec 3.3 step 7). `working`
+ * disables Change while a send is in flight, so a late answer can never land on a step the reducer has left.
+ */
+function Row({ k, v, onChange, working }: { k: string; v: ReactNode; onChange?: () => void; working?: boolean }) {
   return (
     <div className="cf-row items-center">
       <span className="k">{k}</span>
       <span className="v">
         {v}
         {onChange && (
-          <button type="button" className="link ml-3 inline-flex min-h-11 items-center" aria-label={`Change the ${k.toLowerCase()}`} onClick={onChange}>
+          <button
+            type="button"
+            className="link ml-3 inline-flex min-h-11 items-center"
+            aria-label={`Change the ${k.toLowerCase()}`}
+            disabled={working}
+            onClick={onChange}
+          >
             Change
           </button>
         )}
@@ -219,6 +228,10 @@ export default function BookingFlow({ clinic, nowIso, paused }: Props) {
   const [token, setToken] = useState("");
   // The day of a time that stopped fitting (taken, or too short for new services), where the time step reopens.
   const [retryDate, setRetryDate] = useState<string | null>(null);
+  // The last patient form filled in this visit: the reducer's own history forgets it on Back (spec 7 history holds the
+  // state from before the form step), so the page remembers it here and offers it again rather than making the
+  // patient retype health information. Cleared at the same points the reducer would have forgotten state.form.
+  const [lastForm, setLastForm] = useState<IntakeForm | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   const today = manilaDate(new Date(nowIso));
@@ -288,6 +301,7 @@ export default function BookingFlow({ clinic, nowIso, paused }: Props) {
     setPicked(null);
     setToken("");
     setRetryDate(null);
+    setLastForm(null);
     go({ type: "home" });
   }
 
@@ -302,11 +316,14 @@ export default function BookingFlow({ clinic, nowIso, paused }: Props) {
     go({ type: "start", path, onlyBranchId: clinic.branches.length === 1 ? clinic.branch.id : null });
   }
 
-  /** Spec 3.3 step 1: the branch's dentists and hours come with it. */
+  /**
+   * Spec 3.3 step 1: the branch's dentists and hours come with it. A branch with no dentist hours or no procedures yet
+   * is normal for a newly added one, so it stays off the flow rather than dispatching into a dead end.
+   */
   function chooseBranch(id: string) {
     void run(async () => {
       const data = id === clinic.branch.id ? clinic : await getBranch(clinic.slug, id);
-      if (!data) {
+      if (!data || data.dentists.length === 0 || data.procedures.length === 0) {
         setNotice(`That branch isn't taking online bookings now. Choose another, or call ${phone}.`);
         return;
       }
@@ -471,6 +488,7 @@ export default function BookingFlow({ clinic, nowIso, paused }: Props) {
       switch (outcome.status) {
         case "sent":
           setToken(outcome.token);
+          setLastForm(null);
           go({ type: "done" });
           return;
         case "taken":
@@ -530,6 +548,7 @@ export default function BookingFlow({ clinic, nowIso, paused }: Props) {
       });
       switch (outcome.status) {
         case "sent":
+          setLastForm(null);
           go({ type: "done" });
           return;
         case "taken":
@@ -577,7 +596,7 @@ export default function BookingFlow({ clinic, nowIso, paused }: Props) {
   }
 
   const back = (
-    <button type="button" className="btn btn-ghost" onClick={() => go({ type: "back" })}>
+    <button type="button" className="btn btn-ghost" disabled={working} onClick={() => go({ type: "back" })}>
       Back
     </button>
   );
@@ -746,7 +765,15 @@ export default function BookingFlow({ clinic, nowIso, paused }: Props) {
           <p className="sub">Choose a patient on this number, or someone new.</p>
           <div className="member-list">
             {patients.map((p) => (
-              <button key={p.id} type="button" className="member-row w-full text-left" onClick={() => go({ type: "patient", patientId: p.id })}>
+              <button
+                key={p.id}
+                type="button"
+                className="member-row w-full text-left"
+                onClick={() => {
+                  setLastForm(null);
+                  go({ type: "patient", patientId: p.id });
+                }}
+              >
                 <span className="nm">
                   {p.first} {p.last}
                 </span>
@@ -771,8 +798,11 @@ export default function BookingFlow({ clinic, nowIso, paused }: Props) {
             clinicName={clinic.name}
             mobile={state.mobile ?? ""}
             today={today}
-            initial={state.form}
-            onDone={(form) => go({ type: "form", form })}
+            initial={state.form ?? lastForm}
+            onDone={(form) => {
+              setLastForm(form);
+              go({ type: "form", form });
+            }}
             onBack={() => go({ type: "back" })}
           />
         </section>
@@ -837,10 +867,12 @@ export default function BookingFlow({ clinic, nowIso, paused }: Props) {
           <p className="sub">Change anything before you send it.</p>
           <div className="cf-box">
             <Row k="Branch" v={<Place name={branch.branch.name} address={branch.branch.address} />} />
-            <Row k="Patient" v={patientName} onChange={() => go({ type: "change", part: "patient" })} />
-            <Row k="Services" v={services} onChange={() => go({ type: "change", part: "services" })} />
-            {branch.dentists.length > 1 && <Row k="Dentist" v={dentist?.name ?? "Choose again"} onChange={() => go({ type: "change", part: "services" })} />}
-            <Row k="Date and time" v={when} onChange={() => go({ type: "change", part: "time" })} />
+            <Row k="Patient" v={patientName} working={working} onChange={() => go({ type: "change", part: "patient" })} />
+            <Row k="Services" v={services} working={working} onChange={() => go({ type: "change", part: "services" })} />
+            {branch.dentists.length > 1 && (
+              <Row k="Dentist" v={dentist?.name ?? "Choose again"} working={working} onChange={() => go({ type: "change", part: "services" })} />
+            )}
+            <Row k="Date and time" v={when} working={working} onChange={() => go({ type: "change", part: "time" })} />
           </div>
           <p className="f-hint mt-4">The clinic confirms by text. Nothing is booked until they do.</p>
           <div className="mt-6 flex gap-3">
@@ -909,12 +941,12 @@ export default function BookingFlow({ clinic, nowIso, paused }: Props) {
           <p className="sub">Change what you need, then send the changes. The clinic confirms again by text.</p>
           <div className="cf-box">
             <Row k="Branch" v={<Place name={branch.branch.name} address={branch.branch.address} />} />
-            <Row k="Patient" v={patientName} onChange={() => go({ type: "change", part: "patient" })} />
-            <Row k="Services" v={services} onChange={() => go({ type: "change", part: "services" })} />
+            <Row k="Patient" v={patientName} working={working} onChange={() => go({ type: "change", part: "patient" })} />
+            <Row k="Services" v={services} working={working} onChange={() => go({ type: "change", part: "services" })} />
             {branch.dentists.length > 1 && (
-              <Row k="Dentist" v={dentist?.name ?? picked?.dentist.name ?? ""} onChange={() => go({ type: "change", part: "services" })} />
+              <Row k="Dentist" v={dentist?.name ?? picked?.dentist.name ?? ""} working={working} onChange={() => go({ type: "change", part: "services" })} />
             )}
-            <Row k="Date and time" v={when} onChange={() => go({ type: "change", part: "time" })} />
+            <Row k="Date and time" v={when} working={working} onChange={() => go({ type: "change", part: "time" })} />
           </div>
           <p className="f-hint mt-4">The branch stays the same. To go to another branch, cancel this one and book again.</p>
           <div className="mt-6 flex gap-3">
@@ -940,7 +972,7 @@ export default function BookingFlow({ clinic, nowIso, paused }: Props) {
             <Row k="Dentist" v={picked.dentist.name} />
           </div>
           <div className="mt-6 flex gap-3">
-            <button type="button" className="btn btn-ghost" onClick={() => go({ type: "keep" })}>
+            <button type="button" className="btn btn-ghost" disabled={working} onClick={() => go({ type: "keep" })}>
               No, keep it
             </button>
             <button type="button" className="btn btn-primary flex-1" disabled={working} onClick={cancelIt}>
