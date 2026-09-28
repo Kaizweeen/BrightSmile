@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { connection } from "next/server";
 import { Providers } from "@/components/providers";
 import "./globals.css";
 
@@ -12,7 +13,8 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  await connection();
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable} h-full antialiased`}>
       <body className="min-h-full">
