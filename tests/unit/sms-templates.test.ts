@@ -85,7 +85,7 @@ describe("renderSms", () => {
 
   it("renders the plan heads-up with the link to Billing", () => {
     const text = renderSms("renewal", { clinic: "Elite Dental", date: "Fri Oct 9", appUrl: "https://brightsmile.ph" });
-    expect(text).toBe("BrightSmile: your plan for Elite Dental ends Fri Oct 9. Pay in the app to keep online booking open: https://brightsmile.ph/app/billing");
+    expect(text).toBe("BrightSmile: your plan for Elite Dental ends Fri Oct 9. Pay on our website to keep online booking open: https://brightsmile.ph/app/billing");
   });
 
   it("never starts a clinic alert with the patient's name", () => {

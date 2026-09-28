@@ -48,4 +48,11 @@ An iPhone App Store app, a patient app, Google Play Billing (owners pay on the w
 
 ## Revisions
 
-None yet.
+### 2026-09-28: closing gaps found in review
+
+- `WebOnly` now also hides the Billing page's priced status line, the plan's price, payment history, and the staff line "Your clinic's owner handles the plan and payments." (component 2), alongside the pieces already listed there.
+- The Play-safe flag is read from three places, not sessionStorage alone: the current URL's `?source=play`, so a component rendering on the very first, launch page already knows before anything is stored; and a Trusted Web Activity's `android-app://` referrer, for a launch that opens some other link first.
+- `PlaySource` runs from the root layout, not the dashboard layout, so signed-out pages (login, signup, onboarding, a join link) see it too; `src/proxy.ts` keeps `?source=play` on any redirect it issues, so a signed-out launch does not lose the flag at `/login`.
+- The server, and the first client render right after hydration, always render the Play-safe version (`usePlayApp`, a `useSyncExternalStore` that fails closed); a browser then switches to the full version once React reads the real client state, with no hydration mismatch.
+- The plan-renewal text points owners to the website instead of naming "the app".
+- The Terms page's prices (its section on plans and payment) are accepted as is inside the Play app: legal and contractual text, not a prompt to pay, so they are out of scope for Play-safe mode.

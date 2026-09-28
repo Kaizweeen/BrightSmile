@@ -105,6 +105,7 @@ export default function PrivacyPage() {
           or blocked, to data portability, and to damages, and you may complain to the National Privacy Commission. Because the clinic
           controls your data, please contact the clinic first; BrightSmile helps the clinic answer. You can also write to us at {contact}.
         </p>
+        <p>To ask for your data, or a clinic&apos;s whole account, to be deleted, email {contact}.</p>
 
         <h2>Changes</h2>
         <p>If this notice changes, we update this page and its date.</p>

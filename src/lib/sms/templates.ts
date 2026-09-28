@@ -66,7 +66,7 @@ export function renderSms(kind: SmsKind, v: SmsVars): string {
     reminder: () => `${clinic}: Reminder, ${first}'s visit is tomorrow at ${v.time}${withDentist}. Can't come? Cancel: ${v.link}`,
     patient_cancel_alert: () => `Cancelled: ${who}, ${v.date}, ${v.time}${withDentist}.`,
     low_credit: () => `BrightSmile: Semaphore balance is ${v.credits} credits. Top up before reminders fail.`,
-    renewal: () => `BrightSmile: your plan for ${clinic} ends ${v.date}. Pay in the app to keep online booking open: ${v.appUrl}/app/billing`,
+    renewal: () => `BrightSmile: your plan for ${clinic} ends ${v.date}. Pay on our website to keep online booking open: ${v.appUrl}/app/billing`,
   };
   const body = texts[kind]();
   // Semaphore's OTP route fills in the {otp} placeholder (or the caller passes a real code) verbatim,

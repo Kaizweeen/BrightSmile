@@ -243,6 +243,8 @@ The booking pages need no migration of their own: they use the branches migratio
 
 BrightSmile installs from Google Play as a Trusted Web Activity (spec: `docs/superpowers/specs/2026-09-28-brightsmile-play-store-design.md`): Chrome opens the dashboard full screen, with no browser bar. There is no second codebase and no patient app; the wrapper just opens the site, so it updates whenever the site does. Kai does every step below; nothing here can be done from code.
 
+With the app installed, an owner can still pay from a computer, or on the phone by opening Chrome and typing the site's address in directly instead of opening the app icon: Chrome keeps a typed address to itself rather than handing it to the app, so that tab shows the full, priced Billing page.
+
 ### 1. Play Console account
 
 Create a Google Play Developer account (a one time USD 25 fee, at https://play.google.com/console/signup).
@@ -252,12 +254,15 @@ Create a Google Play Developer account (a one time USD 25 fee, at https://play.g
 
 ### 2. Build the app with Bubblewrap
 
-[Bubblewrap](https://github.com/GoogleChromeLabs/bubblewrap) is Google's CLI for building a Trusted Web Activity from a site's web manifest (`src/app/manifest.ts`, served at `/manifest.webmanifest`). Run it in a folder outside this repository: it writes a whole Android project and a signing key, and neither belongs in `brightsmile`.
+[Bubblewrap](https://github.com/GoogleChromeLabs/bubblewrap) is Google's CLI for building a Trusted Web Activity from a site's web manifest (`src/app/manifest.ts`, served at `/manifest.webmanifest`). Run it in a new folder next to this repository, not inside it and not directly in its parent either: it writes a whole Android project and a signing key, and neither belongs in `brightsmile`.
 
 ```powershell
-cd ..
+mkdir ..\brightsmile-android
+cd ..\brightsmile-android
 npx @bubblewrap/cli init --manifest https://<your-domain>/manifest.webmanifest
 ```
+
+The first run offers to install a JDK and the Android SDK if it cannot find them on this machine; let it, this adds a few minutes.
 
 Answer its prompts:
 
@@ -265,11 +270,16 @@ Answer its prompts:
 |---|---|
 | Application ID | Yours to choose, permanent once published. Suggested: `com.brightsmile.clinic` |
 | Application name | `BrightSmile Clinic` |
-| Launcher name | `BrightSmile` |
-| Start URL | `/app/requests?source=play` (adds the flag that hides payments inside the app, spec 3.2; overrides the manifest's own start URL) |
+| Short name | `BrightSmile` |
+| URL path | `/app/requests?source=play` (adds the flag that hides payments inside the app, spec 3.2; overrides the manifest's own start URL) |
 | Display mode | `standalone` |
-| Enable notifications | Yes (the permission the wrapper needs for the web push that already works on the site) |
-| Signing key | Create a new one. Save the keystore file and both its passwords in a password manager; they must never go into this repository |
+| Application shortcuts | None: press Enter to skip (BrightSmile's manifest defines none) |
+| Include support for Play Billing? | No (out of scope, spec section 6: owners pay on the website) |
+| Request geolocation permission? | No (the dashboard never asks for the phone's location) |
+
+It then asks about the signing key: **Key store location:**, **Key name:**, and, for a key store file that does not exist yet, **Do you want to create one now?**. Answer yes, then set a password for the key store and a separate one for the key. Save the keystore file and both passwords in a password manager; they must never go into this repository.
+
+There is no prompt for notifications. Once `init` finishes, open the generated `twa-manifest.json` and check `"enableNotifications": true` (it should already be set): that is the permission the wrapper needs for the web push that already works on the site.
 
 Then build the Android App Bundle:
 
@@ -294,5 +304,6 @@ This produces `app-release-bundle.aab` for the Play Console, and prints the app'
 - Feature graphic: 1024x500, Kai provides.
 - Phone screenshots: a few, of the dashboard.
 - Privacy policy URL: `{APP_URL}/privacy`.
-- **Data safety** form: what the app collects and shares. It matches what the site already does: contact details and appointment and health information from patients, login details from staff, nothing sold (see `/privacy`).
+- **App access**: the dashboard sits behind staff login with no way around it, so give Google's reviewer a demo staff email and password (a clinic already set up with a dentist and a procedure) instead of leaving them to sign up cold.
+- **Data safety** form: what the app collects and shares. It matches what the site already does: contact details and appointment and health information from patients, login details from staff, nothing sold (see `/privacy`). It also asks how someone deletes their data or account: point it at `{APP_URL}/privacy`, which now says how to ask for that.
 - **Health apps declaration**: required, because the dashboard shows patients' health information from the patient form (`src/lib/intake.ts`).

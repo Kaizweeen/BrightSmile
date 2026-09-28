@@ -2,7 +2,7 @@ import { isAndroidCertFingerprint, isAndroidPackageName, parseAndroidCertFingerp
 
 /**
  * Play Store spec 3.1: proves BrightSmile owns the Android app, so Chrome opens the Trusted Web Activity with
- * no browser bar. Public by design (Google fetches this over plain HTTP with no auth), so it is left out of
+ * no browser bar. Public by design (Google fetches this over HTTPS with no auth), so it is left out of
  * src/proxy.ts's matcher and of the noindex and robots rules in src/lib/security-headers.ts.
  */
 export function GET() {
