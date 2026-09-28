@@ -4337,7 +4337,7 @@ export default async function CalendarPage({
       date={date}
       view={query.view === "week" ? "week" : "day"}
       today={today}
-      staff={{ id: staff.id, role: staff.role, seesPatients: staff.seesPatients, branchIds: [...staff.branchIds] }}
+      staff={staff}
     />
   );
 }
@@ -4901,7 +4901,7 @@ export default async function CalendarPage({
       date={date}
       view={query.view === "week" ? "week" : "day"}
       today={today}
-      staff={{ id: staff.id, role: staff.role, seesPatients: staff.seesPatients, branchIds: [...staff.branchIds] }}
+      staff={staff}
       canBook={can(staff, "appointment.book", { branchId: branch.id })}
     />
   );
@@ -5568,7 +5568,7 @@ export default async function BranchIndex({
     <OverviewScreen
       date={dateParam((await searchParams).date, today)}
       today={today}
-      staff={{ id: staff.id, role: staff.role, seesPatients: staff.seesPatients, branchIds: [...staff.branchIds] }}
+      staff={staff}
     />
   );
 }
