@@ -80,19 +80,6 @@ export async function getOpenStarts(slug: string, selection: unknown, date: stri
   return starts.map((s) => s.toISOString());
 }
 
-export async function requestBooking(slug: string, input: unknown): Promise<booking.BookingOutcome> {
-  const now = new Date();
-  const ip = clientIp((await headers()).get("x-forwarded-for"));
-  const { verifiedMobiles } = await device(now);
-  return booking.requestBooking(String(slug), input, { ip, now, verifiedMobiles });
-}
-
-export async function verifyBookingCode(requestId: string, code: string): Promise<booking.VerifyOutcome> {
-  const now = new Date();
-  const { outcome, verifiedMobile } = await booking.verifyCode(String(requestId), String(code), now);
-  if (verifiedMobile) await remember(verifiedMobile, now);
-  return outcome;
-}
 
 /** Booking flow spec 3.2: straight on for a number this phone verified before, otherwise a code by text. */
 export async function startVerification(slug: string, mobile: string): Promise<numbers.StartOutcome> {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { bookingOpen } from "@/lib/billing-data";
-import { requestBooking, resendCode, verifyCode } from "@/lib/booking";
+import { resendCode } from "@/lib/booking";
 import { hashCode } from "@/lib/codes";
 import { sendSms } from "@/lib/sms/send";
 
@@ -73,22 +73,9 @@ afterEach(() => {
 });
 
 describe("a paused clinic's booking actions", () => {
-  it("refuse a new request, even from a verified mobile", async () => {
-    for (const verifiedMobiles of [[], ["+639171112222"]]) {
-      expect(await requestBooking("bright-dental", { mobile: "09171112222" }, { ...ctx, verifiedMobiles })).toEqual({ status: "paused" });
-    }
-    expect(bookingOpen).toHaveBeenCalledWith(fake.clinicId, now);
-    expect(sendSms).not.toHaveBeenCalled();
-  });
-
   it("refuse to send a new code", async () => {
     expect(await resendCode(fake.requestId, ctx)).toEqual({ status: "paused" });
     expect(bookingOpen).toHaveBeenCalledWith(fake.clinicId, now);
     expect(sendSms).not.toHaveBeenCalled();
-  });
-
-  it("refuse a right code without spending an attempt, using the code, or remembering the mobile", async () => {
-    expect(await verifyCode(fake.requestId, "123456", now)).toEqual({ outcome: { status: "paused" }, verifiedMobile: null });
-    expect(bookingOpen).toHaveBeenCalledWith(fake.clinicId, now);
   });
 });

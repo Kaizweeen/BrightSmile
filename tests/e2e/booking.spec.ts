@@ -44,19 +44,11 @@ test("a patient books, the clinic approves, and the visit is on the schedule", a
   const day = addDays(today, 1);
   const [, month, date] = day.split("-").map(Number);
 
-  // The patient books tomorrow's first opening on the public page.
+  // The patient starts booking on the public page and verifies their number first.
   await page.goto(`/${s.seed.clinic.slug}`);
-  await page.getByRole("checkbox", { name: "Consultation, 30 minutes" }).check();
-  await page.getByRole("button", { name: "Pick a day" }).click();
-  if (day.slice(0, 7) !== today.slice(0, 7)) await page.getByRole("button", { name: "Next month" }).click();
-  await page.getByRole("button", { name: `${DAYS[weekday(day)]}, ${MONTHS[month - 1]} ${date}`, exact: true }).click();
-  await page.locator(".slot-grid .slot").first().click();
-  await page.getByRole("button", { name: /^Take / }).click();
-  await page.getByLabel("First name").fill("Playwright");
-  await page.getByLabel("Last name").fill("Tester");
+  await page.getByRole("button", { name: "Book an appointment" }).click();
   await page.getByLabel("Mobile number").fill(mobile);
-  await page.getByRole("checkbox", { name: /^I agree to/ }).check();
-  await page.getByRole("button", { name: "Send request" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByRole("heading", { name: "Check your texts" })).toBeVisible();
 
   // The code comes from sms_log, where log mode keeps it (spec 10.6).
@@ -72,7 +64,26 @@ test("a patient books, the clinic approves, and the visit is on the schedule", a
   const code = (text.body as string | null)?.match(/ is (\d{6})\./)?.[1];
   expect(code, "sms_log has no code: the dev server must run with SMS_MODE=log").toBeTruthy();
   await page.getByLabel("Code from the text").fill(code!);
-  await page.getByRole("button", { name: "Confirm request" }).click();
+  await page.getByRole("button", { name: "Verify" }).click();
+
+  // A new number has no patients yet, so the patient form opens; then tomorrow's first opening.
+  await expect(page.getByRole("heading", { name: "New patient form" })).toBeVisible();
+  await page.getByLabel("Last name").fill("Tester");
+  await page.getByLabel("First name").fill("Playwright");
+  await page.getByLabel("Birthday").fill("1990-05-17");
+  await page.getByRole("radio", { name: "Female" }).check();
+  await page.getByLabel("Home address").fill("12 Rizal St, Makati");
+  await page.getByRole("checkbox", { name: "I have read and agree" }).check();
+  await page.getByLabel("Patient's full name, as the signature").fill("Playwright Tester");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("checkbox", { name: "Consultation, 30 minutes" }).check();
+  await page.getByRole("button", { name: "Pick a day" }).click();
+  if (day.slice(0, 7) !== today.slice(0, 7)) await page.getByRole("button", { name: "Next month" }).click();
+  await page.getByRole("button", { name: `${DAYS[weekday(day)]}, ${MONTHS[month - 1]} ${date}`, exact: true }).click();
+  await page.locator(".slot-grid .slot").first().click();
+  await page.getByRole("button", { name: /^Take / }).click();
+  await expect(page.getByRole("heading", { name: "Check your request" })).toBeVisible();
+  await page.getByRole("button", { name: "Send request" }).click();
   await expect(page.getByRole("heading", { name: "Request sent" })).toBeVisible();
 
   // The clinic approves it in the dashboard.

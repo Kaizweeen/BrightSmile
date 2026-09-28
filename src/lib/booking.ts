@@ -2,31 +2,13 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { dayOpenStarts, loadClinic } from "@/lib/availability";
 import { bookingOpen } from "@/lib/billing-data";
-import { parseBookingInput, type BookingPayload, type PublicClinic } from "@/lib/booking-input";
-import { BOOKING_CAPS, checkCode, hashCode, newCode, newToken, OTP } from "@/lib/codes";
-import { alertClinic } from "@/lib/notify";
+import type { PublicClinic } from "@/lib/booking-input";
+import { BOOKING_CAPS, checkCode, hashCode, newCode, OTP } from "@/lib/codes";
 import { sendSms } from "@/lib/sms/send";
 import { adminClient } from "@/lib/supabase/admin";
 import { manilaDate } from "@/lib/time";
 
-type Finalized = { status: "sent"; token: string } | { status: "taken"; starts: string[] } | { status: "too_many" };
 export type CodeIssued = { status: "code"; requestId: string } | { status: "limited" } | { status: "sms_failed" };
-
-export type BookingOutcome =
-  | Finalized
-  | CodeIssued
-  | { status: "invalid"; errors: Record<string, string> }
-  | { status: "paused" }
-  | { status: "unavailable" };
-
-export type VerifyOutcome =
-  | Finalized
-  | { status: "wrong"; attemptsLeft: number }
-  | { status: "expired" }
-  | { status: "locked" }
-  | { status: "used" }
-  | { status: "paused" }
-  | { status: "unavailable" };
 
 export type ResendOutcome =
   | CodeIssued
@@ -38,8 +20,11 @@ export type ResendOutcome =
 type Ctx = { ip: string; now: Date };
 /** A code sent for a number alone (booking flow spec 3.2): no booking comes with it. */
 export type VerifyRequest = { clinicId: string; verify: true };
-/** What otp_requests.booking holds: the booking page's request, or a number's verification. */
-export type StoredRequest = BookingPayload | VerifyRequest;
+/**
+ * What otp_requests.booking holds: a number's verification. A row the old booking page stored holds a booking and no
+ * verify; it expired within 5 minutes of being sent and never verifies a number.
+ */
+type StoredRequest = { clinicId: string; verify?: boolean };
 type OtpRow = {
   id: string;
   mobile: string;
@@ -76,10 +61,6 @@ export async function takenStarts(
   return starts.some((s) => s.getTime() === start.getTime()) ? null : starts.map((s) => s.toISOString());
 }
 
-/** takenStarts for the booking page's stored payload. */
-function payloadTaken(clinic: PublicClinic, p: BookingPayload, now: Date): Promise<string[] | null> {
-  return takenStarts(clinic, p.dentistId, new Date(p.startsAt), new Date(p.endsAt), now);
-}
 
 /** This mobile's future pending requests, joined through patients since appointments hold no mobile of their own. */
 async function pendingCount(mobile: string, now: Date, clinicId?: string): Promise<number> {
@@ -101,49 +82,6 @@ export async function overBookingCap(clinicId: string, mobile: string, now: Date
   return atClinic >= BOOKING_CAPS.perClinic || total >= BOOKING_CAPS.total;
 }
 
-/** Spec 9.1 steps 5 and 6: one transaction creates the request, then the clinic is alerted. */
-async function finalize(clinic: PublicClinic, p: BookingPayload, now: Date): Promise<Finalized> {
-  if (await overBookingCap(clinic.id, p.mobile, now)) return { status: "too_many" };
-  const fresh = await payloadTaken(clinic, p, now);
-  if (fresh) return { status: "taken", starts: fresh };
-
-  const token = newToken();
-  const { data: appointmentId, error } = await adminClient().rpc("create_booking", {
-    p_clinic_id: clinic.id,
-    p_branch_id: clinic.branch.id,
-    p_dentist_id: p.dentistId,
-    p_starts_at: p.startsAt,
-    p_ends_at: p.endsAt,
-    p_procedure_names: p.procedureNames,
-    p_source: "online",
-    p_status: "pending",
-    p_manage_token: token,
-    p_patient_id: null,
-    p_first_name: p.first,
-    p_last_name: p.last,
-    p_mobile: p.mobile,
-    p_birthday: p.birthday,
-    p_hmo: p.hmo,
-    p_consent: true,
-    p_actor: "patient",
-    p_user_id: null,
-  });
-  // 23P01: the overlap guard caught a booking that landed between the check above and this insert.
-  if (error?.code === "23P01") return { status: "taken", starts: (await payloadTaken(clinic, p, now)) ?? [] };
-  if (error) throw error;
-
-  const dentist = clinic.dentists.find((d) => d.id === p.dentistId)!;
-  await alertClinic({
-    kind: "request_alert",
-    clinicId: clinic.id,
-    appointmentId: appointmentId as string,
-    first: p.first,
-    last: p.last,
-    startsAt: new Date(p.startsAt),
-    dentist: clinic.dentists.length > 1 ? dentist.smsName : null,
-  });
-  return { status: "sent", token };
-}
 
 type IssueResult =
   | { status: "ok" }
@@ -189,10 +127,10 @@ async function sendCode(clinic: Pick<PublicClinic, "id" | "smsName">, mobile: st
 }
 
 /**
- * Spec 10.3: rolling-hour limits, then a stored request holding the payload (the booking page's request, or a number's
- * verification, booking flow spec 3.2) and the code hash, then the text. Both kinds share every limit.
+ * Spec 10.3: rolling-hour limits, then a stored request for the number's verification (booking flow spec 3.2) and the
+ * code hash, then the text.
  */
-export async function issueCode(clinic: Pick<PublicClinic, "id" | "smsName">, mobile: string, stored: StoredRequest, { ip, now }: Ctx): Promise<CodeIssued> {
+export async function issueCode(clinic: Pick<PublicClinic, "id" | "smsName">, mobile: string, stored: VerifyRequest, { ip, now }: Ctx): Promise<CodeIssued> {
   const id = randomUUID();
   const code = newCode();
   const result = await callIssueOtp(mobile, ip, id, hashCode(id, code), stored, now, null);
@@ -201,29 +139,6 @@ export async function issueCode(clinic: Pick<PublicClinic, "id" | "smsName">, mo
   return sendCode(clinic, mobile, code, id);
 }
 
-/** Spec 9.1 step 3: validate, then book straight away for a verified device, or send a code. */
-export async function requestBooking(
-  slug: string,
-  input: unknown,
-  ctx: Ctx & { verifiedMobiles: string[] },
-): Promise<BookingOutcome> {
-  try {
-    const clinic = await loadClinic({ slug });
-    if (!clinic) return { status: "invalid", errors: { slot: "This booking link doesn't exist." } };
-    // Billing spec 7.5: a lapsed clinic takes no requests, even from a tab opened before it lapsed.
-    if (!(await bookingOpen(clinic.id, ctx.now))) return { status: "paused" };
-    const parsed = parseBookingInput(clinic, input, manilaDate(ctx.now));
-    if (!parsed.ok) return { status: "invalid", errors: parsed.errors };
-
-    if (ctx.verifiedMobiles.includes(parsed.payload.mobile)) return await finalize(clinic, parsed.payload, ctx.now);
-    const starts = await payloadTaken(clinic, parsed.payload, ctx.now);
-    if (starts) return { status: "taken", starts };
-    return await issueCode(clinic, parsed.payload.mobile, parsed.payload, ctx);
-  } catch (e) {
-    logFailure("requestBooking", e);
-    return { status: "unavailable" };
-  }
-}
 
 type Spent =
   | { status: "ok"; row: OtpRow }
@@ -231,11 +146,10 @@ type Spent =
   | { status: "expired" | "locked" | "used" | "paused" };
 
 /**
- * Spec 9.1 step 4 and booking flow spec 3.2: checks a code, spends an attempt, and marks it used. A code sent with a
- * booking page request and a code sent for a number alone each work only for their own purpose. Billing spec 7.5: a
+ * Booking flow spec 3.2: checks a code sent for a number, spends an attempt, and marks it used. Billing spec 7.5: a
  * lapsed clinic takes no code, checked before the attempt or the code is spent.
  */
-export async function spendCode(requestId: string, code: string, now: Date, purpose: "booking" | "verify"): Promise<Spent> {
+export async function spendCode(requestId: string, code: string, now: Date): Promise<Spent> {
   if (!UUID.test(requestId)) return { status: "expired" };
   const db = adminClient();
   const { data, error } = await db
@@ -246,7 +160,7 @@ export async function spendCode(requestId: string, code: string, now: Date, purp
   if (error) throw error;
   if (!data) return { status: "expired" };
   const row = data as OtpRow;
-  if (("verify" in row.booking) !== (purpose === "verify")) return { status: "expired" };
+  if (row.booking.verify !== true) return { status: "expired" };
 
   const status = checkCode(
     {
@@ -285,27 +199,6 @@ export async function spendCode(requestId: string, code: string, now: Date, purp
   return marked.length === 0 ? { status: "used" } : { status: "ok", row };
 }
 
-/** Spec 9.1 step 4: check the code, mark it verified, then book the payload stored with it. */
-export async function verifyCode(
-  requestId: string,
-  code: string,
-  now: Date,
-): Promise<{ outcome: VerifyOutcome; verifiedMobile: string | null }> {
-  let verifiedMobile: string | null = null;
-  const done = (outcome: VerifyOutcome) => ({ outcome, verifiedMobile });
-  try {
-    const spent = await spendCode(requestId, code, now, "booking");
-    if (spent.status !== "ok") return done(spent);
-    verifiedMobile = spent.row.mobile;
-    const booking = spent.row.booking as BookingPayload;
-    const clinic = await loadClinic({ id: booking.clinicId }, booking.branchId);
-    if (!clinic) return done({ status: "unavailable" });
-    return done(await finalize(clinic, booking, now));
-  } catch (e) {
-    logFailure("verifyCode", e);
-    return done({ status: "unavailable" });
-  }
-}
 
 /** Spec 10.3: a new code after 60 seconds, for the same stored payload. The old code stops working. */
 export async function resendCode(requestId: string, ctx: Ctx): Promise<ResendOutcome> {

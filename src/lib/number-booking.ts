@@ -80,7 +80,7 @@ export type CheckOutcome =
 /** Spec 3.2 step 3: a right code verifies the number; the Server Action then remembers it on this phone. */
 export async function checkVerification(requestId: string, code: string, now: Date): Promise<CheckOutcome> {
   try {
-    const spent = await spendCode(requestId, code, now, "verify");
+    const spent = await spendCode(requestId, code, now);
     return spent.status === "ok" ? { status: "verified", mobile: spent.row.mobile } : spent;
   } catch (e) {
     logError("checkVerification", e);
