@@ -26,7 +26,7 @@ Online booking for dental clinics in the Philippines. Patients request a time fr
 
 ## End-to-end test
 
-One Playwright test walks the whole booking loop: a patient books on a clinic's page, the code is read from `sms_log`, the clinic approves in the dashboard, and the visit shows on the schedule.
+One Playwright test walks the whole booking loop: a patient verifies their number on a clinic's page (the code is read from `sms_log`), fills in the patient form, and books; the clinic approves in the dashboard; and the visit shows on the schedule.
 
 1. Once: put `PLAYWRIGHT_BROWSERS_PATH=D:\playwright-browsers` (or any folder on a drive with space) in `.env.local`, then run `npm run test:e2e:install`.
 2. Run `npm run test:e2e`. It uses the dev server on port 3600, starting it if needed, with `SMS_MODE=log`. If a dev server is already running, it must be in log mode too (the test reads the code from `sms_log`).
@@ -215,9 +215,9 @@ One login belongs to one clinic: someone whose login already has a clinic joins 
 
 ## Branches and the booking engine
 
-A clinic can have several branches, each with its own address and calendar, and the server side of the new patient booking flow is in place (spec: `docs/superpowers/specs/2026-09-26-brightsmile-booking-flow-branches-design.md`): patients verify their number first, then book for one of their patients or for someone new with the clinic's patient form and waiver, change a booking (it goes back to the clinic for approval, and the clinic gets a "Changed request" alert), or cancel one. The pages for it come in the next plan; until then every clinic has one branch, "Main", and every page works as before. Once a clinic has 2 or more active branches, patients' texts name the branch after the clinic (for example "Bright Dental Makati").
+A clinic can have several branches, each with its own address and calendar (spec: `docs/superpowers/specs/2026-09-26-brightsmile-booking-flow-branches-design.md`). The booking page opens on three choices: book an appointment, reschedule or edit a booking, or cancel one. Every path starts with the patient's mobile number and a 6 digit code by text (a phone that verified the number before goes straight on). Then the patient books for one of the number's patients or for someone new with the clinic's patient form and waiver, changes a booking (it goes back to the clinic for approval, and the clinic gets a "Changed request" alert), or cancels one. Every clinic starts with one branch, "Main". Once it has 2 or more active branches, patients choose a branch when they book, the dashboard names each visit's branch and filters by it, New appointment and each dentist's working hours ask for the branch, and patients' texts name the branch after the clinic (for example "Bright Dental Makati").
 
-Answers on the patient form are health information, sensitive personal information under RA 10173: only the clinic's members read them, they never appear in texts, pushes, logs, or reports, and deleting a patient clears all of them. The waiver's wording (`src/lib/waiver.ts`) still needs legal review before the pages show it.
+Answers on the patient form are health information, sensitive personal information under RA 10173: only the clinic's members read them (read only, in a "Patient form" section on the patient page), they never appear in texts, pushes, logs, reports, or URLs, and deleting a patient clears all of them. The form's fields (`src/lib/intake.ts`) and the waiver's wording (`src/lib/waiver.ts`) are our draft: they still need Kai's corrections and legal review, and changing the waiver's words means a new `WAIVER_VERSION`.
 
 ### Apply the branches migration (once, before merging the branches branch)
 
@@ -229,3 +229,12 @@ Every merge to `main` deploys, and the new code reads the new table, columns, an
 4. Check it: `select count(*) from public.clinics c where (select count(*) from public.branches b where b.clinic_id = c.id and b.active) <> 1;` must return `0`.
 5. Merge the branch right away. Until the deploy finishes, saving a dentist's working hours in Settings fails (the old code names no branch); saving again after the deploy works. Everything else keeps working in between.
 6. If you ever link the project for `npm run db:push`, mark it applied first: `npx supabase migration repair --status applied 20260928000100`.
+
+The booking pages need no migration of their own: they use the branches migration above.
+
+### Add a branch
+
+1. As the owner, open **Settings**. Under **Branches**, press **Edit** on "Main" and give it its real name, address, and map link: patients see them on the booking page and on the page linked from every text. The clinic profile's address stays the clinic's own.
+2. Press **Add a branch**. Its short name for texts goes after the clinic's name for texts, and the two must fit in 20 characters together (for example "Bright Dental" leaves 6, enough for "Makati"). Settings says how many characters are left, checks every active branch when a second becomes active, and refuses a clinic name for texts that leaves no room.
+3. Open each dentist in **Settings**: with 2 or more active branches, every block of working hours has a **Branch**. One dentist's blocks may not overlap, even at two branches.
+4. **Move up** and **Move down** set the order patients see. **Deactivate** takes a branch off the booking page; its visits stay on the schedule, and the last active branch cannot be deactivated.
