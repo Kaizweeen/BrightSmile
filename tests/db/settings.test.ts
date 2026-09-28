@@ -89,9 +89,6 @@ describe("branches", () => {
     const off = await call(chairRoute.PATCH, request("/api/v1/branches/downtown/chairs/1", { method: "PATCH", cookie, body: { active: false } }), { code: "downtown", number: "1" });
     expect(off.status).toBe(422);
     expect((await off.json()).error.message).toBe("Chair 1 has 1 upcoming visit. Move it first.");
-
-    const branchOff = await call(branchRoute.PATCH, request("/api/v1/branches/downtown", { method: "PATCH", cookie, body: { active: false } }), { code: "downtown" });
-    expect(branchOff.status).toBe(422);
   });
 
   it("keeps at least one branch open", async () => {
@@ -131,5 +128,23 @@ describe("procedures", () => {
     expect(off.status).toBe(200);
     const active = await (await call(proceduresRoute.GET, request("/api/v1/procedures?active=1", { cookie }))).json();
     expect(active).toEqual([]);
+  });
+
+  it("keeps a branch with visits not over yet open, counting one in the chair now", async () => {
+    const { cookie } = await ownerCookie();
+    const on = await call(branchRoute.PATCH, request("/api/v1/branches/westside", { method: "PATCH", cookie, body: { active: true } }), { code: "westside" });
+    expect(on.status).toBe(200);
+    const [b] = await db.select().from(branches).where(eq(branches.code, "downtown"));
+    const dentist = await makeUser({ role: "dentist", branchIds: [b.id] });
+    const [p] = await db.insert(patients).values({ lastName: "Cruz", firstName: "Ben" }).returning();
+    const start = new Date(Date.now() - 600_000);
+    await db.insert(appointments).values({
+      patientId: p.id, dentistId: dentist.id, branchId: b.id, chairNumber: 2,
+      startTime: start, endTime: new Date(start.getTime() + 3_600_000), chairFreeAt: new Date(start.getTime() + 3_600_000),
+      status: "confirmed", source: "staff",
+    });
+    const off = await call(branchRoute.PATCH, request("/api/v1/branches/downtown", { method: "PATCH", cookie, body: { active: false } }), { code: "downtown" });
+    expect(off.status).toBe(422);
+    expect((await off.json()).error).toMatchObject({ code: "has_visits", message: "This branch has 1 upcoming visit. Move or cancel it first." });
   });
 });

@@ -122,9 +122,10 @@ export async function updateBranch(
       const [visits] = await tx
         .select({ n: count() })
         .from(appointments)
-        .where(and(eq(appointments.branchId, branch.id), inArray(appointments.status, [...ACTIVE_STATUSES]), gt(appointments.startTime, new Date())));
+        // Visits not over yet count, including one in the chair right now.
+        .where(and(eq(appointments.branchId, branch.id), inArray(appointments.status, [...ACTIVE_STATUSES]), gt(appointments.endTime, new Date())));
       if (visits.n > 0) {
-        throw new ApiError(422, "has_visits", `This branch has ${plural(visits.n, "upcoming visit")}. Move or cancel them first.`);
+        throw new ApiError(422, "has_visits", `This branch has ${plural(visits.n, "upcoming visit")}. Move or cancel ${visits.n === 1 ? "it" : "them"} first.`);
       }
     }
     const [row] = await tx.update(branches).set(patch).where(eq(branches.id, branch.id)).returning({ id: branches.id, code: branches.code });
@@ -173,7 +174,7 @@ export async function updateChair(actor: Staff, branchId: string, number: number
             eq(appointments.branchId, branchId),
             eq(appointments.chairNumber, number),
             inArray(appointments.status, [...ACTIVE_STATUSES]),
-            gt(appointments.startTime, new Date()),
+            gt(appointments.endTime, new Date()),
           ),
         );
       if (visits.n > 0) {
