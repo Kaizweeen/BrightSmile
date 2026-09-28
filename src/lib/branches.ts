@@ -21,3 +21,24 @@ export function branchSmsNameProblem(clinicSmsName: string, branchSmsName: strin
   if (length === 0 || length > room) return `Use 1 to ${room} characters, so the clinic and branch names fit in a text together.`;
   return null;
 }
+
+/**
+ * With 2 or more active branches every text names the branch (spec 4): the first active branch whose short name does not
+ * fit beside the clinic's text name, named with the reason, or null. Settings runs it when a second branch becomes active.
+ */
+export function activeBranchesProblem(clinicSmsName: string, active: { name: string; smsName: string }[]): string | null {
+  if (active.length < 2) return null;
+  for (const b of active) {
+    const problem = branchSmsNameProblem(clinicSmsName, b.smsName);
+    if (problem) return `${b.name}: ${problem}`;
+  }
+  return null;
+}
+
+/** Why a new text name for the clinic leaves no room for its active branches' short names (spec 4), or null. */
+export function clinicSmsNameProblem(clinicSmsName: string, activeBranchSmsNames: string[]): string | null {
+  if (activeBranchSmsNames.length < 2) return null;
+  const room = LIMITS.clinicSmsName - 1 - Math.max(...activeBranchSmsNames.map((n) => n.trim().length));
+  if (clinicSmsName.trim().length <= room) return null;
+  return `Texts add the branch's short name after this. Use up to ${room} characters, or shorten your branches' short names first.`;
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { branchSmsNameProblem, smsClinicName } from "@/lib/branches";
+import { activeBranchesProblem, branchSmsNameProblem, clinicSmsNameProblem, smsClinicName } from "@/lib/branches";
 import { renderSms } from "@/lib/sms/templates";
 
 describe("smsClinicName", () => {
@@ -39,5 +39,31 @@ describe("branchSmsNameProblem", () => {
     expect(clinic).toHaveLength(20);
     const text = renderSms("confirmed", { clinic, first: "Juan", date: "Thu Sep 24", time: "10:00 AM", link: "https://brightsmile.ph/a/Ab12Cd34Ef56" });
     expect(text.startsWith(`${clinic}: Juan's visit`)).toBe(true);
+  });
+});
+
+describe("activeBranchesProblem", () => {
+  it("checks nothing while one branch is active, when texts carry the clinic's name alone", () => {
+    expect(activeBranchesProblem("Bright Dental", [{ name: "Main", smsName: "Main Branch Office" }])).toBeNull();
+  });
+
+  it("names the first active branch whose short name does not fit once there are 2", () => {
+    expect(activeBranchesProblem("Bright Dental", [{ name: "Main", smsName: "Main" }, { name: "Pasig", smsName: "Pasig" }])).toBeNull();
+    expect(activeBranchesProblem("Bright Dental", [{ name: "Main", smsName: "Main Branch" }, { name: "Pasig", smsName: "Pasig" }])).toBe(
+      "Main: Use 1 to 6 characters, so the clinic and branch names fit in a text together.",
+    );
+  });
+});
+
+describe("clinicSmsNameProblem", () => {
+  it("leaves the clinic's text name alone while it has one active branch", () => {
+    expect(clinicSmsNameProblem("Bright Smile Dental", ["Main"])).toBeNull();
+  });
+
+  it("keeps room for the longest active branch short name once there are 2", () => {
+    expect(clinicSmsNameProblem("Bright Dental", ["Makati", "Pasig"])).toBeNull();
+    expect(clinicSmsNameProblem("Bright Smile Dental", ["Makati", "Pasig"])).toBe(
+      "Texts add the branch's short name after this. Use up to 13 characters, or shorten your branches' short names first.",
+    );
   });
 });

@@ -53,6 +53,19 @@ export async function setProcedureActiveAction(procedureId: unknown, active: unk
   return run((staff) => settings.setProcedureActive(staff, String(procedureId), active === true), requireOwner);
 }
 
+/** Booking flow spec 4: branches are the owner's, like the rest of the clinic's setup. */
+export async function saveBranchAction(branchId: unknown, input: unknown): Promise<Saved> {
+  return run((staff) => settings.saveBranch(staff, idOrNull(branchId), input), requireOwner);
+}
+
+export async function setBranchActiveAction(branchId: unknown, active: unknown): Promise<Saved> {
+  return run((staff) => settings.setBranchActive(staff, String(branchId), active === true), requireOwner);
+}
+
+export async function moveBranchAction(branchId: unknown, direction: unknown): Promise<Saved> {
+  return run((staff) => settings.moveBranch(staff, String(branchId), direction === "up" ? "up" : "down"), requireOwner);
+}
+
 /** Spec 5.3 account: the current password is checked first, so an unlocked phone alone can't change it. */
 export async function changePassword(current: unknown, next: unknown): Promise<Saved> {
   const staff = await requireStaff();

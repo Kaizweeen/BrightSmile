@@ -15,6 +15,8 @@ export const LIMITS = {
   address: 200,
   mapsUrl: 300,
   timeOffNote: 100,
+  branchName: 40,
+  branchSmsName: 18,
 } as const;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

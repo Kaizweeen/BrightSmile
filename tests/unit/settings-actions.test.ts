@@ -17,6 +17,9 @@ vi.mock("@/lib/clinic-settings", () => {
     removeTimeOff: vi.fn(saved),
     saveProcedure: vi.fn(saved),
     setProcedureActive: vi.fn(saved),
+    saveBranch: vi.fn(saved),
+    setBranchActive: vi.fn(saved),
+    moveBranch: vi.fn(saved),
   };
 });
 
@@ -31,6 +34,9 @@ const ownerOnly = () => [
   actions.setDentistActiveAction(ID, false),
   actions.saveProcedureAction(null, {}),
   actions.setProcedureActiveAction(ID, false),
+  actions.saveBranchAction(null, {}),
+  actions.setBranchActiveAction(ID, false),
+  actions.moveBranchAction(ID, "up"),
 ];
 
 beforeEach(() => {
@@ -60,5 +66,6 @@ describe("settings actions", () => {
     for (const result of await Promise.all(ownerOnly())) expect(result).toEqual({ ok: true });
     expect(settings.saveProfile).toHaveBeenCalledOnce();
     expect(settings.setProcedureActive).toHaveBeenCalledOnce();
+    expect(settings.moveBranch).toHaveBeenCalledWith(member("owner"), ID, "up");
   });
 });

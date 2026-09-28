@@ -32,9 +32,12 @@ export function Feedback({ result, inline }: { result: Saved | null; inline: str
   );
 }
 
-const PROFILE_FIELDS = ["name", "smsName", "slug", "mobile", "address", "mapsUrl"];
+const PROFILE_FIELDS = ["name", "smsName", "slug", "mobile", "address"];
 
-/** Clinic profile, including the map link. Warns before the booking link changes (spec 5.3). */
+/**
+ * Clinic profile. Warns before the booking link changes (spec 5.3). Patients see each branch's address and map link
+ * (Settings > Branches), so the clinic's own map link is kept as stored and sent back unchanged.
+ */
 export function ProfileForm({ clinic, appUrl }: { clinic: Clinic; appUrl: string }) {
   const [form, setForm] = useState({
     name: clinic.name,
@@ -82,19 +85,8 @@ export function ProfileForm({ clinic, appUrl }: { clinic: Clinic; appUrl: string
       <Field label="Clinic mobile" hint="Shown to patients and used for text alerts." error={err("mobile")}>
         <input className="f-input" type="tel" inputMode="tel" value={form.mobile} onChange={set("mobile")} />
       </Field>
-      <Field label="Address" error={err("address")}>
+      <Field label="Clinic address" hint="Your clinic's own address. Patients see each branch's address and map link, set under Branches." error={err("address")}>
         <input className="f-input" maxLength={200} value={form.address} onChange={set("address")} />
-      </Field>
-      <Field label="Map link" optional hint="Paste a Google Maps share link. It shows on your booking page." error={err("mapsUrl")}>
-        <input
-          className="f-input"
-          type="url"
-          inputMode="url"
-          maxLength={300}
-          placeholder="https://maps.app.goo.gl/..."
-          value={form.mapsUrl}
-          onChange={set("mapsUrl")}
-        />
       </Field>
       <Feedback result={result} inline={PROFILE_FIELDS} />
       <button type="submit" className="btn btn-primary mt-4" disabled={pending}>

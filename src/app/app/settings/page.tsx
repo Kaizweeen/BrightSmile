@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import BranchEditor from "./BranchEditor";
 import { AccountForms, ProfileForm, RulesForm } from "./ClinicForms";
 import DentistEditor from "./DentistEditor";
 import ProcedureEditor from "./ProcedureEditor";
@@ -11,8 +12,9 @@ import { requireStaff } from "@/lib/supabase/server";
 export const metadata: Metadata = { title: "Settings" };
 
 /**
- * Spec 5.3 Settings: clinic profile, booking rules and alerts, dentists, procedures, account. Staff see only what they
- * may use (teams spec 4): alerts on their device, dentists' time off, the plan's status, and their account.
+ * Spec 5.3 Settings: clinic profile, branches (booking flow spec 4), booking rules and alerts, dentists, procedures,
+ * account. Staff see only what they may use (teams spec 4): alerts on their device, dentists' time off, the plan's
+ * status, and their account.
  */
 export default async function SettingsPage() {
   const staff = await requireStaff();
@@ -25,6 +27,7 @@ export default async function SettingsPage() {
         <h1 className="font-display">Settings</h1>
       </div>
       {owner && <ProfileForm clinic={settings.clinic} appUrl={appUrl()} />}
+      {owner && <BranchEditor branches={settings.branches} clinicSmsName={settings.clinic.smsName} />}
       {owner && <RulesForm clinic={settings.clinic} />}
       <PushSetup />
       <section className="card card-pad settings-section">

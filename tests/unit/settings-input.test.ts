@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseDentist, parseProcedure, parseProfile, parseRules, parseTimeOff } from "@/lib/settings-input";
+import { parseBranch, parseDentist, parseProcedure, parseProfile, parseRules, parseTimeOff } from "@/lib/settings-input";
 import { manilaInstant } from "@/lib/time";
 
 const profile = {
@@ -143,5 +143,22 @@ describe("parseProcedure", () => {
     expect(parseProcedure({ name: "X", minutes: 4 })).toMatchObject({ field: "minutes" });
     expect(parseProcedure({ name: "X", minutes: 481 })).toMatchObject({ field: "minutes" });
     expect(parseProcedure({ name: "X", minutes: "" })).toMatchObject({ field: "minutes" });
+  });
+});
+
+describe("parseBranch", () => {
+  const branch = { name: " Makati ", smsName: " Makati ", address: "12 Rizal St, Makati", mapsUrl: "" };
+
+  it("cleans the branch and stores an empty map link as null", () => {
+    expect(parseBranch(branch)).toEqual({ ok: true, value: { name: "Makati", sms_name: "Makati", address: "12 Rizal St, Makati", maps_url: null } });
+    expect(parseBranch({ ...branch, mapsUrl: "https://maps.app.goo.gl/abc" })).toMatchObject({ ok: true, value: { maps_url: "https://maps.app.goo.gl/abc" } });
+  });
+
+  it("names the field that is wrong", () => {
+    expect(parseBranch({ ...branch, name: "x".repeat(41) })).toMatchObject({ ok: false, field: "name" });
+    expect(parseBranch({ ...branch, smsName: "  " })).toEqual({ ok: false, field: "smsName", error: "Use 1 to 18 characters." });
+    expect(parseBranch({ ...branch, address: "" })).toMatchObject({ ok: false, field: "address" });
+    expect(parseBranch({ ...branch, mapsUrl: "http://maps.example.com" })).toMatchObject({ ok: false, field: "mapsUrl" });
+    expect(parseBranch("Makati")).toMatchObject({ ok: false, field: "name" });
   });
 });
