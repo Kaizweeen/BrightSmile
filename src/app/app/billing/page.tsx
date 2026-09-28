@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import PayPanel from "./PayPanel";
-import { billingDate, billingStatus, formatPesos, STATUS_CHIP, STATUS_LABEL, statusLine, tierFor } from "@/lib/billing";
+import WebOnly from "../WebOnly";
+import { billingDate, billingStatus, formatPesos, neutralStatusLine, STATUS_CHIP, STATUS_LABEL, statusLine, tierFor } from "@/lib/billing";
 import { activeDentists, loadBilling, loadPayments } from "@/lib/billing-data";
 import { paymongoKeys } from "@/lib/paymongo";
 import { localMobile, normalizeMobile } from "@/lib/phone";
@@ -30,7 +31,9 @@ export default async function BillingPage({ searchParams }: Props) {
           <div className="chip-row">
             <span className={`chip ${STATUS_CHIP[state.status]}`}>{STATUS_LABEL[state.status]}</span>
           </div>
-          <p className="mt-2">{statusLine(state, now, false)}</p>
+          <p className="mt-2">
+            <WebOnly fallback={neutralStatusLine(state, now)}>{statusLine(state, now, false)}</WebOnly>
+          </p>
           <p className="f-hint mt-2">Your clinic&apos;s owner handles the plan and payments.</p>
         </section>
       </>
@@ -63,11 +66,16 @@ export default async function BillingPage({ searchParams }: Props) {
         <div className="chip-row">
           <span className={`chip ${STATUS_CHIP[state.status]}`}>{STATUS_LABEL[state.status]}</span>
         </div>
-        <p className="mt-2">{statusLine(state, now)}</p>
-        <p className="f-hint mt-2">
-          {tier.name} plan: {formatPesos(tier.pesos * 100)} a month for {dentists} active {dentists === 1 ? "dentist" : "dentists"}. Texts
-          to patients are included.
+        <p className="mt-2">
+          <WebOnly fallback={neutralStatusLine(state, now)}>{statusLine(state, now)}</WebOnly>
         </p>
+        {/* Play Store spec 3.2: no prices inside the Play app. */}
+        <WebOnly>
+          <p className="f-hint mt-2">
+            {tier.name} plan: {formatPesos(tier.pesos * 100)} a month for {dentists} active {dentists === 1 ? "dentist" : "dentists"}.
+            Texts to patients are included.
+          </p>
+        </WebOnly>
       </section>
       <PayPanel
         activeDentists={dentists}
@@ -75,25 +83,27 @@ export default async function BillingPage({ searchParams }: Props) {
         gcash={gcashName && gcashNumber ? { name: gcashName, number: localMobile(gcashNumber) } : null}
         online={paymongoKeys() !== null}
       />
-      <section className="card card-pad settings-section">
-        <h2 className="font-display">Payment history</h2>
-        {payments.length === 0 ? (
-          <p className="f-hint">No payments yet.</p>
-        ) : (
-          <div className="mt-2">
-            {payments.map((p) => (
-              <div key={p.id} className="cf-row">
-                <span className="k">
-                  {billingDate(new Date(p.paidAt), now)}, {p.months === 1 ? "1 month" : `${p.months} months`}
-                </span>
-                <span className="v">
-                  {formatPesos(p.amountCentavos)} by {p.method === "gcash" ? "GCash" : "PayMongo"}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      <WebOnly>
+        <section className="card card-pad settings-section">
+          <h2 className="font-display">Payment history</h2>
+          {payments.length === 0 ? (
+            <p className="f-hint">No payments yet.</p>
+          ) : (
+            <div className="mt-2">
+              {payments.map((p) => (
+                <div key={p.id} className="cf-row">
+                  <span className="k">
+                    {billingDate(new Date(p.paidAt), now)}, {p.months === 1 ? "1 month" : `${p.months} months`}
+                  </span>
+                  <span className="v">
+                    {formatPesos(p.amountCentavos)} by {p.method === "gcash" ? "GCash" : "PayMongo"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </WebOnly>
     </>
   );
 }

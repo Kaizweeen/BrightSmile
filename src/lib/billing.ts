@@ -99,6 +99,17 @@ export function statusLine(state: BillingState, now: Date, owner = true): string
   return `Your plan ended ${ends}. Online booking pauses in ${days} ${days === 1 ? "day" : "days"}${who}.`;
 }
 
+/** Play Store spec 3.2: the Billing page's status line inside the Play app: the same facts, with no mention of paying. */
+export function neutralStatusLine(state: BillingState, now: Date): string {
+  const ends = billingDate(state.endsAt, now);
+  if (state.status === "active") return `Paid until ${ends}.`;
+  if (state.status === "trial") return `Free trial until ${ends}.`;
+  if (state.status === "lapsed") return `Your plan ended ${ends}. Online booking is paused.`;
+  const days = (Date.parse(manilaDate(state.pausesAt)) - Date.parse(manilaDate(now))) / DAY_MS;
+  if (days === 0) return `Your plan ended ${ends}. Online booking pauses today.`;
+  return `Your plan ended ${ends}. Online booking pauses in ${days} ${days === 1 ? "day" : "days"}.`;
+}
+
 /** The dashboard banner's facts, with no call to pay and no mention of who pays: shared by bannerText and neutralBannerText. */
 function bannerFacts(state: BillingState, now: Date): string | null {
   if (state.status === "lapsed") return "Online booking is paused.";
