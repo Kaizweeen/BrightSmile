@@ -12,6 +12,8 @@ export const personNameSchema = z.string().trim().min(2, "Enter the full name").
 
 export const titleSchema = z.string().trim().min(1, "Enter a title").max(40, "Use at most 40 characters");
 
+export const practiceNameSchema = z.string().trim().min(1, "Enter the practice name").max(80, "Use at most 80 characters");
+
 /** The roles a join request or an approval can give. Only /setup creates the owner. */
 export const staffRoleSchema = z.enum(["manager", "dentist"]);
 
