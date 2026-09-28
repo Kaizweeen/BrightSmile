@@ -47,7 +47,7 @@ export function can(s: Subject, action: Action, t: Target = {}): boolean {
 
   switch (action) {
     case "calendar.view":
-      return inBranch;
+      return inBranch || (dentist && own);
     case "appointment.book":
     case "appointment.manage":
       return owner || (manager && inBranch);

@@ -19,11 +19,14 @@ describe("covers", () => {
 });
 
 describe("calendar and visits", () => {
-  it("shows a branch's calendar to the people who cover it", () => {
+  it("shows a branch's calendar to the people who cover it, and a dentist their own visits anywhere", () => {
     expect(can(owner, "calendar.view", { branchId: MN })).toBe(true);
     expect(can(manager, "calendar.view", { branchId: DT })).toBe(true);
     expect(can(manager, "calendar.view", { branchId: WS })).toBe(false);
     expect(can(dentist, "calendar.view", { branchId: WS })).toBe(true);
+    expect(can(dentist, "calendar.view", { branchId: MN })).toBe(false);
+    expect(can(dentist, "calendar.view", { branchId: MN, dentistId: "dr" })).toBe(true);
+    expect(can(dentist, "calendar.view", { branchId: MN, dentistId: "someone-else" })).toBe(false);
   });
 
   it("lets the owner and the branch's managers book and manage visits", () => {
@@ -36,6 +39,7 @@ describe("calendar and visits", () => {
   });
 
   it("lets dentists start and complete only their own visits", () => {
+    expect(can(owner, "appointment.treat", { branchId: MN, dentistId: "someone-else" })).toBe(true);
     expect(can(dentist, "appointment.treat", { branchId: DT, dentistId: "dr" })).toBe(true);
     expect(can(dentist, "appointment.treat", { branchId: DT, dentistId: "someone-else" })).toBe(false);
     expect(can(manager, "appointment.treat", { branchId: DT, dentistId: "someone-else" })).toBe(true);
