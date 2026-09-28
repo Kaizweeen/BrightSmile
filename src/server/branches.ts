@@ -1,7 +1,7 @@
 import { and, asc, count, eq, gt, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { appointments, branches, chairs, type OperatingHours } from "@/db/schema";
+import { appointments, branches, chairs, userBranches, users, type OperatingHours } from "@/db/schema";
 import { operatingHoursSchema } from "@/lib/hours";
 import { randomToken } from "@/lib/tokens";
 import { audit } from "./audit";
@@ -126,6 +126,24 @@ export async function updateBranch(
         .where(and(eq(appointments.branchId, branch.id), inArray(appointments.status, [...ACTIVE_STATUSES]), gt(appointments.endTime, new Date())));
       if (visits.n > 0) {
         throw new ApiError(422, "has_visits", `This branch has ${plural(visits.n, "upcoming visit")}. Move or cancel ${visits.n === 1 ? "it" : "them"} first.`);
+      }
+      // Staff cover open branches only (staffById), so no one active may be left without one.
+      const members = await tx
+        .select({ id: users.id, name: users.name })
+        .from(userBranches)
+        .innerJoin(users, eq(users.id, userBranches.userId))
+        .where(and(eq(userBranches.branchId, branch.id), ne(users.role, "owner"), eq(users.status, "active")));
+      const elsewhere = members.length
+        ? await tx
+            .select({ id: userBranches.userId })
+            .from(userBranches)
+            .innerJoin(branches, eq(branches.id, userBranches.branchId))
+            .where(and(inArray(userBranches.userId, members.map((m) => m.id)), eq(branches.active, true), ne(branches.id, branch.id)))
+        : [];
+      const stranded = members.filter((m) => !elsewhere.some((e) => e.id === m.id)).map((m) => m.name);
+      if (stranded.length > 0) {
+        const who = new Intl.ListFormat("en", { type: "conjunction" }).format(stranded);
+        throw new ApiError(422, "has_staff", `${who} ${stranded.length === 1 ? "works" : "work"} only at this branch. Give them another branch or disable them first.`);
       }
     }
     const [row] = await tx.update(branches).set(patch).where(eq(branches.id, branch.id)).returning({ id: branches.id, code: branches.code });

@@ -102,6 +102,19 @@ describe("branches", () => {
     expect((await lastOff.json()).error.code).toBe("last_branch");
   });
 
+  it("keeps every active staff member an open branch", async () => {
+    const { cookie } = await ownerCookie();
+    await call(branchesRoute.POST, request("/api/v1/branches", { method: "POST", cookie, body: branchBody("eastside", "Eastside") }));
+    const [east] = await db.select().from(branches).where(eq(branches.code, "eastside"));
+    await makeUser({ role: "manager", branchIds: [east.id], name: "Joy Mendoza" });
+    const off = await call(branchRoute.PATCH, request("/api/v1/branches/eastside", { method: "PATCH", cookie, body: { active: false } }), { code: "eastside" });
+    expect(off.status).toBe(422);
+    expect((await off.json()).error).toMatchObject({
+      code: "has_staff",
+      message: "Joy Mendoza works only at this branch. Give them another branch or disable them first.",
+    });
+  });
+
   it("replaces a branch's join code", async () => {
     const { cookie } = await ownerCookie();
     const [before] = await db.select().from(branches).where(eq(branches.code, "downtown"));

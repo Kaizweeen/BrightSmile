@@ -194,7 +194,7 @@ describe("changing staff", () => {
     const { cookie } = await ownerCookie();
     const none = await patch(cookie, dentist.id, { branchIds: [] });
     expect(none.status).toBe(400);
-    expect((await none.json()).error.fields).toEqual({ branchIds: "Keep at least one branch." });
+    expect((await none.json()).error.fields).toEqual({ branchIds: "Keep at least one open branch." });
   });
 
   it("clears a dentist's title when they move to the front desk", async () => {
@@ -221,6 +221,10 @@ describe("changing staff", () => {
     expect((await refused.json()).error.fields).toEqual({ branchIds: "Pick open branches only." });
     expect((await patch(cookie, dentist.id, { branchIds: [b.id] })).status).toBe(200);
     expect(await branchesOf(dentist.id)).toEqual([closed.id, b.id].sort());
+    const leaver = await makeUser({ role: "manager", branchIds: [closed.id], status: "disabled" });
+    const back = await patch(cookie, leaver.id, { status: "active" });
+    expect(back.status).toBe(400);
+    expect((await back.json()).error.fields).toEqual({ branchIds: "Keep at least one open branch." });
   });
 
   it("answers 404 to an id that is not one", async () => {

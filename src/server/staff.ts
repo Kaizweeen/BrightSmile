@@ -269,10 +269,11 @@ export async function updateStaff(actor: Staff, userId: string, patch: z.infer<t
       set.seesPatients = patch.role === "dentist";
       if (patch.role === "manager") await tx.delete(dentistSchedules).where(eq(dentistSchedules.dentistId, userId));
     }
+    const all = await tx.select({ id: branches.id, active: branches.active }).from(branches);
+    const isOpen = (branchId: string) => all.some((b) => b.id === branchId && b.active);
+    let memberships = current;
     if (patch.branchIds) {
       const wanted = [...new Set(patch.branchIds)];
-      const all = await tx.select({ id: branches.id, active: branches.active }).from(branches);
-      const isOpen = (branchId: string) => all.some((b) => b.id === branchId && b.active);
       if (!wanted.every(isOpen)) {
         throw new ApiError(400, "invalid", "Pick open branches only.", { fields: { branchIds: "Pick open branches only." } });
       }
@@ -282,14 +283,18 @@ export async function updateStaff(actor: Staff, userId: string, patch: z.infer<t
       // The editor changes only the open branches they cover. The person keeps the rest: their closed branches, and
       // for a manager's colleague, the branches that manager does not cover.
       const kept = current.filter((branchId) => !isOpen(branchId) || !covers(actor, branchId));
-      const next = [...new Set([...kept, ...wanted.filter((branchId) => covers(actor, branchId))])];
-      if (next.length === 0) {
-        throw new ApiError(400, "invalid", "Keep at least one branch.", { fields: { branchIds: "Keep at least one branch." } });
-      }
+      memberships = [...new Set([...kept, ...wanted.filter((branchId) => covers(actor, branchId))])];
+    }
+    // Staff cover open branches only (staffById), so everyone but the owner keeps one while active or given branches.
+    const active = (patch.status ?? target.status) === "active";
+    if (targetRole !== "owner" && (patch.branchIds || active) && !memberships.some(isOpen)) {
+      throw new ApiError(400, "invalid", "Keep at least one open branch.", { fields: { branchIds: "Keep at least one open branch." } });
+    }
+    if (patch.branchIds) {
       await tx.delete(userBranches).where(eq(userBranches.userId, userId));
-      await tx.insert(userBranches).values(next.map((branchId) => ({ userId, branchId })));
-      await tx.delete(dentistSchedules).where(and(eq(dentistSchedules.dentistId, userId), notInArray(dentistSchedules.branchId, next)));
-      if (!target.primaryBranchId || !next.includes(target.primaryBranchId)) set.primaryBranchId = next[0];
+      await tx.insert(userBranches).values(memberships.map((branchId) => ({ userId, branchId })));
+      await tx.delete(dentistSchedules).where(and(eq(dentistSchedules.dentistId, userId), notInArray(dentistSchedules.branchId, memberships)));
+      if (!target.primaryBranchId || !memberships.includes(target.primaryBranchId)) set.primaryBranchId = memberships.find(isOpen);
     }
     await tx.update(users).set(set).where(eq(users.id, userId));
     if (patch.status === "disabled") await endSessions(userId, tx);
