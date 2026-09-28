@@ -85,7 +85,7 @@ export default function PrivacyPage() {
         <h2>How long we keep it</h2>
         <ul>
           <li>Verification codes: deleted after 24 hours.</li>
-          <li>The words of text messages: erased after 90 days. A record that a text was sent, and its cost, is kept for billing.</li>
+          <li>The words of text messages: erased after 90 days. A record that a text was sent, and its cost, is kept so we can track what texts cost.</li>
           <li>
             Patient records and appointments: kept while the clinic uses BrightSmile. When the clinic deletes a patient, the name becomes
             &quot;Deleted patient&quot; and the mobile number, birthday, HMO, and patient form are erased; the visits stay only as counts.
