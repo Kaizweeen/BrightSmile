@@ -25,7 +25,8 @@ export type SettingsView = {
     name: string;
     smsName: string;
     active: boolean;
-    hours: Clock[][];
+    /** Each block at its branch; blocks at an inactive branch are left out (booking flow spec 4). */
+    hours: (Clock & { branchId: string })[][];
     timeOff: { id: string; startsAt: string; endsAt: string; note: string }[];
   }[];
   procedures: { id: string; name: string; minutes: number; active: boolean }[];
@@ -72,7 +73,7 @@ export async function loadSettings(staff: Staff, now: Date): Promise<SettingsVie
       .single()
       .throwOnError(),
     staff.db.from("dentists").select("id, name, sms_name, active").eq("clinic_id", staff.clinicId).order("created_at").order("name").throwOnError(),
-    staff.db.from("working_hours").select("dentist_id, weekday, start_time, end_time").eq("clinic_id", staff.clinicId).throwOnError(),
+    staff.db.from("working_hours").select("dentist_id, branch_id, weekday, start_time, end_time").eq("clinic_id", staff.clinicId).throwOnError(),
     staff.db
       .from("time_off")
       .select("id, dentist_id, starts_at, ends_at, note")
@@ -95,7 +96,11 @@ export async function loadSettings(staff: Staff, now: Date): Promise<SettingsVie
     max_days_ahead: number;
     alert_channel: "push" | "sms";
   };
-  const hourRows = hours.data as { dentist_id: string; weekday: number; start_time: string; end_time: string }[];
+  // Nobody books at an inactive branch, so its blocks stay out of the editor; saving the dentist replaces them.
+  const open = new Set(branches.filter((b) => b.active).map((b) => b.id));
+  const hourRows = (hours.data as { dentist_id: string; branch_id: string; weekday: number; start_time: string; end_time: string }[]).filter((h) =>
+    open.has(h.branch_id),
+  );
   const offRows = timeOff.data as { id: string; dentist_id: string; starts_at: string; ends_at: string; note: string }[];
   const clock = (value: string) => formatClock(parseClock(value));
 
@@ -120,7 +125,7 @@ export async function loadSettings(staff: Staff, now: Date): Promise<SettingsVie
       hours: Array.from({ length: 7 }, (_, day) =>
         hourRows
           .filter((h) => h.dentist_id === d.id && h.weekday === day)
-          .map((h) => ({ start: clock(h.start_time), end: clock(h.end_time) }))
+          .map((h) => ({ start: clock(h.start_time), end: clock(h.end_time), branchId: h.branch_id }))
           .sort((x, y) => x.start.localeCompare(y.start)),
       ),
       timeOff: offRows

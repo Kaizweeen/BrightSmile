@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Field from "@/components/Field";
-import HoursEditor from "@/components/HoursEditor";
+import HoursEditor, { type HourBlock } from "@/components/HoursEditor";
 import type { SettingsView } from "@/lib/clinic-settings";
 import { DEFAULT_HOURS } from "@/lib/onboarding";
 import type { Saved } from "@/lib/staff-input";
@@ -19,13 +19,24 @@ function span(startsAt: string, endsAt: string): string {
 }
 
 /**
- * One dentist (or "Add a dentist" when null): name, short name, weekly hours, active, and time off. Staff (canEdit
- * false) see only the time off, the one part of a dentist they may change (teams spec 4).
+ * One dentist (or "Add a dentist" when null): name, short name, weekly hours (each block at a branch once the clinic has
+ * 2 or more active ones, booking flow spec 4), active, and time off. Staff (canEdit false) see only the time off, the
+ * one part of a dentist they may change (teams spec 4).
  */
-export default function DentistEditor({ dentist, canEdit = true }: { dentist: Dentist | null; canEdit?: boolean }) {
+export default function DentistEditor({
+  dentist,
+  canEdit = true,
+  branches = [],
+}: {
+  dentist: Dentist | null;
+  canEdit?: boolean;
+  branches?: { id: string; name: string }[];
+}) {
   const blank = { name: "", smsName: "", hours: DEFAULT_HOURS };
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState(dentist ? { name: dentist.name, smsName: dentist.smsName, hours: dentist.hours } : blank);
+  const [form, setForm] = useState<{ name: string; smsName: string; hours: HourBlock[][] }>(
+    dentist ? { name: dentist.name, smsName: dentist.smsName, hours: dentist.hours } : blank,
+  );
   const [result, setResult] = useState<Saved | null>(null);
   const [off, setOff] = useState({ from: "", to: "", note: "" });
   const [offResult, setOffResult] = useState<Saved | null>(null);
@@ -79,7 +90,7 @@ export default function DentistEditor({ dentist, canEdit = true }: { dentist: De
           <Field label="Short name for texts" hint="Up to 16 characters, like Dr. Reyes." error={err("smsName")}>
             <input className="f-input" maxLength={16} value={form.smsName} onChange={(e) => setForm({ ...form, smsName: e.target.value })} />
           </Field>
-          <HoursEditor hours={form.hours} onChange={(hours) => setForm({ ...form, hours })} error={err("hours")} />
+          <HoursEditor hours={form.hours} onChange={(hours) => setForm({ ...form, hours })} error={err("hours")} branches={branches} />
           <p className="f-hint mt-2">Changing hours cancels nothing. Visits outside the new hours show Outside hours on the schedule.</p>
           <Feedback result={result} inline={["name", "smsName", "hours"]} />
           <div className="action-row">

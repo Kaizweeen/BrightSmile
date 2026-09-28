@@ -20,6 +20,7 @@ export default async function SettingsPage() {
   const staff = await requireStaff();
   const owner = staff.role === "owner";
   const settings = await loadSettings(staff, new Date());
+  const branches = settings.branches.filter((b) => b.active).map((b) => ({ id: b.id, name: b.name }));
 
   return (
     <>
@@ -39,10 +40,10 @@ export default async function SettingsPage() {
         </p>
         <div className="member-list mt-2">
           {settings.dentists.map((d) => (
-            <DentistEditor key={d.id} dentist={d} canEdit={owner} />
+            <DentistEditor key={d.id} dentist={d} canEdit={owner} branches={branches} />
           ))}
         </div>
-        {owner && <DentistEditor dentist={null} />}
+        {owner && <DentistEditor dentist={null} branches={branches} />}
       </section>
       {owner && <ProcedureEditor procedures={settings.procedures} />}
       {owner && (
