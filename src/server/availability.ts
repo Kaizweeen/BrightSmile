@@ -40,6 +40,8 @@ export async function availability(
   const minutes = picked.reduce((sum, p) => sum + p.durationMinutes, 0);
   const turnover = Math.max(0, ...picked.map((p) => p.bufferMinutes));
   const empty = { date: q.date, minutes, turnover, times: [] };
+  // A closed branch takes no bookings (spec 8.3), so it has no open times.
+  if (!branch.active) return empty;
 
   const chairNumbers = (
     await db

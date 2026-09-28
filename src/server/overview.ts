@@ -32,7 +32,7 @@ export async function overview(actor: Staff, date: string): Promise<{ date: stri
     .select({ branchId: dentistSchedules.branchId, name: users.name })
     .from(dentistSchedules)
     .innerJoin(users, eq(users.id, dentistSchedules.dentistId))
-    .where(and(eq(dentistSchedules.dayOfWeek, weekday(date)), eq(users.status, "active")));
+    .where(and(eq(dentistSchedules.dayOfWeek, weekday(date)), eq(users.status, "active"), eq(users.seesPatients, true)));
   const now = Date.now();
   return {
     date,

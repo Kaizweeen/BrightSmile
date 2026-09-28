@@ -1,8 +1,9 @@
+import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import * as availabilityRoute from "@/app/api/v1/availability/route";
 import * as overviewRoute from "@/app/api/v1/overview/route";
 import { db } from "@/db";
-import { appointments, chairs, dentistSchedules, patients, procedures } from "@/db/schema";
+import { appointments, branches, chairs, dentistSchedules, patients, procedures, userBranches } from "@/db/schema";
 import { fromMinutes, manilaMinutes } from "@/lib/time";
 import { call, makeBranch, makeUser, request, signIn } from "../helpers";
 
@@ -65,6 +66,18 @@ describe("open times", () => {
     ]);
     const forAna = await call(availabilityRoute.GET, request(`/api/v1/availability?branch=downtown&date=${MONDAY}&procedures=${w.cleaning.id}&patient=${w.ana.id}`, { cookie: w.desk }));
     expect(((await forAna.json()) as Times).times.map((t) => clock(t.start))).toEqual(["09:30", "09:45"]);
+  });
+
+  it("has none at a closed branch", async () => {
+    const w = await world();
+    const east = await makeBranch({ code: "eastside", name: "Eastside" });
+    await db.insert(chairs).values({ branchId: east.id, number: 1 });
+    await db.insert(userBranches).values({ userId: w.lim.id, branchId: east.id });
+    await db.insert(dentistSchedules).values({ dentistId: w.lim.id, branchId: east.id, dayOfWeek: 1, startTime: "11:00", endTime: "12:00" });
+    await db.update(branches).set({ active: false }).where(eq(branches.id, east.id));
+    const res = await call(availabilityRoute.GET, request(`/api/v1/availability?branch=eastside&date=${MONDAY}&procedures=${w.cleaning.id}`, { cookie: w.owner }));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Times).times).toEqual([]);
   });
 
   it("is for people who book", async () => {
