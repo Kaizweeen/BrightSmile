@@ -69,10 +69,17 @@ export async function signIn(username: string, password = PASSWORD): Promise<str
 /** A request as the browser sends it: writes carry the app's Origin and JSON unless told otherwise. */
 export function request(
   path: string,
-  opts: { method?: string; body?: unknown; cookie?: string; origin?: string | null; contentType?: string } = {},
+  opts: {
+    method?: string;
+    body?: unknown;
+    cookie?: string;
+    origin?: string | null;
+    contentType?: string;
+    headers?: Record<string, string>;
+  } = {},
 ): NextRequest {
   const method = opts.method ?? "GET";
-  const headers = new Headers();
+  const headers = new Headers(opts.headers);
   if (opts.cookie) headers.set("cookie", opts.cookie);
   if (method !== "GET") {
     if (opts.origin !== null) headers.set("origin", opts.origin ?? "http://localhost:3700");

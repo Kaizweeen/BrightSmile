@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuthMiddleware, getIP } from "better-auth/api";
 import { username } from "better-auth/plugins/username";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { accounts, auditLog, rateLimits, sessions, users, verifications } from "@/db/schema";
 import { appUrl } from "@/lib/env";
@@ -25,6 +26,17 @@ export const auth = betterAuth({
   // own code (src/server/accounts.ts) writes them.
   user: { additionalFields: { role: { type: "string", input: false }, status: { type: "string", input: false } } },
   session: { expiresIn: SESSION_SECONDS, disableSessionRefresh: true },
+  databaseHooks: {
+    session: {
+      create: {
+        // A disabled account cannot sign in (spec 6.5). A pending one can, to see the waiting page.
+        before: async (session) => {
+          const [user] = await db.select({ status: users.status }).from(users).where(eq(users.id, session.userId));
+          return user?.status === "disabled" ? false : undefined;
+        },
+      },
+    },
+  },
   hooks: {
     // Spec 13: every sign-in is audited, a failed one with the username tried (never the password).
     after: createAuthMiddleware(async (ctx) => {
