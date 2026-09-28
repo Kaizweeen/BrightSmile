@@ -3256,12 +3256,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 ```tsx
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { homePath } from "@/server/home";
 import { staffFromHeaders } from "@/server/session";
 import { ownerExists } from "@/server/setup";
 
 /** Sends each visitor where they belong: setup, sign-in, the waiting page, or their home. */
 export default async function Home() {
+  // Request time only: `next build` must never open the database.
+  await connection();
   if (!(await ownerExists())) redirect("/setup");
   const staff = await staffFromHeaders(await headers());
   if (!staff || staff.status === "disabled") redirect("/login");
@@ -3350,6 +3353,7 @@ export function LoginForm() {
 ```tsx
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { AuthCard } from "@/components/auth-card";
 import { ownerExists } from "@/server/setup";
 import { SetupForm } from "./setup-form";
@@ -3357,6 +3361,8 @@ import { SetupForm } from "./setup-form";
 export const metadata: Metadata = { title: "Set up" };
 
 export default async function SetupPage() {
+  // Request time only: `next build` must never open the database.
+  await connection();
   if (await ownerExists()) redirect("/login");
   return (
     <AuthCard
