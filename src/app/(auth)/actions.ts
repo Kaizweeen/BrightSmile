@@ -7,6 +7,7 @@ import { hasRecentRecoverySession } from "@/lib/reset-session";
 import { serverClient } from "@/lib/supabase/server";
 import { isInviteToken, JOIN_COOKIE } from "@/lib/team";
 import { inviteClinicName } from "@/lib/team-data";
+import { clinicExists } from "@/lib/the-clinic";
 import { cleanEmail, passwordProblem } from "@/lib/validate";
 
 export type AuthState = { error?: string; sent?: string; email?: string; expired?: boolean };
@@ -20,6 +21,11 @@ export async function signUp(_state: AuthState, form: FormData): Promise<AuthSta
   if (!email) return { error: "Enter a valid email address." };
   const weak = passwordProblem(password);
   if (weak) return { error: weak, email };
+
+  // One clinic per site: once it exists, only an open join link may create an account (checked here, not just on the page).
+  const joinToken = (await cookies()).get(JOIN_COOKIE)?.value;
+  const invited = Boolean(joinToken && (await inviteClinicName(joinToken, new Date()).catch(() => null)));
+  if (!invited && (await clinicExists())) return { error: "Staff accounts are by invitation. Ask the clinic's owner for a join link.", email };
 
   const db = await serverClient();
   const { data, error } = await db.auth.signUp({

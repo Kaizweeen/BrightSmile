@@ -1,32 +1,9 @@
-import type { Metadata } from "next";
-import { notFound } from "next/navigation";
-import { cache } from "react";
-import BookingFlow from "./BookingFlow";
-import { loadClinic } from "@/lib/availability";
-import { slugProblem } from "@/lib/validate";
-
-// Open times depend on the current minute, so this page is never prerendered.
-export const dynamic = "force-dynamic";
-
-type Params = { params: Promise<{ slug: string }> };
-
-// generateMetadata and the page share one lookup per request. Malformed links skip the database.
-const clinicFor = cache(async (slug: string) => (slugProblem(slug) ? null : loadClinic({ slug })));
-
-export async function generateMetadata({ params }: Params): Promise<Metadata> {
-  const clinic = await clinicFor((await params).slug);
-  if (!clinic) return { title: "Booking link not found" };
-  const title = `Book at ${clinic.name}`;
-  const description = `Request a dental appointment at ${clinic.name}${clinic.address ? `, ${clinic.address}` : ""}.`;
-  return { title, description, openGraph: { title, description, type: "website" } };
-}
+import { permanentRedirect } from "next/navigation";
 
 /**
- * A clinic's public booking page and website (spec 5.1, booking flow spec 3): the main page, then booking, rescheduling
- * or editing, and cancelling for a verified number. It receives no patient data and no busy times.
+ * The booking page lives at "/" now that the site serves one clinic (Kai, 2026-09-28). Old booking links, including the
+ * rebooking link in texts and links already posted on Facebook, land there.
  */
-export default async function ClinicBookingPage({ params }: Params) {
-  const clinic = await clinicFor((await params).slug);
-  if (!clinic) notFound();
-  return <BookingFlow clinic={clinic} nowIso={new Date().toISOString()} />;
+export default function OldBookingLink(): never {
+  permanentRedirect("/");
 }

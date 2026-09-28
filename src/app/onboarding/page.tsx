@@ -7,6 +7,7 @@ import { logError } from "@/lib/log";
 import { signedInStaff } from "@/lib/supabase/server";
 import { JOIN_COOKIE } from "@/lib/team";
 import { inviteClinicName } from "@/lib/team-data";
+import { clinicExists } from "@/lib/the-clinic";
 
 export const metadata: Metadata = { title: "Set up your clinic" };
 
@@ -27,5 +28,16 @@ export default async function OnboardingPage() {
     }
   }
   if (clinicName) redirect(`/join/${token}`);
+  // One clinic per site (Kai, 2026-09-28): once it exists, an account without a clinic needs the owner's join link.
+  if (await clinicExists()) {
+    return (
+      <main className="flow-wrap">
+        <div className="flow-card screen-in">
+          <h1 className="font-display">This site already has its clinic</h1>
+          <p className="sub">Ask the clinic&apos;s owner for a join link to use this account there.</p>
+        </div>
+      </main>
+    );
+  }
   return <Onboarding appUrl={appUrl()} />;
 }

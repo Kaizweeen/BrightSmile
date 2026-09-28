@@ -98,10 +98,6 @@ export default function AuthForm({ mode, action, notice }: Props) {
             <>
               <Link href="/forgot" className="link">
                 Forgot password?
-              </Link>{" "}
-              New here?{" "}
-              <Link href="/signup" className="link">
-                Create an account
               </Link>
             </>
           )}

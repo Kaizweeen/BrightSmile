@@ -3,12 +3,16 @@
 import { redirect } from "next/navigation";
 import { parseOnboarding, type OnboardingField } from "@/lib/onboarding";
 import { serverClient } from "@/lib/supabase/server";
+import { clinicExists } from "@/lib/the-clinic";
 
 export type OnboardingResult = { ok: true; slug: string } | { ok: false; field: OnboardingField | "form"; error: string };
 
 export async function createClinic(input: unknown): Promise<OnboardingResult> {
   const parsed = parseOnboarding(input);
   if (!parsed.ok) return parsed;
+
+  // One clinic per site (Kai, 2026-09-28): the owner sets it up once; nobody can add another.
+  if (await clinicExists()) return { ok: false, field: "form", error: "This site already has its clinic. Ask the owner for a join link." };
 
   const db = await serverClient();
   const { data: auth } = await db.auth.getClaims();
