@@ -3078,7 +3078,6 @@ export type ErrorBody = {
   code: string;
   message: string;
   fields?: Record<string, string>;
-  blocks?: { index: number; message: string }[];
   conflicts?: unknown[];
   warnings?: { code: string; message: string }[];
   requestId?: string;
@@ -3652,9 +3651,6 @@ describe("branches", () => {
     const off = await call(chairRoute.PATCH, request("/api/v1/branches/downtown/chairs/1", { method: "PATCH", cookie, body: { active: false } }), { code: "downtown", number: "1" });
     expect(off.status).toBe(422);
     expect((await off.json()).error.message).toBe("Chair 1 has 1 upcoming visit. Move it first.");
-
-    const branchOff = await call(branchRoute.PATCH, request("/api/v1/branches/downtown", { method: "PATCH", cookie, body: { active: false } }), { code: "downtown" });
-    expect(branchOff.status).toBe(422);
   });
 
   it("keeps at least one branch open", async () => {
@@ -3694,6 +3690,24 @@ describe("procedures", () => {
     expect(off.status).toBe(200);
     const active = await (await call(proceduresRoute.GET, request("/api/v1/procedures?active=1", { cookie }))).json();
     expect(active).toEqual([]);
+  });
+
+  it("keeps a branch with visits not over yet open, counting one in the chair now", async () => {
+    const { cookie } = await ownerCookie();
+    const on = await call(branchRoute.PATCH, request("/api/v1/branches/westside", { method: "PATCH", cookie, body: { active: true } }), { code: "westside" });
+    expect(on.status).toBe(200);
+    const [b] = await db.select().from(branches).where(eq(branches.code, "downtown"));
+    const dentist = await makeUser({ role: "dentist", branchIds: [b.id] });
+    const [p] = await db.insert(patients).values({ lastName: "Cruz", firstName: "Ben" }).returning();
+    const start = new Date(Date.now() - 600_000);
+    await db.insert(appointments).values({
+      patientId: p.id, dentistId: dentist.id, branchId: b.id, chairNumber: 2,
+      startTime: start, endTime: new Date(start.getTime() + 3_600_000), chairFreeAt: new Date(start.getTime() + 3_600_000),
+      status: "confirmed", source: "staff",
+    });
+    const off = await call(branchRoute.PATCH, request("/api/v1/branches/downtown", { method: "PATCH", cookie, body: { active: false } }), { code: "downtown" });
+    expect(off.status).toBe(422);
+    expect((await off.json()).error).toMatchObject({ code: "has_visits", message: "This branch has 1 upcoming visit. Move or cancel it first." });
   });
 });
 ```
@@ -3860,9 +3874,10 @@ export async function updateBranch(
       const [visits] = await tx
         .select({ n: count() })
         .from(appointments)
-        .where(and(eq(appointments.branchId, branch.id), inArray(appointments.status, [...ACTIVE_STATUSES]), gt(appointments.startTime, new Date())));
+        // Visits not over yet count, including one in the chair right now.
+        .where(and(eq(appointments.branchId, branch.id), inArray(appointments.status, [...ACTIVE_STATUSES]), gt(appointments.endTime, new Date())));
       if (visits.n > 0) {
-        throw new ApiError(422, "has_visits", `This branch has ${plural(visits.n, "upcoming visit")}. Move or cancel them first.`);
+        throw new ApiError(422, "has_visits", `This branch has ${plural(visits.n, "upcoming visit")}. Move or cancel ${visits.n === 1 ? "it" : "them"} first.`);
       }
     }
     const [row] = await tx.update(branches).set(patch).where(eq(branches.id, branch.id)).returning({ id: branches.id, code: branches.code });
@@ -3911,7 +3926,7 @@ export async function updateChair(actor: Staff, branchId: string, number: number
             eq(appointments.branchId, branchId),
             eq(appointments.chairNumber, number),
             inArray(appointments.status, [...ACTIVE_STATUSES]),
-            gt(appointments.startTime, new Date()),
+            gt(appointments.endTime, new Date()),
           ),
         );
       if (visits.n > 0) {
@@ -4092,7 +4107,7 @@ export const PATCH = staffRoute<{ id: string }>(async (req, staff, { id }) =>
 npx vitest run tests/db/settings.test.ts
 ```
 
-Expected: PASS, 8 tests.
+Expected: PASS, 9 tests.
 
 - [ ] **Step 8: Commit**
 
@@ -4202,6 +4217,16 @@ describe("joining by QR", () => {
     expect((await join(branch.joinCode, newcomer("fresh.one"), "10.0.0.11")).status).toBe(201);
     expect(await userRow(old.id)).toBeUndefined();
   });
+
+  it("deletes expired requests when the approval screen loads, and refuses their sign-in", async () => {
+    const branch = await makeBranch();
+    const old = await makeUser({ role: "dentist", status: "pending", requestedBranchId: branch.id });
+    await db.update(users).set({ createdAt: new Date(Date.now() - 8 * 86_400_000) }).where(eq(users.id, old.id));
+    await expect(signIn(old.username)).rejects.toThrow();
+    const { cookie } = await ownerCookie();
+    expect((await call(requestsRoute.GET, request("/api/v1/join-requests", { cookie }))).status).toBe(200);
+    expect(await userRow(old.id)).toBeUndefined();
+  });
 });
 
 describe("approving", () => {
@@ -4308,6 +4333,16 @@ describe("changing staff", () => {
     const none = await patch(cookie, dentist.id, { branchIds: [] });
     expect(none.status).toBe(400);
     expect((await none.json()).error.fields).toEqual({ branchIds: "Keep at least one branch." });
+  });
+
+  it("refuses a branch the manager does not cover", async () => {
+    const a = await makeBranch();
+    const b = await makeBranch();
+    const manager = await makeUser({ role: "manager", branchIds: [a.id] });
+    const dentist = await makeUser({ role: "dentist", branchIds: [a.id] });
+    const res = await patch(await signIn(manager.username), dentist.id, { branchIds: [a.id, b.id] });
+    expect(res.status).toBe(403);
+    expect(await branchesOf(dentist.id)).toEqual([a.id]);
   });
 
   it("lists the staff each person may see", async () => {
@@ -4421,10 +4456,12 @@ Add `import { eq } from "drizzle-orm";` at the top, and add this option to the `
   databaseHooks: {
     session: {
       create: {
-        // A disabled account cannot sign in (spec 6.5). A pending one can, to see the waiting page.
+        // A disabled account cannot sign in (spec 6.5), nor a join request older than 7 days (spec 6.3). A pending one
+        // can, to see the waiting page.
         before: async (session) => {
-          const [user] = await db.select({ status: users.status }).from(users).where(eq(users.id, session.userId));
-          return user?.status === "disabled" ? false : undefined;
+          const [user] = await db.select({ status: users.status, createdAt: users.createdAt }).from(users).where(eq(users.id, session.userId));
+          const expired = user?.status === "pending" && user.createdAt.getTime() < Date.now() - 7 * 86_400_000;
+          return user?.status === "disabled" || expired ? false : undefined;
         },
       },
     },
@@ -4466,6 +4503,11 @@ const OPEN_REQUESTS_PER_BRANCH = 20;
 const RESET_MINUTES = 15;
 const RESET_PREFIX = "staff-reset:";
 const SEVEN_DAYS_AGO = sql`now() - interval '7 days'`;
+
+/** Spec 6.3: an expired request is deleted the next time a join or approval screen loads. */
+function deleteExpiredRequests(tx: Db = db) {
+  return tx.delete(users).where(and(eq(users.status, "pending"), lt(users.createdAt, SEVEN_DAYS_AGO)));
+}
 
 export const joinSchema = z.object({
   name: personNameSchema,
@@ -4512,7 +4554,9 @@ export async function requestToJoin(code: string, input: z.infer<typeof joinSche
   if (!branch) throw new ApiError(404, "qr_replaced", "This QR code no longer works. Ask the owner for the current one.");
   const passwordHash = await hashPassword(input.password);
   return db.transaction(async (tx) => {
-    await tx.delete(users).where(and(eq(users.status, "pending"), lt(users.createdAt, SEVEN_DAYS_AGO)));
+    // One join at a time, so two requests cannot both pass the per-connection and per-branch counts below. Joins are rare.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('dentasync.join'))`);
+    await deleteExpiredRequests(tx);
     const [fromIp] = await tx
       .select({ n: count() })
       .from(auditLog)
@@ -4562,6 +4606,7 @@ export type JoinRequestView = {
 
 export async function listJoinRequests(actor: Staff): Promise<JoinRequestView[]> {
   requireCan(actor, "staff.view");
+  await deleteExpiredRequests();
   const rows = await db
     .select({ id: users.id, name: users.name, username: users.username, role: users.role, branchId: branches.id, branchName: branches.name, createdAt: users.createdAt })
     .from(users)
@@ -4685,13 +4730,15 @@ export async function updateStaff(actor: Staff, userId: string, patch: z.infer<t
     const current = (await tx.select({ id: userBranches.branchId }).from(userBranches).where(eq(userBranches.userId, userId))).map((row) => row.id);
     const targetRole = target.role as Role;
     if (target.id === actor.id) {
-      // The owner may change their own title and whether they see patients, and nothing else about themselves.
-      if (actor.role !== "owner" || patch.role || patch.branchIds || patch.status) throw forbidden("Ask the owner to change your own access.");
+      // Only the owner (settings.edit) edits themselves: their title and whether they see patients, nothing else.
+      if (!can(actor, "settings.edit") || patch.role || patch.branchIds || patch.status) throw forbidden("Ask the owner to change your own access.");
     } else {
       requireCan(actor, "staff.manage", { userId, userRole: targetRole, branchIds: current });
     }
     if (patch.seesPatients !== undefined && targetRole !== "owner") {
-      throw new ApiError(400, "invalid", "Only the owner's own access to patients can be switched.");
+      throw new ApiError(400, "invalid", "Only the owner's own access to patients can be switched.", {
+        fields: { seesPatients: "Only the owner's own access to patients can be switched." },
+      });
     }
 
     const set: Partial<typeof users.$inferInsert> = { updatedAt: new Date() };
@@ -4705,6 +4752,9 @@ export async function updateStaff(actor: Staff, userId: string, patch: z.infer<t
     }
     if (patch.branchIds) {
       const wanted = [...new Set(patch.branchIds)];
+      if (actor.role !== "owner" && wanted.some((branchId) => !current.includes(branchId) && !covers(actor, branchId))) {
+        throw forbidden("You can only give branches you work at.");
+      }
       // A manager changes only the branches they cover; the person keeps their other branches.
       const next = [
         ...new Set(
@@ -4863,7 +4913,7 @@ export const POST = staffRoute<{ id: string }>(async (_req, staff, { id }) => js
 npx vitest run tests/db/staff.test.ts tests/api/auth.test.ts
 ```
 
-Expected: PASS, 17 and 10 tests.
+Expected: PASS, 19 and 10 tests.
 
 - [ ] **Step 9: Commit**
 
@@ -5077,13 +5127,13 @@ describe("weekly schedules", () => {
       { branchId: b.id, dayOfWeek: 2, startTime: "11:00", endTime: "14:00" },
     ]);
     expect(res.status).toBe(400);
-    expect((await res.json()).error.blocks).toEqual([
-      { index: 0, message: "The branch is open 09:00 to 18:00 on Monday." },
-      { index: 1, message: "The branch is open 12:00 to 20:00 on Monday." },
-      { index: 2, message: "The branch is closed on Sunday." },
-      { index: 3, message: "Overlaps another block on Tuesday." },
-      { index: 4, message: "Overlaps another block on Tuesday." },
-    ]);
+    expect((await res.json()).error.fields).toEqual({
+      "blocks.0": "The branch is open 09:00 to 18:00 on Monday.",
+      "blocks.1": "The branch is open 12:00 to 20:00 on Monday.",
+      "blocks.2": "The branch is closed on Sunday.",
+      "blocks.3": "Overlaps another block on Tuesday.",
+      "blocks.4": "Overlaps another block on Tuesday.",
+    });
   });
 
   it("refuses a branch the dentist does not work at", async () => {
@@ -5091,7 +5141,7 @@ describe("weekly schedules", () => {
     const other = await makeBranch();
     const { cookie } = await ownerCookie();
     const res = await put(cookie, dentist.id, [{ branchId: other.id, dayOfWeek: 1, startTime: "09:00", endTime: "12:00" }]);
-    expect((await res.json()).error.blocks).toEqual([{ index: 0, message: "This dentist does not work at that branch." }]);
+    expect((await res.json()).error.fields).toEqual({ "blocks.0": "This dentist does not work at that branch." });
   });
 
   it("lets a manager change only the blocks at their branches", async () => {
@@ -5305,7 +5355,12 @@ export async function replaceWeek(actor: Staff, dentistId: string, input: z.infe
     const problems = blockProblems([...submitted.map((s) => s.block), ...kept], { allowedBranchIds: allowed, hours })
       .filter((problem) => problem.index < submitted.length)
       .map((problem) => ({ index: submitted[problem.index].index, message: problem.message }));
-    if (problems.length > 0) throw new ApiError(400, "invalid", "Check the highlighted blocks.", { blocks: problems });
+    if (problems.length > 0) {
+      // Spec 12: each broken block is a field error keyed "blocks.<index sent>", like any array field.
+      throw new ApiError(400, "invalid", "Check the highlighted blocks.", {
+        fields: Object.fromEntries(problems.map((problem) => [`blocks.${problem.index}`, problem.message])),
+      });
+    }
 
     const replaced = current.filter(mine).map((row) => row.id);
     if (replaced.length > 0) await tx.delete(dentistSchedules).where(inArray(dentistSchedules.id, replaced));
@@ -7444,7 +7499,7 @@ import { FormAlert } from "@/components/form-alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
-import { api, errorMessage, RequestError } from "@/lib/fetcher";
+import { api, errorMessage, fieldErrors } from "@/lib/fetcher";
 import { WEEKDAYS } from "@/lib/hours";
 import { useBranches, useDentists, type Branch, type Dentist } from "@/lib/queries";
 import type { Block } from "@/lib/schedule";
@@ -7502,8 +7557,10 @@ function WeekEditor({ dentist, blocks, branches, editable }: { dentist: Dentist;
       await client.invalidateQueries({ queryKey: ["schedule", dentist.id] });
     },
     onError: (error) => {
-      if (error instanceof RequestError && error.body.blocks) {
-        setProblems(Object.fromEntries(error.body.blocks.map((p) => [p.index, p.message])));
+      // Each broken block comes back as a field error keyed "blocks.<row>".
+      const rows = Object.entries(fieldErrors(error)).filter(([key]) => key.startsWith("blocks."));
+      if (rows.length > 0) {
+        setProblems(Object.fromEntries(rows.map(([key, message]) => [Number(key.slice("blocks.".length)), message])));
         toast.error("Check the highlighted hours.");
       } else toast.error(errorMessage(error));
     },
