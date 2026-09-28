@@ -115,7 +115,10 @@ function BranchRow({ branch, clinicSmsName, named, first, last }: { branch: Bran
           >
             {branch.active ? "Deactivate" : "Reactivate"}
           </button>
-          <p className="f-hint">Inactive branches leave the booking page. Their visits stay on the schedule.</p>
+          <p className="f-hint">
+            Inactive branches leave the booking page. Their visits stay on the schedule, but each dentist&apos;s working hours here are removed the next
+            time that dentist is saved.
+          </p>
         </>
       )}
     </div>

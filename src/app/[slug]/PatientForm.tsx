@@ -299,7 +299,7 @@ export default function PatientForm({ clinicName, mobile, today, initial, onDone
         <Field label="Name" error={errors.emergencyName}>
           <input className="f-input" maxLength={INTAKE_LIMITS.emergencyName} value={draft.emergencyName} onChange={text("emergencyName")} />
         </Field>
-        <Field label="Mobile number" error={errors.emergencyMobile}>
+        <Field label="Emergency contact's mobile number" error={errors.emergencyMobile}>
           <input className="f-input" type="tel" inputMode="tel" placeholder="0917 123 4567" value={draft.emergencyMobile} onChange={text("emergencyMobile")} />
         </Field>
       </Section>

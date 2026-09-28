@@ -44,7 +44,10 @@ export default function TimeStep({ slug, selection, dentist, duration, rules, no
     startTransition(async () => {
       try {
         const open = await getOpenDates(slug, selection, month);
-        if (live) setMonthOpen(open);
+        if (live) {
+          setMonthOpen(open);
+          setFailed(false);
+        }
       } catch {
         if (live) {
           setMonthOpen([]);
@@ -63,7 +66,10 @@ export default function TimeStep({ slug, selection, dentist, duration, rules, no
     startTransition(async () => {
       try {
         const list = await getOpenStarts(slug, selection, date);
-        if (live) setStarts(list);
+        if (live) {
+          setStarts(list);
+          setFailed(false);
+        }
       } catch {
         if (live) {
           setStarts([]);

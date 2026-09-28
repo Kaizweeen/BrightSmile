@@ -34,6 +34,12 @@ describe("the new patient form", () => {
     }
   });
 
+  it("never labels two fields Mobile number, so a screen reader tells the patient's own number from the emergency contact's", () => {
+    const html = render(null);
+    expect(html.match(/>Mobile number</g)).toHaveLength(1);
+    expect(html).toContain(">Emergency contact&#x27;s mobile number<");
+  });
+
   it("asks the women's questions only when the patient is female", () => {
     expect(render(filled({}))).toContain("Are you pregnant?");
     expect(render(filled({ sex: "male" }))).not.toContain("Are you pregnant?");

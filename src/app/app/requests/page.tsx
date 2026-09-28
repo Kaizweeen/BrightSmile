@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import AppointmentActions from "../AppointmentActions";
-import { loadBranches, loadRequests } from "@/lib/dashboard";
+import { activeBranchFilter, loadBranches, loadRequests } from "@/lib/dashboard";
 import { localMobile } from "@/lib/phone";
 import { requireStaff } from "@/lib/supabase/server";
 import { formatDate, formatTime } from "@/lib/time";
@@ -18,8 +18,12 @@ type Props = { searchParams: Promise<{ branch?: string | string[] }> };
 export default async function RequestsPage({ searchParams }: Props) {
   const staff = await requireStaff();
   const { branch } = await searchParams;
-  const branchId = isUuid(branch) ? branch : null;
-  const [requests, branches] = await Promise.all([loadRequests(staff, new Date(), branchId), loadBranches(staff)]);
+  // The branch filter only makes sense, and only applies, once the clinic has 2 or more active branches and the
+  // requested id names one of them (booking flow spec 4): branches loads first so that gate can run before requests
+  // does, rather than trusting an unchecked id from the query string.
+  const branches = await loadBranches(staff);
+  const branchId = activeBranchFilter(branches, isUuid(branch) ? branch : null);
+  const requests = await loadRequests(staff, new Date(), branchId);
   const open = branches.filter((b) => b.active);
   const branchOf = new Map(branches.map((b) => [b.id, b.name]));
 

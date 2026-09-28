@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Form from "next/form";
 import Link from "next/link";
 import AppointmentActions from "../AppointmentActions";
-import { loadBranches, loadDay } from "@/lib/dashboard";
+import { activeBranchFilter, loadBranches, loadDay } from "@/lib/dashboard";
 import { localMobile } from "@/lib/phone";
 import { parseDay, STATUS_LABEL } from "@/lib/schedule";
 import { requireStaff } from "@/lib/supabase/server";
@@ -24,8 +24,12 @@ export default async function SchedulePage({ searchParams }: Props) {
   const today = manilaDate(now);
   const date = parseDay(query.date, today);
   const dentistId = isUuid(query.dentist) ? query.dentist : null;
-  const branchId = isUuid(query.branch) ? query.branch : null;
-  const [{ dentists, items }, branches] = await Promise.all([loadDay(staff, date, dentistId, now, branchId), loadBranches(staff)]);
+  // The branch filter only makes sense, and only applies, once the clinic has 2 or more active branches and the
+  // requested id names one of them (booking flow spec 4): branches loads first so that gate can run before the day
+  // does, rather than trusting an unchecked id from the query string.
+  const branches = await loadBranches(staff);
+  const branchId = activeBranchFilter(branches, isUuid(query.branch) ? query.branch : null);
+  const { dentists, items } = await loadDay(staff, date, dentistId, now, branchId);
   const active = dentists.filter((d) => d.active);
   const nameOf = new Map(dentists.map((d) => [d.id, d.name]));
   const open = branches.filter((b) => b.active);

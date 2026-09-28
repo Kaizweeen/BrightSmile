@@ -33,6 +33,11 @@ describe("branchSmsNameProblem", () => {
     expect(branchSmsNameProblem("Bright Smile Dental", "M")).toBe("Shorten the clinic's name for texts first, so a branch name fits beside it.");
   });
 
+  it("says 1 character, not 1 characters, when only one is left to offer", () => {
+    // "C" x 18 leaves room for exactly 1 character beside it.
+    expect(branchSmsNameProblem("C".repeat(18), "XY")).toBe("Use 1 character, so the clinic and branch names fit in a text together.");
+  });
+
   it("keeps the confirmation text whole with the longest pair it allows", () => {
     const clinic = smsClinicName("C".repeat(13), "B".repeat(6), 2);
     expect(branchSmsNameProblem("C".repeat(13), "B".repeat(6))).toBeNull();
@@ -64,6 +69,13 @@ describe("clinicSmsNameProblem", () => {
     expect(clinicSmsNameProblem("Bright Dental", ["Makati", "Pasig"])).toBeNull();
     expect(clinicSmsNameProblem("Bright Smile Dental", ["Makati", "Pasig"])).toBe(
       "Texts add the branch's short name after this. Use up to 13 characters, or shorten your branches' short names first.",
+    );
+  });
+
+  it("says 1 character, not 1 characters, when only one is left to offer", () => {
+    // "C" x 18 is the longest active branch short name, leaving room for exactly 1 character.
+    expect(clinicSmsNameProblem("AB", ["C".repeat(18), "x"])).toBe(
+      "Texts add the branch's short name after this. Use up to 1 character, or shorten your branches' short names first.",
     );
   });
 });

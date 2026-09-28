@@ -286,6 +286,16 @@ export async function loadMoveTarget(staff: Staff, id: string): Promise<MoveTarg
 
 export type BranchOption = { id: string; name: string; active: boolean };
 
+/**
+ * The ?branch= filter Schedule and Requests apply (booking flow spec 4): only once the clinic has 2 or more active
+ * branches, and only when the requested id names one of them. A query string is untrusted input, so a stale or
+ * foreign id must fall back to showing every branch rather than narrowing the list to nothing.
+ */
+export function activeBranchFilter(branches: BranchOption[], requested: string | null): string | null {
+  const open = branches.filter((b) => b.active);
+  return requested !== null && open.length > 1 && open.some((b) => b.id === requested) ? requested : null;
+}
+
 /** Every branch of the clinic in its order (booking flow spec 4): names for the cards, active ones for the filters. */
 export async function loadBranches(staff: Staff): Promise<BranchOption[]> {
   const { data } = await staff.db

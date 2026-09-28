@@ -459,17 +459,36 @@ export default function BookingFlow({ clinic, nowIso, paused }: Props) {
     setNotice(message);
   }
 
-  /** A send the server refused on its own checks: back to the part that needs a new choice. */
-  function refusedParts(errors: Record<string, string>) {
-    if (errors.slot) return timeTaken(errors.slot);
+  /**
+   * A send the server refused on its own checks: back to the part that needs a new choice. errors.slot means the
+   * dentist or procedures no longer resolve at this branch (not merely that the time was taken), so the branch loads
+   * again and services are chosen again, not just the time. errors.patient means the chosen patient is gone, so the
+   * list loads again before "Who" shows it.
+   */
+  async function refusedParts(errors: Record<string, string>) {
+    if (errors.slot) {
+      const id = state.branchId ?? clinic.branch.id;
+      const data = id === clinic.branch.id ? clinic : await getBranch(clinic.slug, id);
+      if (data) setBranch(data);
+      dispatch({ type: "change", part: "services" });
+      setNotice(errors.slot);
+      return;
+    }
     if (errors.branch) {
       home();
       setNotice(errors.branch);
       return;
     }
-    // The patient chosen is gone, or the new patient's form has a problem.
+    if (errors.patient) {
+      const found = await numberPatients(clinic.slug, state.mobile ?? "");
+      if (found.status === "ok") setPatients(found.patients);
+      dispatch({ type: "change", part: "patient" });
+      setNotice(errors.patient);
+      return;
+    }
+    // The new patient's form has a problem.
     dispatch({ type: "change", part: "patient" });
-    setNotice(errors.patient ?? "Please check the patient form again.");
+    setNotice("Please check the patient form again.");
   }
 
   const who = () => (state.form ? { form: intakeInput(state.form) } : { patientId: state.patientId });
@@ -836,6 +855,7 @@ export default function BookingFlow({ clinic, nowIso, paused }: Props) {
             {duration} minutes with {dentist.name} at {branch.branch.name}.
           </p>
           <TimeStep
+            key={state.history.length}
             slug={clinic.slug}
             selection={selection}
             dentist={dentist}
@@ -988,7 +1008,7 @@ export default function BookingFlow({ clinic, nowIso, paused }: Props) {
         screen = (
           <section>
             {heading("Changes sent")}
-            <p className="sub">Changes sent. The clinic will confirm by text.</p>
+            <p className="sub">The clinic will confirm by text.</p>
             <p>
               <span className="chip chip-amber">Waiting for the clinic</span>
             </p>

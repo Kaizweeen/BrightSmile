@@ -18,7 +18,10 @@ export function branchSmsNameProblem(clinicSmsName: string, branchSmsName: strin
   const room = LIMITS.clinicSmsName - clinicSmsName.trim().length - 1;
   const length = branchSmsName.trim().length;
   if (room < 1) return "Shorten the clinic's name for texts first, so a branch name fits beside it.";
-  if (length === 0 || length > room) return `Use 1 to ${room} characters, so the clinic and branch names fit in a text together.`;
+  if (length === 0 || length > room) {
+    const range = room === 1 ? "1 character" : `1 to ${room} characters`;
+    return `Use ${range}, so the clinic and branch names fit in a text together.`;
+  }
   return null;
 }
 
@@ -40,5 +43,6 @@ export function clinicSmsNameProblem(clinicSmsName: string, activeBranchSmsNames
   if (activeBranchSmsNames.length < 2) return null;
   const room = LIMITS.clinicSmsName - 1 - Math.max(...activeBranchSmsNames.map((n) => n.trim().length));
   if (clinicSmsName.trim().length <= room) return null;
-  return `Texts add the branch's short name after this. Use up to ${room} characters, or shorten your branches' short names first.`;
+  const upTo = room === 1 ? "1 character" : `${room} characters`;
+  return `Texts add the branch's short name after this. Use up to ${upTo}, or shorten your branches' short names first.`;
 }

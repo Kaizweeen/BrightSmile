@@ -27,7 +27,9 @@ export default function NewAppointment({ dentists, procedures, branches, today, 
   const [procedureIds, setProcedureIds] = useState<string[]>([]);
   const [slot, setSlot] = useState<Slot | null>(null);
   const [sendText, setSendText] = useState(true);
-  const [branchId, setBranchId] = useState(branches[0]?.id ?? "");
+  // With one branch, book there without asking (today's behavior); with 2 or more, no branch is chosen yet, so When
+  // stays closed until staff picks one (booking flow spec 4).
+  const [branchId, setBranchId] = useState(branches.length === 1 ? (branches[0]?.id ?? "") : "");
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
   const searches = useRef(0);
@@ -199,6 +201,8 @@ export default function NewAppointment({ dentists, procedures, branches, today, 
         </h2>
         {duration === 0 ? (
           <p className="f-hint">Choose procedures first.</p>
+        ) : branches.length > 1 && !branchId ? (
+          <p className="f-hint">Choose a branch first.</p>
         ) : (
           <SlotPicker
             key={`${branchId} ${procedureIds.join(",")}`}
