@@ -23,6 +23,7 @@ export type RequestItem = {
   requestedAt: string;
   procedures: string[];
   dentistName: string;
+  branchId: string;
   patientId: string;
   first: string;
   last: string;
@@ -37,23 +38,26 @@ type RequestRow = {
   created_at: string;
   procedure_names: string[];
   patient_id: string;
+  branch_id: string;
   dentist: { name: string };
   patient: { first_name: string; last_name: string; mobile: string | null };
 };
 
-/** Spec 5.3 Requests: pending requests still ahead, soonest first. Returning means a completed visit here before. */
-export async function loadRequests(staff: Staff, now: Date): Promise<RequestItem[]> {
-  const { data } = await staff.db
+/**
+ * Spec 5.3 Requests: pending requests still ahead, soonest first, at one branch when branchId names it (booking flow
+ * spec 4). Returning means a completed visit here before.
+ */
+export async function loadRequests(staff: Staff, now: Date, branchId: string | null = null): Promise<RequestItem[]> {
+  let query = staff.db
     .from("appointments")
     .select(
-      "id, starts_at, created_at, procedure_names, patient_id, dentist:dentists(name), patient:patients(first_name, last_name, mobile)",
+      "id, starts_at, created_at, procedure_names, patient_id, branch_id, dentist:dentists(name), patient:patients(first_name, last_name, mobile)",
     )
     .eq("clinic_id", staff.clinicId)
     .eq("status", "pending")
-    .gt("starts_at", now.toISOString())
-    .order("starts_at")
-    .limit(100)
-    .throwOnError();
+    .gt("starts_at", now.toISOString());
+  if (branchId) query = query.eq("branch_id", branchId);
+  const { data } = await query.order("starts_at").limit(100).throwOnError();
   const rows = data as unknown as RequestRow[];
 
   const visited = new Set<string>();
@@ -75,6 +79,7 @@ export async function loadRequests(staff: Staff, now: Date): Promise<RequestItem
     requestedAt: r.created_at,
     procedures: r.procedure_names,
     dentistName: r.dentist.name,
+    branchId: r.branch_id,
     patientId: r.patient_id,
     first: r.patient.first_name,
     last: r.patient.last_name,
@@ -86,22 +91,26 @@ export async function loadRequests(staff: Staff, now: Date): Promise<RequestItem
 
 export type DayView = { dentists: { id: string; name: string; active: boolean }[]; items: ScheduleItem[] };
 
-/** Spec 5.3 Schedule: one Manila day, every status except expired, with "outside hours" and "text not delivered". */
-export async function loadDay(staff: Staff, date: string, dentistId: string | null, now: Date): Promise<DayView> {
+/**
+ * Spec 5.3 Schedule: one Manila day, every status except expired, with "outside hours" (at the visit's own branch) and
+ * "text not delivered", for one dentist and one branch when they are named (booking flow spec 4).
+ */
+export async function loadDay(staff: Staff, date: string, dentistId: string | null, now: Date, branchId: string | null = null): Promise<DayView> {
   const from = manilaInstant(date, 0).toISOString();
   const to = manilaInstant(addDays(date, 1), 0).toISOString();
   let appointments = staff.db
     .from("appointments")
-    .select("id, status, starts_at, ends_at, procedure_names, dentist_id, patient_id, patient:patients(first_name, last_name, mobile)")
+    .select("id, status, starts_at, ends_at, procedure_names, dentist_id, branch_id, patient_id, patient:patients(first_name, last_name, mobile)")
     .eq("clinic_id", staff.clinicId)
     .neq("status", "expired")
     .gte("starts_at", from)
     .lt("starts_at", to);
   if (dentistId) appointments = appointments.eq("dentist_id", dentistId);
+  if (branchId) appointments = appointments.eq("branch_id", branchId);
 
   const [dentists, hours, timeOff, list] = await Promise.all([
     staff.db.from("dentists").select("id, name, active").eq("clinic_id", staff.clinicId).order("created_at").order("name").throwOnError(),
-    staff.db.from("working_hours").select("dentist_id, weekday, start_time, end_time").eq("clinic_id", staff.clinicId).throwOnError(),
+    staff.db.from("working_hours").select("dentist_id, branch_id, weekday, start_time, end_time").eq("clinic_id", staff.clinicId).throwOnError(),
     staff.db
       .from("time_off")
       .select("dentist_id, starts_at, ends_at")
@@ -137,7 +146,7 @@ export async function loadDay(staff: Staff, date: string, dentistId: string | nu
 
 /**
  * The branch staff times are for (booking flow spec 4): a moved visit's own branch, otherwise the clinic's first
- * active branch, where create_booking puts a New appointment that names none (until plan 8 asks for one).
+ * active branch, where create_booking puts a New appointment that names none.
  */
 async function staffBranch(staff: Staff, appointmentId?: string): Promise<string | null> {
   if (appointmentId) {
@@ -212,15 +221,19 @@ export async function staffOpenStarts(
 export type BookingOptions = {
   dentists: { id: string; name: string }[];
   procedures: { id: string; name: string; minutes: number }[];
+  /** Active branches in the clinic's order: New appointment asks for one when there are 2 or more (spec 4). */
+  branches: { id: string; name: string }[];
 };
 
-/** What New appointment offers: active dentists and active procedures. */
+/** What New appointment offers: active dentists, active procedures, and active branches. */
 export async function loadBookingOptions(staff: Staff): Promise<BookingOptions> {
-  const [dentists, procedures] = await Promise.all([
+  const [dentists, procedures, branches] = await Promise.all([
     staff.db.from("dentists").select("id, name").eq("clinic_id", staff.clinicId).eq("active", true).order("created_at").order("name").throwOnError(),
     staff.db.from("procedures").select("id, name, duration_minutes").eq("clinic_id", staff.clinicId).eq("active", true).order("name").throwOnError(),
+    loadBranches(staff),
   ]);
   return {
+    branches: branches.filter((b) => b.active).map((b) => ({ id: b.id, name: b.name })),
     dentists: dentists.data as BookingOptions["dentists"],
     procedures: (procedures.data as { id: string; name: string; duration_minutes: number }[]).map((p) => ({
       id: p.id,
@@ -269,4 +282,19 @@ export async function loadMoveTarget(staff: Staff, id: string): Promise<MoveTarg
     patientName: `${row.patient.first_name} ${row.patient.last_name}`,
     procedures: row.procedure_names,
   };
+}
+
+export type BranchOption = { id: string; name: string; active: boolean };
+
+/** Every branch of the clinic in its order (booking flow spec 4): names for the cards, active ones for the filters. */
+export async function loadBranches(staff: Staff): Promise<BranchOption[]> {
+  const { data } = await staff.db
+    .from("branches")
+    .select("id, name, active")
+    .eq("clinic_id", staff.clinicId)
+    .order("sort")
+    .order("created_at")
+    .order("id")
+    .throwOnError();
+  return data as BranchOption[];
 }

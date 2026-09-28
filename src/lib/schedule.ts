@@ -60,17 +60,22 @@ export function parseDay(value: unknown, today: string): string {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : today;
 }
 
-export type HoursRow = { dentist_id: string; weekday: number; start_time: string; end_time: string };
+export type HoursRow = { dentist_id: string; branch_id: string; weekday: number; start_time: string; end_time: string };
 
-/** working_hours rows as each dentist's week: index 0 is Sunday, blocks in minutes, sorted. */
-export function hoursByDentist(rows: HoursRow[]): Map<string, Block[][]> {
-  const weeks = new Map<string, Block[][]>();
+/**
+ * working_hours rows as each dentist's week at each branch (booking flow spec 4): dentist, then branch, then the week
+ * (index 0 is Sunday), blocks in minutes, sorted.
+ */
+export function hoursByDentist(rows: HoursRow[]): Map<string, Map<string, Block[][]>> {
+  const weeks = new Map<string, Map<string, Block[][]>>();
   for (const h of rows) {
-    const week = weeks.get(h.dentist_id) ?? Array.from({ length: 7 }, (): Block[] => []);
+    const byBranch = weeks.get(h.dentist_id) ?? new Map<string, Block[][]>();
+    const week = byBranch.get(h.branch_id) ?? Array.from({ length: 7 }, (): Block[] => []);
     week[h.weekday].push({ start: parseClock(h.start_time), end: parseClock(h.end_time) });
-    weeks.set(h.dentist_id, week);
+    byBranch.set(h.branch_id, week);
+    weeks.set(h.dentist_id, byBranch);
   }
-  for (const week of weeks.values()) for (const blocks of week) blocks.sort((x, y) => x.start - y.start);
+  for (const byBranch of weeks.values()) for (const week of byBranch.values()) for (const blocks of week) blocks.sort((x, y) => x.start - y.start);
   return weeks;
 }
 
@@ -81,6 +86,7 @@ export type DayRow = {
   ends_at: string;
   procedure_names: string[];
   dentist_id: string;
+  branch_id: string;
   patient_id: string;
   patient: { first_name: string; last_name: string; mobile: string | null };
 };
@@ -92,6 +98,7 @@ export type ScheduleItem = {
   endsAt: string;
   procedures: string[];
   dentistId: string;
+  branchId: string;
   patientId: string;
   patientName: string;
   mobile: string | null;
@@ -104,11 +111,12 @@ const NO_HOURS: Block[][] = Array.from({ length: 7 }, () => []);
 
 /**
  * One day's appointments in time order with their flags (spec 5.3 and 13). "Outside hours" applies to
- * pending and confirmed visits that are not inside one working block, or that overlap time off.
+ * pending and confirmed visits that are not inside one of their dentist's working blocks at the visit's own branch
+ * (booking flow spec 4), or that overlap time off.
  */
 export function assembleDay(
   rows: DayRow[],
-  ctx: { hours: Map<string, Block[][]>; timeOff: Map<string, Busy[]>; failed: Set<string>; now: Date },
+  ctx: { hours: Map<string, Map<string, Block[][]>>; timeOff: Map<string, Busy[]>; failed: Set<string>; now: Date },
 ): ScheduleItem[] {
   return rows
     .map((r) => ({ r, start: new Date(r.starts_at), end: new Date(r.ends_at) }))
@@ -116,7 +124,7 @@ export function assembleDay(
     .map(({ r, start, end }) => {
       const active = r.status === "pending" || r.status === "confirmed";
       const inTimeOff = (ctx.timeOff.get(r.dentist_id) ?? []).some((t) => t.start < end && start < t.end);
-      const outside = !withinHours(start, end, ctx.hours.get(r.dentist_id) ?? NO_HOURS) || inTimeOff;
+      const outside = !withinHours(start, end, ctx.hours.get(r.dentist_id)?.get(r.branch_id) ?? NO_HOURS) || inTimeOff;
       return {
         id: r.id,
         status: r.status,
@@ -124,6 +132,7 @@ export function assembleDay(
         endsAt: r.ends_at,
         procedures: r.procedure_names,
         dentistId: r.dentist_id,
+        branchId: r.branch_id,
         patientId: r.patient_id,
         patientName: `${r.patient.first_name} ${r.patient.last_name}`,
         mobile: r.patient.mobile,

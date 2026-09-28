@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { changeStatus, rowText, type Row } from "@/lib/appointment-actions";
+import { changeStatus, createAppointment, rowText, type Row } from "@/lib/appointment-actions";
+import { staffOpenStarts } from "@/lib/dashboard";
 import { sendSms } from "@/lib/sms/send";
 import type { Staff } from "@/lib/supabase/server";
 import { formatDate, formatTime } from "@/lib/time";
 
 vi.mock("@/lib/sms/send", () => ({ sendSms: vi.fn(async () => "logged") }));
+vi.mock("@/lib/dashboard", () => ({ staffOpenStarts: vi.fn() }));
 
 const row: Row = {
   id: "a1",
@@ -33,7 +35,7 @@ describe("rowText", () => {
 });
 
 // A chainable Postgrest-like fake: every method returns the same object, which is itself awaitable (some callers,
-// like showsDentist and activeBranchNames, await the builder directly instead of calling a terminal method).
+// like showsDentist and activeBranches, await the builder directly instead of calling a terminal method).
 function chain(result: unknown) {
   const c: Record<string, unknown> = {
     select: () => c,
@@ -101,5 +103,76 @@ describe("changeStatus and the approval race", () => {
     const sent = vi.mocked(sendSms).mock.calls[0][0];
     expect(sent.vars?.date).toBe(formatDate(new Date(fresh.starts_at)));
     expect(sent.vars?.time).toBe(formatTime(new Date(fresh.starts_at)));
+  });
+});
+
+describe("createAppointment at a branch", () => {
+  const MAKATI = "7d2e9f10-3b5c-4e8a-b1d4-2c6f8a0e5b92";
+  const PASIG = "8e3f0a21-4c6d-4f9b-a2e5-3d7a9b1f6c03";
+  const DENTIST = "0b6a3c52-8a47-4a55-9a77-6f2b0e1d9c01";
+  const PROCEDURE = "9e8d7c6b-5a49-4382-a716-151413121110";
+  const now = new Date("2026-10-01T00:00:00.000Z");
+  const startsAt = "2026-10-05T02:00:00.000Z";
+  const input = (branchId?: string) => ({
+    patient: { first: "Lolo", last: "Santos", mobile: "0917 111 2222" },
+    procedureIds: [PROCEDURE],
+    slot: { dentistId: DENTIST, startsAt, custom: false },
+    sendText: true,
+    branchId,
+  });
+
+  /** Every query answers its table's rows; the dentists count is 2, so texts name the dentist. */
+  function staffWith(rpcs: Record<string, unknown>[]): Staff {
+    const tables: Record<string, unknown> = {
+      dentists: { id: DENTIST, sms_name: "Dr. Reyes" },
+      procedures: [{ id: PROCEDURE, name: "Consultation", duration_minutes: 30 }],
+      clinics: { sms_name: "Bright Dental", slug: "bright-dental" },
+      branches: [
+        { id: MAKATI, sms_name: "Makati" },
+        { id: PASIG, sms_name: "Pasig" },
+      ],
+    };
+    const db = {
+      from: (table: string) => {
+        const result = { data: tables[table], error: null, count: 2 };
+        const c: Record<string, unknown> = {};
+        for (const method of ["select", "eq", "order", "in", "is", "single"]) c[method] = () => c;
+        c.maybeSingle = async () => result;
+        c.throwOnError = async () => result;
+        c.then = (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) => Promise.resolve(result).then(resolve, reject);
+        return c;
+      },
+      rpc: async (name: string, args: Record<string, unknown>) => {
+        rpcs.push({ name, ...args });
+        return { data: "new-appointment", error: null };
+      },
+    };
+    return { db, userId: "u1", clinicId: "c1" } as unknown as Staff;
+  }
+
+  beforeEach(() => {
+    vi.mocked(sendSms).mockClear();
+    vi.mocked(staffOpenStarts).mockReset().mockResolvedValue([new Date(startsAt)]);
+  });
+
+  it("checks the time at the branch staff chose, books there, and texts that branch's name", async () => {
+    const rpcs: Record<string, unknown>[] = [];
+    const staff = staffWith(rpcs);
+    expect(await createAppointment(staff, input(PASIG), now)).toEqual({ ok: true, text: "logged" });
+    expect(staffOpenStarts).toHaveBeenCalledWith(staff, expect.objectContaining({ branchId: PASIG, dentistId: DENTIST, duration: 30 }), now);
+    expect(rpcs).toEqual([expect.objectContaining({ name: "create_booking", p_branch_id: PASIG, p_status: "confirmed" })]);
+    expect(vi.mocked(sendSms).mock.calls[0][0].vars?.clinic).toBe("Bright Dental Pasig");
+  });
+
+  it("books at the first active branch when staff name none", async () => {
+    const rpcs: Record<string, unknown>[] = [];
+    expect(await createAppointment(staffWith(rpcs), input(), now)).toEqual({ ok: true, text: "logged" });
+    expect(rpcs).toEqual([expect.objectContaining({ p_branch_id: MAKATI })]);
+  });
+
+  it("refuses a branch that is not one of the clinic's active branches", async () => {
+    const rpcs: Record<string, unknown>[] = [];
+    expect(await createAppointment(staffWith(rpcs), input("9f4a1b32-5d7e-4a0c-b3f6-4e8b0c2a7d14"), now)).toEqual({ ok: false, error: "Choose an open branch." });
+    expect(rpcs).toEqual([]);
   });
 });

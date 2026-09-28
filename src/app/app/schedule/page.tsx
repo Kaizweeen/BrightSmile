@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Form from "next/form";
 import Link from "next/link";
 import AppointmentActions from "../AppointmentActions";
-import { loadDay } from "@/lib/dashboard";
+import { loadBranches, loadDay } from "@/lib/dashboard";
 import { localMobile } from "@/lib/phone";
 import { parseDay, STATUS_LABEL } from "@/lib/schedule";
 import { requireStaff } from "@/lib/supabase/server";
@@ -11,9 +11,12 @@ import { isUuid } from "@/lib/validate";
 
 export const metadata: Metadata = { title: "Schedule" };
 
-type Props = { searchParams: Promise<{ date?: string | string[]; dentist?: string | string[] }> };
+type Props = { searchParams: Promise<{ date?: string | string[]; dentist?: string | string[]; branch?: string | string[] }> };
 
-/** Spec 5.3: day view with a dentist filter (2 or more active dentists), previous and next day, and a date jump. */
+/**
+ * Spec 5.3: day view with a dentist filter (2 or more active dentists), previous and next day, and a date jump. With 2
+ * or more active branches, each visit names its branch and a branch filter joins the dentist one (booking flow spec 4).
+ */
 export default async function SchedulePage({ searchParams }: Props) {
   const staff = await requireStaff();
   const now = new Date();
@@ -21,11 +24,14 @@ export default async function SchedulePage({ searchParams }: Props) {
   const today = manilaDate(now);
   const date = parseDay(query.date, today);
   const dentistId = isUuid(query.dentist) ? query.dentist : null;
-  const { dentists, items } = await loadDay(staff, date, dentistId, now);
+  const branchId = isUuid(query.branch) ? query.branch : null;
+  const [{ dentists, items }, branches] = await Promise.all([loadDay(staff, date, dentistId, now, branchId), loadBranches(staff)]);
   const active = dentists.filter((d) => d.active);
   const nameOf = new Map(dentists.map((d) => [d.id, d.name]));
-  const href = (day: string, dentist: string | null = dentistId) =>
-    `/app/schedule?date=${day}${dentist ? `&dentist=${dentist}` : ""}`;
+  const open = branches.filter((b) => b.active);
+  const branchOf = new Map(branches.map((b) => [b.id, b.name]));
+  const href = (day: string, dentist: string | null = dentistId, branch: string | null = branchId) =>
+    `/app/schedule?date=${day}${dentist ? `&dentist=${dentist}` : ""}${branch ? `&branch=${branch}` : ""}`;
 
   return (
     <>
@@ -52,6 +58,7 @@ export default async function SchedulePage({ searchParams }: Props) {
         <Form action="/app/schedule" className="mt-3 flex gap-2">
           <input key={date} type="date" name="date" defaultValue={date} className="f-input" aria-label="Jump to a date" />
           {dentistId && <input type="hidden" name="dentist" value={dentistId} />}
+          {branchId && <input type="hidden" name="branch" value={branchId} />}
           <button type="submit" className="btn btn-soft">
             Go
           </button>
@@ -69,6 +76,23 @@ export default async function SchedulePage({ searchParams }: Props) {
                 aria-current={dentistId === d.id ? "true" : undefined}
               >
                 {d.name}
+              </Link>
+            ))}
+          </div>
+        )}
+        {open.length > 1 && (
+          <div className="chip-row mt-3" role="group" aria-label="Branch">
+            <Link href={href(date, dentistId, null)} className={`btn ${branchId ? "btn-ghost" : "btn-primary"}`} aria-current={branchId ? undefined : "true"}>
+              All branches
+            </Link>
+            {open.map((b) => (
+              <Link
+                key={b.id}
+                href={href(date, dentistId, b.id)}
+                className={`btn ${branchId === b.id ? "btn-primary" : "btn-ghost"}`}
+                aria-current={branchId === b.id ? "true" : undefined}
+              >
+                {b.name}
               </Link>
             ))}
           </div>
@@ -92,6 +116,7 @@ export default async function SchedulePage({ searchParams }: Props) {
             <p className="what">
               {item.procedures.join(", ")}
               {active.length > 1 && ` with ${nameOf.get(item.dentistId) ?? "a former dentist"}`}
+              {open.length > 1 && ` at ${branchOf.get(item.branchId) ?? "a former branch"}`}
             </p>
             <div className="chip-row">
               <span className={`chip ${label.chip}`}>{label.word}</span>

@@ -13,6 +13,8 @@ type Props = {
   today: string;
   initialDentistId?: string;
   ignoreId?: string;
+  /** The branch New appointment chose (booking flow spec 4); Move leaves it out and gets the visit's own. */
+  branchId?: string;
   onChange: (slot: Slot | null) => void;
 };
 
@@ -22,7 +24,7 @@ const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
  * Dentist, date, then an open time or a custom time (spec 5.3). The parent remounts it (key) when the
  * duration changes, so nothing here reacts to props in an effect.
  */
-export default function SlotPicker({ dentists, duration, today, initialDentistId, ignoreId, onChange }: Props) {
+export default function SlotPicker({ dentists, duration, today, initialDentistId, ignoreId, branchId, onChange }: Props) {
   const [dentistId, setDentistId] = useState(initialDentistId ?? dentists[0]?.id ?? "");
   const [date, setDate] = useState("");
   const [starts, setStarts] = useState<string[] | null>(null);
@@ -43,7 +45,7 @@ export default function SlotPicker({ dentists, duration, today, initialDentistId
     choose(null);
     if (!nextDentist || !nextDate) return;
     try {
-      const list = await openTimes({ dentistId: nextDentist, date: nextDate, duration, ignoreId });
+      const list = await openTimes({ dentistId: nextDentist, date: nextDate, duration, ignoreId, branchId });
       if (n === loads.current) setStarts(list);
     } catch {
       if (n === loads.current) setStarts([]);

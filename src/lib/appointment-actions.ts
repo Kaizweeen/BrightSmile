@@ -67,18 +67,18 @@ export async function showsDentist(staff: Staff): Promise<boolean> {
   return (count ?? 0) > 1;
 }
 
-/** The short names for texts of the clinic's active branches, first branch first (booking flow spec 4). */
-export async function activeBranchNames(staff: Staff): Promise<string[]> {
+/** The clinic's active branches with their short names for texts, first branch first (booking flow spec 4). */
+export async function activeBranches(staff: Staff): Promise<{ id: string; smsName: string }[]> {
   const { data, error } = await staff.db
     .from("branches")
-    .select("sms_name")
+    .select("id, sms_name")
     .eq("clinic_id", staff.clinicId)
     .eq("active", true)
     .order("sort")
     .order("created_at")
     .order("id");
   if (error) throw error;
-  return (data as { sms_name: string }[]).map((b) => b.sms_name);
+  return (data as { id: string; sms_name: string }[]).map((b) => ({ id: b.id, smsName: b.sms_name }));
 }
 
 export type PatientText = {
@@ -159,7 +159,7 @@ export async function changeStatus(staff: Staff, id: string, to: StaffTarget, re
   const reason = cleanText(reasonInput, LIMITS.reason, true);
   if (reason === null) return { ok: false, error: `Keep the reason to ${LIMITS.reason} characters or fewer.` };
   try {
-    const [row, dentistShown, branches] = await Promise.all([loadRow(staff, id), showsDentist(staff), activeBranchNames(staff)]);
+    const [row, dentistShown, branches] = await Promise.all([loadRow(staff, id), showsDentist(staff), activeBranches(staff)]);
     if (!row) return { ok: false, error: MESSAGES.gone };
     const startsAt = new Date(row.starts_at);
     if (row.status === to || !canTransition(row.status, to, "staff")) return { ok: false, error: MESSAGES.notNow };
@@ -220,22 +220,26 @@ async function activeDentist(staff: Staff, id: string): Promise<{ id: string; sm
  * only needs to be today or later, because the database refuses any overlap (spec 5.3). Moving to a
  * custom time additionally requires it to still be ahead of now: manual New appointment keeps allowing
  * an earlier time today (e.g. logging a walk-in), but moving a visit to a time that already passed
- * would silently no-show it.
+ * would silently no-show it. An open time is checked at the branch it is for (booking flow spec 4): a moved visit's
+ * own, or the branch a New appointment names.
  */
 async function timeProblem(
   staff: Staff,
   slot: SlotChoice,
   duration: number,
   now: Date,
-  ignoreId?: string,
-  requireFuture = false,
+  opts: { ignoreId?: string; requireFuture?: boolean; branchId?: string } = {},
 ): Promise<string | null> {
   if (manilaDate(slot.startsAt) < manilaDate(now)) return "Pick today or a later date.";
   if (slot.custom) {
-    if (requireFuture && slot.startsAt <= now) return "This time has already passed. Pick a later time.";
+    if (opts.requireFuture && slot.startsAt <= now) return "This time has already passed. Pick a later time.";
     return null;
   }
-  const open = await staffOpenStarts(staff, { dentistId: slot.dentistId, date: manilaDate(slot.startsAt), duration, ignoreId }, now);
+  const open = await staffOpenStarts(
+    staff,
+    { dentistId: slot.dentistId, date: manilaDate(slot.startsAt), duration, ignoreId: opts.ignoreId, branchId: opts.branchId },
+    now,
+  );
   return open.some((s) => s.getTime() === slot.startsAt.getTime()) ? null : NOT_OPEN;
 }
 
@@ -248,7 +252,7 @@ export async function moveAppointment(staff: Staff, id: string, slotInput: unkno
       loadRow(staff, id),
       activeDentist(staff, slot.dentistId),
       showsDentist(staff),
-      activeBranchNames(staff),
+      activeBranches(staff),
     ]);
     if (!row) return { ok: false, error: MESSAGES.gone };
     const oldStart = new Date(row.starts_at);
@@ -260,7 +264,7 @@ export async function moveAppointment(staff: Staff, id: string, slotInput: unkno
       return { ok: false, error: "That is the current time. Pick a different one." };
     }
     const duration = (new Date(row.ends_at).getTime() - oldStart.getTime()) / 60_000;
-    const problem = await timeProblem(staff, slot, duration, now, row.id, true);
+    const problem = await timeProblem(staff, slot, duration, now, { ignoreId: row.id, requireFuture: true });
     if (problem) return { ok: false, error: problem };
 
     const { data: moved, error } = await staff.db.rpc("move_appointment", {
@@ -285,8 +289,9 @@ export async function moveAppointment(staff: Staff, id: string, slotInput: unkno
 type ProcedureRow = { id: string; name: string; duration_minutes: number };
 
 /**
- * Spec 5.3 New appointment: confirmed immediately, source manual. The confirmation text goes out only
- * when sendText is on and the patient has a mobile.
+ * Spec 5.3 New appointment: confirmed immediately, source manual, at the branch staff chose or the clinic's first
+ * active branch (booking flow spec 4). The confirmation text goes out only when sendText is on and the patient has a
+ * mobile, and names the branch when the clinic has 2 or more active branches.
  */
 export async function createAppointment(staff: Staff, input: unknown, now: Date): Promise<ActionResult> {
   const parsed = parseManualBooking(input, manilaDate(now));
@@ -304,9 +309,11 @@ export async function createAppointment(staff: Staff, input: unknown, now: Date)
         .throwOnError(),
       staff.db.from("clinics").select("sms_name, slug").eq("id", staff.clinicId).single().throwOnError(),
       showsDentist(staff),
-      activeBranchNames(staff),
+      activeBranches(staff),
     ]);
     if (!dentist) return { ok: false, error: NO_DENTIST };
+    const branch = b.branchId === null ? branches[0] : branches.find((x) => x.id === b.branchId);
+    if (!branch) return { ok: false, error: "Choose an open branch." };
     const chosen = b.procedureIds.map((pid) => (procedures.data as ProcedureRow[]).find((p) => p.id === pid));
     if (chosen.some((p) => !p)) return { ok: false, error: "A chosen procedure was archived. Choose again." };
     const picked = chosen as ProcedureRow[];
@@ -328,13 +335,14 @@ export async function createAppointment(staff: Staff, input: unknown, now: Date)
       person = b.patient!;
     }
 
-    const problem = await timeProblem(staff, b.slot, duration, now);
+    const problem = await timeProblem(staff, b.slot, duration, now, { branchId: branch.id });
     if (problem) return { ok: false, error: problem };
 
     const token = newToken();
     const startsAt = b.slot.startsAt;
     const { data: appointmentId, error } = await staff.db.rpc("create_booking", {
       p_clinic_id: staff.clinicId,
+      p_branch_id: branch.id,
       p_dentist_id: dentist.id,
       p_starts_at: startsAt.toISOString(),
       p_ends_at: new Date(startsAt.getTime() + duration * 60_000).toISOString(),
@@ -364,8 +372,7 @@ export async function createAppointment(staff: Staff, input: unknown, now: Date)
           token,
           first: person.first,
           mobile: person.mobile,
-          // create_booking put it at the first active branch (staff name none until plan 8).
-          clinicSmsName: smsClinicName(sms_name, branches[0], branches.length),
+          clinicSmsName: smsClinicName(sms_name, branch.smsName, branches.length),
           slug,
           dentist: dentistShown ? dentist.sms_name : null,
           startsAt,

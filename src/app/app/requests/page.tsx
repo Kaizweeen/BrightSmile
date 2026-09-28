@@ -1,17 +1,27 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import AppointmentActions from "../AppointmentActions";
-import { loadRequests } from "@/lib/dashboard";
+import { loadBranches, loadRequests } from "@/lib/dashboard";
 import { localMobile } from "@/lib/phone";
 import { requireStaff } from "@/lib/supabase/server";
 import { formatDate, formatTime } from "@/lib/time";
+import { isUuid } from "@/lib/validate";
 
 export const metadata: Metadata = { title: "Requests" };
 
-/** Spec 5.3: pending requests, soonest first, each with Approve and Decline. */
-export default async function RequestsPage() {
+type Props = { searchParams: Promise<{ branch?: string | string[] }> };
+
+/**
+ * Spec 5.3: pending requests, soonest first, each with Approve and Decline. With 2 or more active branches, each names
+ * its branch and a branch filter shows one at a time (booking flow spec 4).
+ */
+export default async function RequestsPage({ searchParams }: Props) {
   const staff = await requireStaff();
-  const requests = await loadRequests(staff, new Date());
+  const { branch } = await searchParams;
+  const branchId = isUuid(branch) ? branch : null;
+  const [requests, branches] = await Promise.all([loadRequests(staff, new Date(), branchId), loadBranches(staff)]);
+  const open = branches.filter((b) => b.active);
+  const branchOf = new Map(branches.map((b) => [b.id, b.name]));
 
   return (
     <>
@@ -20,8 +30,28 @@ export default async function RequestsPage() {
         <span className="f-hint">{requests.length === 1 ? "1 waiting" : `${requests.length} waiting`}</span>
       </div>
 
+      {open.length > 1 && (
+        <div className="chip-row mb-3" role="group" aria-label="Branch">
+          <Link href="/app/requests" className={`btn ${branchId ? "btn-ghost" : "btn-primary"}`} aria-current={branchId ? undefined : "true"}>
+            All branches
+          </Link>
+          {open.map((b) => (
+            <Link
+              key={b.id}
+              href={`/app/requests?branch=${b.id}`}
+              className={`btn ${branchId === b.id ? "btn-primary" : "btn-ghost"}`}
+              aria-current={branchId === b.id ? "true" : undefined}
+            >
+              {b.name}
+            </Link>
+          ))}
+        </div>
+      )}
+
       {requests.length === 0 && (
-        <div className="card empty-note">No requests waiting. New ones from your booking page appear here.</div>
+        <div className="card empty-note">
+          {branchId ? "No requests waiting at this branch." : "No requests waiting. New ones from your booking page appear here."}
+        </div>
       )}
 
       {requests.map((r) => {
@@ -39,6 +69,7 @@ export default async function RequestsPage() {
             </p>
             <p className="what">
               {r.procedures.join(", ")} with {r.dentistName}
+              {open.length > 1 && ` at ${branchOf.get(r.branchId) ?? "a former branch"}`}
             </p>
             <p className="what">
               Requested {formatDate(requested)}, {formatTime(requested)}

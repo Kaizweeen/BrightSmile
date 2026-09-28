@@ -12,6 +12,8 @@ export type ManualBooking = {
   procedureIds: string[];
   slot: SlotChoice;
   sendText: boolean;
+  /** Null: the clinic's first active branch (booking flow spec 4). */
+  branchId: string | null;
 };
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; errors: Record<string, string> };
@@ -66,8 +68,10 @@ export function parseManualBooking(value: unknown, today: string): Parsed<Manual
   }
   const slot = parseSlot(v.slot);
   if (!slot) errors.slot = "Choose a time.";
+  const branchId = v.branchId === undefined || v.branchId === null ? null : v.branchId;
+  if (branchId !== null && !isUuid(branchId)) errors.branch = "Choose an open branch.";
   if (Object.keys(errors).length > 0) return { ok: false, errors };
-  return { ok: true, value: { patientId, patient, procedureIds: ids as string[], slot: slot!, sendText: v.sendText === true } };
+  return { ok: true, value: { patientId, patient, procedureIds: ids as string[], slot: slot!, sendText: v.sendText === true, branchId: branchId as string | null } };
 }
 
 export type PatientQuery = { kind: "mobile"; prefix: string } | { kind: "name"; words: string[] };

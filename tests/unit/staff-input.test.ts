@@ -48,8 +48,14 @@ describe("parseManualBooking", () => {
     const result = parseManualBooking({ patientId: uuid(2), procedureIds: [uuid(3)], slot, sendText: true }, today);
     expect(result).toEqual({
       ok: true,
-      value: { patientId: uuid(2), patient: null, procedureIds: [uuid(3)], slot: parseSlot(slot), sendText: true },
+      value: { patientId: uuid(2), patient: null, procedureIds: [uuid(3)], slot: parseSlot(slot), sendText: true, branchId: null },
     });
+  });
+
+  it("keeps the branch staff chose, and refuses one that is not an id", () => {
+    const booking = { patientId: uuid(2), procedureIds: [uuid(3)], slot };
+    expect(parseManualBooking({ ...booking, branchId: uuid(4) }, today)).toMatchObject({ ok: true, value: { branchId: uuid(4) } });
+    expect(parseManualBooking({ ...booking, branchId: "Makati" }, today)).toEqual({ ok: false, errors: { branch: "Choose an open branch." } });
   });
 
   it("takes a new patient's details when there is no id, and sendText only when true", () => {
