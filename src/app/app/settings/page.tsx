@@ -55,13 +55,6 @@ export default async function SettingsPage() {
           </Link>
         </section>
       )}
-      <section className="card card-pad settings-section">
-        <h2 className="font-display">Plan and billing</h2>
-        <p className="f-hint">{owner ? "See when your plan ends, how to pay, and past payments." : "See when your clinic's plan ends."}</p>
-        <Link href="/app/billing" className="btn btn-soft mt-3">
-          Open Billing
-        </Link>
-      </section>
       <AccountForms />
     </>
   );

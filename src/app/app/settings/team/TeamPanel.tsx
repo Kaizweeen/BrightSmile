@@ -49,7 +49,7 @@ export default function TeamPanel({ members, invites }: { members: MemberRow[]; 
       <section className="card card-pad settings-section">
         <h2 className="font-display">Members</h2>
         <p className="f-hint">
-          Staff handle requests, the schedule, patients, and dentists&apos; time off. Only you change the clinic&apos;s setup, pay, and manage the team.
+          Staff handle requests, the schedule, patients, and dentists&apos; time off. Only you change the clinic&apos;s setup and manage the team.
         </p>
         <div className="member-list mt-2">
           {members.map((m) => (

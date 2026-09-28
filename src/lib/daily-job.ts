@@ -1,21 +1,16 @@
 import "server-only";
 import { appUrl } from "@/lib/app-url";
-import { billingStatus, type BillingRow } from "@/lib/billing";
-import { loadBillings } from "@/lib/billing-data";
 import {
   LOW_CREDIT_GAP_MS,
   lowCreditThreshold,
   reminders,
   reminderWindow,
-  renewalNotices,
   reportMonday,
   weeklyCandidates,
   type ReminderRow,
-  type RenewalRow,
   type WeeklyRow,
 } from "@/lib/daily";
 import { logError } from "@/lib/log";
-import { alertPlanEnding } from "@/lib/notify";
 import { normalizeMobile } from "@/lib/phone";
 import { sendPush, weeklyPushPayload } from "@/lib/push";
 import { sumCounts, type WeekStatsRow } from "@/lib/reports";
@@ -57,12 +52,10 @@ export async function sendReminders(now: Date): Promise<number> {
   if (branchError) throw branchError;
   const branches = new Map<string, number>();
   for (const { clinic_id } of (branchRows ?? []) as { clinic_id: string }[]) branches.set(clinic_id, (branches.get(clinic_id) ?? 0) + 1);
-  // Billing spec 7.5: a lapsed clinic's patients get no reminders.
-  const paused = new Set([...(await loadBillings(db, clinicIds))].filter(([, billing]) => !billingStatus(billing, now).open).map(([id]) => id));
 
   const app = appUrl();
   let sent = 0;
-  for (const r of reminders(rows, active, now, paused, branches)) {
+  for (const r of reminders(rows, active, now, branches)) {
     const { data: claimed, error: claimError } = await db
       .from("appointments")
       .update({ reminder_sent_at: now.toISOString() })
@@ -89,62 +82,23 @@ export async function sendReminders(now: Date): Promise<number> {
 }
 
 /**
- * Billing spec 7.4: one heads-up per plan end, 3 days or less before it. Each clinic's notice first claims
- * renewal_notice_for with a compare-and-set, so a rerun never alerts twice. Returns how many alerts went out.
- * A failed claim or alert is not retried (the claim may already be set), so after trying every clinic it throws,
- * which marks the run failed and puts the counts in the log.
- * ponytail: reads every clinic_billing row (the API returns at most 1000); page through when clinics near that.
- */
-export async function sendRenewalNotices(now: Date): Promise<number> {
-  const db = adminClient();
-  const { data, error } = await db.from("clinic_billing").select("clinic_id, trial_ends_at, paid_through, renewal_notice_for");
-  if (error) throw error;
-  let sent = 0;
-  const failed: string[] = [];
-  for (const { clinicId, endsAt } of renewalNotices((data ?? []) as RenewalRow[], now)) {
-    const endsIso = endsAt.toISOString();
-    const { data: claimed, error: claimError } = await db
-      .from("clinic_billing")
-      .update({ renewal_notice_for: endsIso })
-      .eq("clinic_id", clinicId)
-      .or(`renewal_notice_for.is.null,renewal_notice_for.neq."${endsIso}"`)
-      .select("clinic_id");
-    if (claimError) {
-      logError("sendRenewalNotices claim", claimError);
-      failed.push(clinicId);
-      continue;
-    }
-    if (!claimed || claimed.length === 0) continue;
-    if ((await alertPlanEnding(clinicId, endsAt)) === "failed") failed.push(clinicId);
-    else sent++;
-  }
-  // A failed claim or alert is not retried, so name the clinics (ids only) for Kai to tell by hand.
-  if (failed.length > 0) throw new Error(`${failed.length} heads-ups failed, ${sent} sent (clinics ${failed.join(", ")})`);
-  return sent;
-}
-
-/**
  * Teams spec 6.4: on Mondays (Manila), last week's visits and no-shows to each clinic's devices, by push only. Due: not
- * lapsed and not yet told this Monday (weeklyCandidates), with at least one appointment last week. Each clinic first
- * claims weekly_report_for with a compare-and-set, so a rerun never pushes twice. Returns how many clinics a push reached.
+ * yet told this Monday (weeklyCandidates), with at least one appointment last week. Each clinic first claims
+ * weekly_report_for with a compare-and-set, so a rerun never pushes twice. Returns how many clinics a push reached.
  * A failed count, claim, or push (sendPush returning below 0, meaning the clinic's subscriptions could not be read) is
  * not retried by this run, so after trying every clinic it throws with their ids.
- * ponytail: reads every clinic and billing row (the API returns at most 1000) and counts one clinic at a time; page and batch when clinics near that.
+ * ponytail: reads every clinic (the API returns at most 1000) and counts one clinic at a time; page and batch when clinics near that.
  */
 export async function sendWeeklyReports(now: Date): Promise<number> {
   const monday = reportMonday(now);
   if (!monday) return 0;
   const lastMonday = addDays(monday, -7);
   const db = adminClient();
-  const [clinics, billing] = await Promise.all([
-    db.from("clinics").select("id, name, created_at, weekly_report_for"),
-    db.from("clinic_billing").select("clinic_id, trial_ends_at, paid_through"),
-  ]);
+  const clinics = await db.from("clinics").select("id, name, weekly_report_for");
   if (clinics.error) throw clinics.error;
-  if (billing.error) throw billing.error;
   let sent = 0;
   const failed: string[] = [];
-  const due = weeklyCandidates((clinics.data ?? []) as WeeklyRow[], (billing.data ?? []) as (BillingRow & { clinic_id: string })[], now);
+  const due = weeklyCandidates((clinics.data ?? []) as WeeklyRow[], now);
   for (const clinic of due) {
     const { data: rows, error: countError } = await db.rpc("clinic_week_stats", { p_clinic_id: clinic.id, p_from: lastMonday, p_weeks: 1 });
     if (countError) {
@@ -240,7 +194,6 @@ type Failed = "failed";
 export type DailySummary = {
   ok: boolean;
   reminders: number | Failed;
-  renewals: number | Failed;
   weekly: number | Failed;
   expired: number | Failed;
   cleaned: { codes: number; bodies: number } | Failed;
@@ -263,9 +216,8 @@ export async function runDailyJob(now: Date): Promise<DailySummary> {
   const expired = await step("expiry", () => expirePending());
   const cleaned = await step("cleanup", () => cleanup(now));
   const sent = await step("reminders", () => sendReminders(now));
-  const renewals = await step("renewal notices", () => sendRenewalNotices(now));
   const weekly = await step("weekly reports", () => sendWeeklyReports(now));
   const credit = await step("credit check", () => checkCredit(now));
-  const failed = [sent, renewals, weekly, expired, cleaned, credit].includes("failed") || (credit !== "failed" && credit.status === "unknown");
-  return { ok: !failed, reminders: sent, renewals, weekly, expired, cleaned, credit };
+  const failed = [sent, weekly, expired, cleaned, credit].includes("failed") || (credit !== "failed" && credit.status === "unknown");
+  return { ok: !failed, reminders: sent, weekly, expired, cleaned, credit };
 }

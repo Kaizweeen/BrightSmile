@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { dayOpenStarts, loadClinic } from "@/lib/availability";
-import { bookingOpen } from "@/lib/billing-data";
 import type { PublicClinic } from "@/lib/booking-input";
 import { hashCode } from "@/lib/codes";
 import { alertClinic } from "@/lib/notify";
@@ -83,7 +82,6 @@ vi.mock("@/lib/supabase/admin", () => ({
     },
   }),
 }));
-vi.mock("@/lib/billing-data", () => ({ bookingOpen: vi.fn(async () => true) }));
 vi.mock("@/lib/sms/send", () => ({ sendSms: vi.fn(async () => "logged") }));
 vi.mock("@/lib/notify", () => ({ alertClinic: vi.fn(async () => "push") }));
 
@@ -112,7 +110,6 @@ beforeEach(() => {
   fake.queries = [];
   fake.rpcs = [];
   fake.rpcAnswer = {};
-  vi.mocked(bookingOpen).mockResolvedValue(true);
   vi.mocked(sendSms).mockClear();
 });
 
@@ -151,12 +148,6 @@ describe("startVerification", () => {
     expect(sendSms).toHaveBeenCalledWith(expect.objectContaining({ kind: "otp", to: MOBILE }));
     fake.rpcAnswer.issue_otp = { data: { status: "limited" }, error: null };
     expect(await startVerification("bright-dental", "0917 111 2222", { ...stranger, ip: "203.0.113.5" })).toEqual({ status: "limited" });
-  });
-
-  it("sends no code for a paused clinic", async () => {
-    vi.mocked(bookingOpen).mockResolvedValue(false);
-    expect(await startVerification("bright-dental", "0917 111 2222", { ...stranger, ip: "203.0.113.5" })).toEqual({ status: "paused" });
-    expect(fake.rpcs).toEqual([]);
   });
 });
 
@@ -276,14 +267,6 @@ describe("booking, changing, and cancelling by number", () => {
     vi.mocked(dayOpenStarts).mockResolvedValue([new Date("2026-10-20T02:00:00.000Z")]);
     expect(await bookForNumber("bright-dental", request, verified)).toEqual({ status: "taken", starts: ["2026-10-20T02:00:00.000Z"] });
     expect(called("create_booking")).toEqual([]);
-  });
-
-  it("take no booking and no change while the clinic is paused", async () => {
-    vi.mocked(bookingOpen).mockResolvedValue(false);
-    fake.single.appointments = owned("2026-10-27T01:00:00.000Z");
-    expect(await bookForNumber("bright-dental", request, verified)).toEqual({ status: "paused" });
-    expect(await changeForNumber("bright-dental", { ...request, appointmentId: VISIT }, verified)).toEqual({ status: "paused" });
-    expect(fake.rpcs).toEqual([]);
   });
 
   it("send a change back to the clinic for approval, counting the appointment's own time as free", async () => {

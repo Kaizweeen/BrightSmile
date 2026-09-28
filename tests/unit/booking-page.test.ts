@@ -24,8 +24,8 @@ const clinic: PublicClinic = {
   procedures: [{ id: "9e8d7c6b-5a49-4382-a716-151413121110", name: "Consultation", minutes: 30 }],
 };
 
-const render = (props: { clinic?: PublicClinic; paused?: boolean } = {}) =>
-  renderToStaticMarkup(createElement(BookingFlow, { clinic, nowIso: "2026-09-28T02:00:00.000Z", paused: false, ...props }));
+const render = (props: { clinic?: PublicClinic } = {}) =>
+  renderToStaticMarkup(createElement(BookingFlow, { clinic, nowIso: "2026-09-28T02:00:00.000Z", ...props }));
 
 describe("the booking page's main page", () => {
   it("offers the three paths with booking as the one primary button", () => {
@@ -45,13 +45,6 @@ describe("the booking page's main page", () => {
     expect(html).toContain("5 Ortigas Ave, Pasig");
     expect(html).toContain('href="https://maps.app.goo.gl/abc"');
     expect(html.match(/>Map</g)).toHaveLength(1);
-  });
-
-  it("shows a lapsed clinic's paused notice instead of the three buttons", () => {
-    const html = render({ paused: true });
-    expect(html).toContain("Bright Dental is not taking online requests right now. Call 09170000000 to book.");
-    for (const button of ["Book an appointment", "Reschedule or edit a booking", "Cancel a booking"]) expect(html).not.toContain(button);
-    expect(html).toContain("12 Rizal St, Makati");
   });
 
   it("says where to find a clinic with one branch", () => {

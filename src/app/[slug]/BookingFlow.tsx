@@ -18,7 +18,6 @@ import {
   resendBookingCode,
   startVerification,
 } from "./actions";
-import { pausedMessage } from "@/lib/billing";
 import type { PublicClinic, PublicDentist } from "@/lib/booking-input";
 import { flow, START, type FlowAction, type Path } from "@/lib/booking-flow";
 import { intakeInput, type IntakeForm } from "@/lib/intake";
@@ -37,7 +36,7 @@ const PatientForm = dynamic(() => import("./PatientForm"), {
   ),
 });
 
-type Props = { clinic: PublicClinic; nowIso: string; paused: boolean };
+type Props = { clinic: PublicClinic; nowIso: string };
 
 const H2 = "font-display text-[19px] font-bold outline-none";
 const UNAVAILABLE = "Booking is temporarily unavailable. Please try again in a few minutes.";
@@ -212,7 +211,7 @@ function ServicesStep({
  * alone decides the next step (spec 7). The server checks the verified number and every row again on each call.
  * Nothing about a patient goes into the address bar, and the patient form stays in memory until it is sent.
  */
-export default function BookingFlow({ clinic, nowIso, paused }: Props) {
+export default function BookingFlow({ clinic, nowIso }: Props) {
   const [state, dispatch] = useReducer(flow, START);
   // The clinic as loaded at the branch in use: its dentists, their hours there, and the procedures.
   const [branch, setBranch] = useState<PublicClinic>(clinic);
@@ -245,7 +244,6 @@ export default function BookingFlow({ clinic, nowIso, paused }: Props) {
   const said = {
     limited: `Too many codes for now. Try again in an hour, or call ${phone}.`,
     sms_failed: `We couldn't send the code. Try again, or call ${phone}.`,
-    paused: pausedMessage(clinic.name, phone),
     unavailable: UNAVAILABLE,
   };
   const closed = clinic.procedures.length === 0 || (clinic.branches.length === 1 && clinic.dentists.length === 0);
@@ -638,27 +636,21 @@ export default function BookingFlow({ clinic, nowIso, paused }: Props) {
           <h2 ref={headingRef} tabIndex={-1} className="font-display text-[17px] font-semibold outline-none">
             Book a visit, or change or cancel one you have.
           </h2>
-          {paused ? (
-            <p className="note-box mt-5" role="status">
-              {pausedMessage(clinic.name, phone)}
-            </p>
-          ) : (
-            <div className="mt-5">
-              {closed ? (
-                <p className="note-box">Online booking isn&apos;t open yet. Call {call} to book.</p>
-              ) : (
-                <button type="button" className="btn btn-primary wide-btn" onClick={() => begin("book")}>
-                  Book an appointment
-                </button>
-              )}
-              <button type="button" className="btn btn-ghost wide-btn mt-3" onClick={() => begin("change")}>
-                Reschedule or edit a booking
+          <div className="mt-5">
+            {closed ? (
+              <p className="note-box">Online booking isn&apos;t open yet. Call {call} to book.</p>
+            ) : (
+              <button type="button" className="btn btn-primary wide-btn" onClick={() => begin("book")}>
+                Book an appointment
               </button>
-              <button type="button" className="btn btn-ghost wide-btn mt-3" onClick={() => begin("cancel")}>
-                Cancel a booking
-              </button>
-            </div>
-          )}
+            )}
+            <button type="button" className="btn btn-ghost wide-btn mt-3" onClick={() => begin("change")}>
+              Reschedule or edit a booking
+            </button>
+            <button type="button" className="btn btn-ghost wide-btn mt-3" onClick={() => begin("cancel")}>
+              Cancel a booking
+            </button>
+          </div>
           <h3 className="f-label mt-7">{clinic.branches.length > 1 ? "Our branches" : "Where to find us"}</h3>
           <div className="member-list">
             {clinic.branches.map((b) => (

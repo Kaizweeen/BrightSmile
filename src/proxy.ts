@@ -33,8 +33,8 @@ export async function proxy(request: NextRequest) {
 }
 
 // Public pages (the booking page and patient links) never touch the staff session, so they skip the proxy.
-// /admin and /join pass through only to keep their sessions fresh: guardRedirect never redirects them; requireOperator
-// guards /admin, and a join link works signed in or out (teams spec 6.2).
+// /join passes through only to keep its session fresh: guardRedirect never redirects it, and a join link
+// works signed in or out (teams spec 6.2).
 export const config = {
-  matcher: ["/app/:path*", "/onboarding/:path*", "/login", "/signup", "/admin", "/join/:path*"],
+  matcher: ["/app/:path*", "/onboarding/:path*", "/login", "/signup", "/join/:path*"],
 };

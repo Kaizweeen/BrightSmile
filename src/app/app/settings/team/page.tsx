@@ -2,10 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import TeamPanel from "./TeamPanel";
-import { billingDate } from "@/lib/billing";
 import { requireOwner } from "@/lib/supabase/server";
 import { loadTeam } from "@/lib/team-data";
-import { formatTime } from "@/lib/time";
+import { formatDateWithYear, formatTime } from "@/lib/time";
 
 export const metadata: Metadata = { title: "Team" };
 
@@ -15,7 +14,7 @@ export default async function TeamPage() {
   if (!owner) redirect("/app/settings");
   const now = new Date();
   const { members, invites } = await loadTeam(owner, now);
-  const at = (iso: string) => `${billingDate(new Date(iso), now)}, ${formatTime(new Date(iso))}`;
+  const at = (iso: string) => `${formatDateWithYear(new Date(iso), now)}, ${formatTime(new Date(iso))}`;
 
   return (
     <>
@@ -26,7 +25,7 @@ export default async function TeamPage() {
         <h1 className="font-display">Team</h1>
       </div>
       <TeamPanel
-        members={members.map((m) => ({ userId: m.userId, email: m.email, owner: m.role === "owner", joined: billingDate(new Date(m.joinedAt), now) }))}
+        members={members.map((m) => ({ userId: m.userId, email: m.email, owner: m.role === "owner", joined: formatDateWithYear(new Date(m.joinedAt), now) }))}
         invites={invites.map((i) => ({ id: i.id, created: at(i.createdAt), expires: at(i.expiresAt) }))}
       />
     </>

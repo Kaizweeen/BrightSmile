@@ -4,11 +4,9 @@ import {
   lowCreditThreshold,
   reminders,
   reminderWindow,
-  renewalNotices,
   reportMonday,
   weeklyCandidates,
   type ReminderRow,
-  type RenewalRow,
   type WeeklyRow,
 } from "@/lib/daily";
 import { manilaInstant } from "@/lib/time";
@@ -83,36 +81,8 @@ describe("reminders", () => {
   });
 
   it("names the branch after the clinic once the clinic has 2 or more active branches", () => {
-    expect(reminders([row], one, now, new Set(), new Map([["c1", 2]]))[0].clinic).toBe("Bright Dental Makati");
-    expect(reminders([row], one, now, new Set(), new Map([["c1", 1]]))[0].clinic).toBe("Bright Dental");
-  });
-
-  it("sends nothing for a clinic whose booking is paused", () => {
-    const other = { ...row, id: "a2", clinic_id: "c2" };
-    const both = new Map([["c1", 1], ["c2", 1]]);
-    expect(reminders([row, other], both, now, new Set(["c1"])).map((r) => r.appointmentId)).toEqual(["a2"]);
-  });
-});
-
-describe("renewalNotices", () => {
-  const DAY = 24 * 60 * 60 * 1000;
-  const now = manilaInstant("2026-10-06", 9 * 60);
-  const trialEnd = manilaInstant("2026-10-09", 9 * 60); // exactly 3 days away
-  const row: RenewalRow = { clinic_id: "c1", trial_ends_at: trialEnd.toISOString(), paid_through: null, renewal_notice_for: null };
-
-  it("picks plans that end within 3 days and have had no heads-up for that end", () => {
-    expect(renewalNotices([row], now)).toEqual([{ clinicId: "c1", endsAt: trialEnd }]);
-    const paidThrough = new Date(now.getTime() + DAY);
-    const paid = { ...row, trial_ends_at: manilaInstant("2026-09-01", 0).toISOString(), paid_through: paidThrough.toISOString() };
-    expect(renewalNotices([paid], now)).toEqual([{ clinicId: "c1", endsAt: paidThrough }]);
-  });
-
-  it("skips plans further out, already ended, or already told about this end", () => {
-    expect(renewalNotices([row], new Date(trialEnd.getTime() - 3 * DAY - 1))).toEqual([]);
-    expect(renewalNotices([row], trialEnd)).toEqual([]);
-    expect(renewalNotices([{ ...row, renewal_notice_for: trialEnd.toISOString() }], now)).toEqual([]);
-    const oldNotice = { ...row, renewal_notice_for: manilaInstant("2026-09-06", 9 * 60).toISOString() };
-    expect(renewalNotices([oldNotice], now)).toEqual([{ clinicId: "c1", endsAt: trialEnd }]);
+    expect(reminders([row], one, now, new Map([["c1", 2]]))[0].clinic).toBe("Bright Dental Makati");
+    expect(reminders([row], one, now, new Map([["c1", 1]]))[0].clinic).toBe("Bright Dental");
   });
 });
 
@@ -131,13 +101,7 @@ describe("lowCreditThreshold", () => {
 
 describe("reportMonday and weeklyCandidates", () => {
   const monday = manilaInstant("2026-10-05", 9 * 60); // the cron time, 01:00 UTC
-  const open = { trial_ends_at: manilaInstant("2026-10-20", 0).toISOString(), paid_through: null };
-  const clinic = (id: string, weekly_report_for: string | null = null): WeeklyRow => ({
-    id,
-    name: `Clinic ${id}`,
-    created_at: "2026-09-01T00:00:00Z",
-    weekly_report_for,
-  });
+  const clinic = (id: string, weekly_report_for: string | null = null): WeeklyRow => ({ id, name: `Clinic ${id}`, weekly_report_for });
 
   it("is Monday on the Manila calendar, whatever the UTC date", () => {
     expect(reportMonday(monday)).toBe("2026-10-05");
@@ -146,16 +110,8 @@ describe("reportMonday and weeklyCandidates", () => {
     expect(reportMonday(manilaInstant("2026-10-06", 9 * 60))).toBeNull();
   });
 
-  it("picks clinics still taking bookings that have no summary for this Monday yet", () => {
-    const clinics = [clinic("c1"), clinic("c2", "2026-09-28"), clinic("c3", "2026-10-05"), clinic("c4"), clinic("c5"), clinic("c6")];
-    const billing = [
-      { clinic_id: "c1", ...open },
-      { clinic_id: "c2", ...open },
-      { clinic_id: "c3", ...open },
-      { clinic_id: "c4", trial_ends_at: manilaInstant("2026-09-20", 0).toISOString(), paid_through: null }, // paused since Sep 23
-      { clinic_id: "c6", trial_ends_at: manilaInstant("2026-10-03", 0).toISOString(), paid_through: null }, // in grace until Oct 6
-    ];
-    // c5 has no billing row: a trial that ended at signup (Sep 1), so it is paused too.
-    expect(weeklyCandidates(clinics, billing, monday).map((c) => c.id)).toEqual(["c1", "c2", "c6"]);
+  it("picks clinics with no summary for this Monday yet", () => {
+    const clinics = [clinic("c1"), clinic("c2", "2026-09-28"), clinic("c3", "2026-10-05")];
+    expect(weeklyCandidates(clinics, monday).map((c) => c.id)).toEqual(["c1", "c2"]);
   });
 });

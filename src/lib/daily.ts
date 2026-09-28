@@ -1,6 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { needsReminder, type Status } from "@/lib/appointments";
-import { billingFromRow, billingStatus, NOTICE_DAYS, type BillingRow } from "@/lib/billing";
 import { smsClinicName } from "@/lib/branches";
 import { addDays, formatTime, manilaDate, manilaInstant, weekday } from "@/lib/time";
 
@@ -52,17 +51,14 @@ const date = (value: string | null) => (value ? new Date(value) : null);
  * Spec 11 step 1: needsReminder decides which visits are due; a patient without a mobile (or deleted)
  * gets nothing. Texts name the dentist only when the clinic has 2 or more active dentists (spec 10.1), and the
  * branch after the clinic's name only when it has 2 or more active branches (booking flow spec 4).
- * A clinic whose booking is paused gets no reminders (billing spec 7.5).
  */
 export function reminders(
   rows: ReminderRow[],
   activeDentists: Map<string, number>,
   now: Date,
-  paused: Set<string> = new Set(),
   activeBranches: Map<string, number> = new Map(),
 ): Reminder[] {
   return rows.flatMap((r) => {
-    if (paused.has(r.clinic_id)) return [];
     const startsAt = new Date(r.starts_at);
     const due = needsReminder(
       { status: r.status, starts_at: startsAt, confirmed_at: date(r.confirmed_at), reminder_sent_at: date(r.reminder_sent_at) },
@@ -95,27 +91,8 @@ export function lowCreditThreshold(value: string | undefined = process.env.SMS_L
   return /^\d+$/.test(text) ? Number(text) : 500;
 }
 
-/** A clinic_billing row as the heads-up step reads it. */
-export type RenewalRow = { clinic_id: string; trial_ends_at: string; paid_through: string | null; renewal_notice_for: string | null };
-export type Renewal = { clinicId: string; endsAt: Date };
-
-/**
- * Billing spec 7.4: clinics whose plan (trial or paid) ends after now and at most 3 days from now, and that
- * have not had a heads-up for this end yet. Dates compare at millisecond precision, the precision the job
- * writes renewal_notice_for with.
- */
-export function renewalNotices(rows: RenewalRow[], now: Date): Renewal[] {
-  return rows.flatMap((r) => {
-    const paidThrough = r.paid_through ? new Date(r.paid_through) : null;
-    const { endsAt } = billingStatus({ trialEndsAt: new Date(r.trial_ends_at), paidThrough }, now);
-    const left = endsAt.getTime() - now.getTime();
-    const noticed = r.renewal_notice_for !== null && new Date(r.renewal_notice_for).getTime() === endsAt.getTime();
-    return left > 0 && left <= NOTICE_DAYS * 24 * 60 * 60 * 1000 && !noticed ? [{ clinicId: r.clinic_id, endsAt }] : [];
-  });
-}
-
 /** A clinic as the Monday summary reads it. */
-export type WeeklyRow = { id: string; name: string; created_at: string; weekly_report_for: string | null };
+export type WeeklyRow = { id: string; name: string; weekly_report_for: string | null };
 
 /** Today's Manila date when it is a Monday, the day the weekly summary goes out (teams spec 6.4), otherwise null. */
 export function reportMonday(now: Date): string | null {
@@ -124,14 +101,10 @@ export function reportMonday(now: Date): string | null {
 }
 
 /**
- * Teams spec 6.4: the clinics due this Monday's summary: still taking bookings (not lapsed, billing spec 5; a clinic
- * without a billing row counts as a trial that ended at signup) and not yet claimed for this Monday. The daily job
- * checks the day with reportMonday and skips clinics without an appointment last week.
+ * Teams spec 6.4: the clinics due this Monday's summary: not yet claimed for this Monday. The daily job checks the
+ * day with reportMonday and skips clinics without an appointment last week.
  */
-export function weeklyCandidates(clinics: WeeklyRow[], billing: (BillingRow & { clinic_id: string })[], now: Date): WeeklyRow[] {
+export function weeklyCandidates(clinics: WeeklyRow[], now: Date): WeeklyRow[] {
   const today = manilaDate(now);
-  const rows = new Map(billing.map((b) => [b.clinic_id, b]));
-  return clinics.filter(
-    (c) => (c.weekly_report_for === null || c.weekly_report_for < today) && billingStatus(billingFromRow(rows.get(c.id) ?? null, c.created_at), now).open,
-  );
+  return clinics.filter((c) => c.weekly_report_for === null || c.weekly_report_for < today);
 }

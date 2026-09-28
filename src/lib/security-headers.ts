@@ -18,8 +18,7 @@ export function contentSecurityPolicy(dev: boolean, https: boolean): string {
     "manifest-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",
-    // Pay online: a form posted before hydration follows a redirect to PayMongo's hosted checkout.
-    "form-action 'self' https://checkout.paymongo.com",
+    "form-action 'self'",
     "frame-ancestors 'none'",
     ...(https ? ["upgrade-insecure-requests"] : []),
   ].join("; ");
@@ -36,7 +35,6 @@ export const NOINDEX_SOURCES = [
   "/reset-password",
   "/auth/:path*",
   "/api/:path*",
-  "/admin/:path*",
   "/join/:path*",
 ];
 

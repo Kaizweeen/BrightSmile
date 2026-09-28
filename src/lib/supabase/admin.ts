@@ -5,9 +5,8 @@ let client: SupabaseClient | undefined;
 
 /**
  * Secret-key client: bypasses RLS. Only for the public booking flow, verification codes, sms_log,
- * patient links, sendPush, the daily job, the PayMongo webhook, /admin after requireOperator, and the join
- * link lookup by token hash (inviteClinicName), for visitors who are not members of the inviting clinic.
- * Staff pages use serverClient() so RLS applies.
+ * patient links, sendPush, the daily job, and the join link lookup by token hash (inviteClinicName),
+ * for visitors who are not members of the inviting clinic. Staff pages use serverClient() so RLS applies.
  */
 export function adminClient(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

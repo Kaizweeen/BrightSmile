@@ -24,10 +24,6 @@ describe("guardRedirect", () => {
     }
   });
 
-  it("never redirects the admin page, which checks the operator itself", () => {
-    for (const visitor of [out, noClinic, staff]) expect(guardRedirect("/admin", visitor)).toBeNull();
-  });
-
   it("never redirects a join link, which works signed in or out (teams spec 6.2)", () => {
     for (const visitor of [out, noClinic, staff]) expect(guardRedirect("/join/AbCdEfGhIjKl", visitor)).toBeNull();
   });

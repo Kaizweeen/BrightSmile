@@ -1,7 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { dayOpenStarts, loadClinic } from "@/lib/availability";
-import { bookingOpen } from "@/lib/billing-data";
 import type { PublicClinic } from "@/lib/booking-input";
 import { BOOKING_CAPS, checkCode, hashCode, newCode, OTP } from "@/lib/codes";
 import { sendSms } from "@/lib/sms/send";
@@ -14,7 +13,6 @@ export type ResendOutcome =
   | CodeIssued
   | { status: "wait"; seconds: number }
   | { status: "gone" }
-  | { status: "paused" }
   | { status: "unavailable" };
 
 type Ctx = { ip: string; now: Date };
@@ -143,12 +141,9 @@ export async function issueCode(clinic: Pick<PublicClinic, "id" | "smsName">, mo
 type Spent =
   | { status: "ok"; row: OtpRow }
   | { status: "wrong"; attemptsLeft: number }
-  | { status: "expired" | "locked" | "used" | "paused" };
+  | { status: "expired" | "locked" | "used" };
 
-/**
- * Booking flow spec 3.2: checks a code sent for a number, spends an attempt, and marks it used. Billing spec 7.5: a
- * lapsed clinic takes no code, checked before the attempt or the code is spent.
- */
+/** Booking flow spec 3.2: checks a code sent for a number, spends an attempt, and marks it used. */
 export async function spendCode(requestId: string, code: string, now: Date): Promise<Spent> {
   if (!UUID.test(requestId)) return { status: "expired" };
   const db = adminClient();
@@ -174,7 +169,6 @@ export async function spendCode(requestId: string, code: string, now: Date): Pro
     now,
   );
   if (status === "used" || status === "expired" || status === "locked") return { status };
-  if (!(await bookingOpen(row.booking.clinicId, now))) return { status: "paused" };
 
   // Spend an attempt before acting on the comparison. The update only matches while attempts is
   // unchanged, so parallel guesses share the same 5 attempts instead of each getting their own.
@@ -213,7 +207,6 @@ export async function resendCode(requestId: string, ctx: Ctx): Promise<ResendOut
     if (error) throw error;
     const row = data as Pick<OtpRow, "id" | "mobile" | "booking" | "verified_at"> | null;
     if (!row || row.verified_at) return { status: "gone" };
-    if (!(await bookingOpen(row.booking.clinicId, ctx.now))) return { status: "paused" };
 
     const id = randomUUID();
     const code = newCode();

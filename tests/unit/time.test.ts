@@ -3,6 +3,7 @@ import {
   addDays,
   formatClock,
   formatDate,
+  formatDateWithYear,
   formatMinutes,
   formatTime,
   manilaDate,
@@ -59,6 +60,12 @@ describe("Manila time", () => {
     expect(formatMinutes(0)).toBe("12:00 AM");
     expect(formatMinutes(12 * 60)).toBe("12:00 PM");
     expect(formatMinutes(13 * 60 + 5)).toBe("1:05 PM");
+  });
+
+  it("dates this year without the year, and other years with it", () => {
+    const now = manilaInstant("2026-10-07", 600);
+    expect(formatDateWithYear(manilaInstant("2026-10-09", 600), now)).toBe("Fri Oct 9");
+    expect(formatDateWithYear(manilaInstant("2027-09-30", 600), now)).toBe("Thu Sep 30, 2027");
   });
 
   it("lists every date in a month", () => {

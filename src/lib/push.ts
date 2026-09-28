@@ -25,11 +25,6 @@ export function pushPayload(kind: AlertKind, startsAt: Date, dentist: string | n
   return { title: ALERT_TITLE[kind], body: when, url: "/app/requests" };
 }
 
-/** Billing spec 7.4: the plan heads-up. Like every push, a tap opens the requests page, where the banner links to Billing. */
-export function planPushPayload(endsAt: Date): PushPayload {
-  return { title: `Your BrightSmile plan ends ${formatDate(endsAt)}`, body: "Pay in BrightSmile to keep online booking open.", url: "/app/requests" };
-}
-
 /** Teams spec 6.4: the Monday summary of last week, in counts only. A tap opens Reports (type "weekly"). */
 export function weeklyPushPayload(clinicName: string, visits: number, noShows: number): PushPayload {
   const rate = noShowRate(visits, noShows);

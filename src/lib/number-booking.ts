@@ -1,6 +1,5 @@
 import "server-only";
 import { loadClinic } from "@/lib/availability";
-import { bookingOpen } from "@/lib/billing-data";
 import { issueCode, overBookingCap, spendCode, takenStarts } from "@/lib/booking";
 import { resolveSelection } from "@/lib/booking-input";
 import { newToken } from "@/lib/codes";
@@ -48,13 +47,12 @@ export type StartOutcome =
   | { status: "limited" }
   | { status: "sms_failed" }
   | { status: "invalid" }
-  | { status: "paused" }
   | { status: "unavailable" };
 
 /**
  * Spec 3.2: the start of every path. A phone that verified the number before goes straight on; otherwise the clinic
  * texts a 6 digit code within issue_otp's limits (3 per number and 10 per connection an hour, 60 seconds between
- * codes; a new code is resendBookingCode, as on the booking page). A lapsed clinic sends no code (billing spec 7.5).
+ * codes; a new code is resendBookingCode, as on the booking page).
  */
 export async function startVerification(slug: string, mobileInput: unknown, ctx: Device & { ip: string }): Promise<StartOutcome> {
   const mobile = typeof mobileInput === "string" ? normalizeMobile(mobileInput) : null;
@@ -62,7 +60,6 @@ export async function startVerification(slug: string, mobileInput: unknown, ctx:
   try {
     const clinic = await clinicOf(slug);
     if (!clinic) return { status: "invalid" };
-    if (!(await bookingOpen(clinic.id, ctx.now))) return { status: "paused" };
     if (ctx.verifiedMobiles.includes(mobile)) return { status: "verified", mobile };
     const issued = await issueCode(clinic, mobile, { clinicId: clinic.id, verify: true }, ctx);
     return issued.status === "code" ? { ...issued, mobile } : issued;
@@ -75,7 +72,7 @@ export async function startVerification(slug: string, mobileInput: unknown, ctx:
 export type CheckOutcome =
   | { status: "verified"; mobile: string }
   | { status: "wrong"; attemptsLeft: number }
-  | { status: "expired" | "locked" | "used" | "paused" | "unavailable" };
+  | { status: "expired" | "locked" | "used" | "unavailable" };
 
 /** Spec 3.2 step 3: a right code verifies the number; the Server Action then remembers it on this phone. */
 export async function checkVerification(requestId: string, code: string, now: Date): Promise<CheckOutcome> {
@@ -229,7 +226,6 @@ export type BookOutcome =
   | { status: "too_many" }
   | { status: "invalid"; errors: Record<string, string> }
   | { status: "unverified" }
-  | { status: "paused" }
   | { status: "unavailable" };
 
 /**
@@ -245,7 +241,6 @@ export async function bookForNumber(slug: string, input: unknown, device: Device
   try {
     const clinic = isUuid(v.branchId) ? await loadClinic({ slug }, v.branchId) : null;
     if (!clinic) return { status: "invalid", errors: { branch: "Choose the branch again." } };
-    if (!(await bookingOpen(clinic.id, device.now))) return { status: "paused" };
     const chosen = resolveSelection(clinic, v);
     const start = new Date(typeof v.startsAt === "string" ? v.startsAt : Number.NaN);
     if (!chosen || Number.isNaN(start.getTime())) return { status: "invalid", errors: { slot: PICK_TIME } };
@@ -350,7 +345,6 @@ export type ChangeOutcome =
   | { status: "gone" }
   | { status: "invalid"; errors: Record<string, string> }
   | { status: "unverified" }
-  | { status: "paused" }
   | { status: "unavailable" };
 
 /**
@@ -367,7 +361,6 @@ export async function changeForNumber(slug: string, input: unknown, device: Devi
     const ref = await clinicOf(slug);
     const owned = ref ? await ownedAppointment(ref.id, mobile, v.appointmentId, device.now) : null;
     if (!ref || !owned) return { status: "gone" };
-    if (!(await bookingOpen(ref.id, device.now))) return { status: "paused" };
     if (new Date(owned.starts_at).getTime() < device.now.getTime() + ref.minNoticeMinutes * 60_000) return { status: "call_clinic" };
     const clinic = await loadClinic({ id: ref.id }, owned.branch_id);
     if (!clinic) return { status: "call_clinic" };
@@ -428,8 +421,7 @@ export type CancelOutcome = "cancelled" | "not_allowed" | "gone" | "unverified" 
 
 /**
  * Spec 3.5 step 3 "Yes, cancel it": one of this number's appointments, cancelled exactly as the patient link cancels
- * it (cancelByPatient): the time frees, the clinic gets today's cancellation alert, and the event is recorded. Like
- * the link in every text, it works while the clinic is paused.
+ * it (cancelByPatient): the time frees, the clinic gets today's cancellation alert, and the event is recorded.
  */
 export async function cancelForNumber(slug: string, mobileInput: unknown, appointmentId: unknown, device: Device): Promise<CancelOutcome> {
   const mobile = verifiedNumber(mobileInput, device);

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parseSubscription, planPushPayload, pushPayload, sendPush, vapidSender, weeklyPushPayload, type PushSend } from "@/lib/push";
+import { parseSubscription, pushPayload, sendPush, vapidSender, weeklyPushPayload, type PushSend } from "@/lib/push";
 import { adminClient } from "@/lib/supabase/admin";
 import { manilaInstant } from "@/lib/time";
 
@@ -31,16 +31,6 @@ describe("pushPayload", () => {
 
   it("has nowhere to put a patient's name (spec 10.4)", () => {
     expect(Object.keys(pushPayload("request_alert", start, null)).sort()).toEqual(["body", "title", "url"]);
-  });
-});
-
-describe("planPushPayload", () => {
-  it("says when the plan ends and opens the requests page", () => {
-    expect(planPushPayload(manilaInstant("2026-10-09", 600))).toEqual({
-      title: "Your BrightSmile plan ends Fri Oct 9",
-      body: "Pay in BrightSmile to keep online booking open.",
-      url: "/app/requests",
-    });
   });
 });
 
