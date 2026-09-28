@@ -1,6 +1,7 @@
 import "server-only";
+import { activeBranchesProblem, branchSmsNameProblem, clinicSmsNameProblem } from "@/lib/branches";
 import type { Clock } from "@/lib/onboarding";
-import { parseDentist, parseProcedure, parseProfile, parseRules, parseTimeOff } from "@/lib/settings-input";
+import { parseBranch, parseDentist, parseProcedure, parseProfile, parseRules, parseTimeOff } from "@/lib/settings-input";
 import type { Saved } from "@/lib/staff-input";
 import type { Staff } from "@/lib/supabase/server";
 import { formatClock, parseClock } from "@/lib/time";
@@ -24,11 +25,16 @@ export type SettingsView = {
     name: string;
     smsName: string;
     active: boolean;
-    hours: Clock[][];
+    /** Each block at its branch; blocks at an inactive branch are left out (booking flow spec 4). */
+    hours: (Clock & { branchId: string })[][];
     timeOff: { id: string; startsAt: string; endsAt: string; note: string }[];
   }[];
   procedures: { id: string; name: string; minutes: number; active: boolean }[];
+  /** Every branch, in the order patients see them (booking flow spec 4). */
+  branches: { id: string; name: string; smsName: string; address: string; mapsUrl: string; active: boolean }[];
 };
+
+type BranchRow = { id: string; name: string; sms_name: string; address: string; maps_url: string | null; active: boolean; sort: number };
 
 const GENERIC = "Something went wrong. Please try again.";
 const GONE = "That item no longer exists. Reload the page.";
@@ -38,9 +44,28 @@ function failure(where: string, e: unknown): Saved {
   return { ok: false, error: GENERIC };
 }
 
+/** The clinic's branches in the order patients see them: sort, then when they were added. */
+async function branchRows(staff: Staff): Promise<BranchRow[]> {
+  const { data } = await staff.db
+    .from("branches")
+    .select("id, name, sms_name, address, maps_url, active, sort")
+    .eq("clinic_id", staff.clinicId)
+    .order("sort")
+    .order("created_at")
+    .order("id")
+    .throwOnError();
+  return data as BranchRow[];
+}
+
+/** The clinic's name for texts: every text starts with it (booking flow spec 4 adds a branch after it). */
+async function clinicSmsName(staff: Staff): Promise<string> {
+  const { data } = await staff.db.from("clinics").select("sms_name").eq("id", staff.clinicId).single().throwOnError();
+  return (data as { sms_name: string }).sms_name;
+}
+
 /** Everything the Settings page edits. Time off lists only entries that are not over yet. */
 export async function loadSettings(staff: Staff, now: Date): Promise<SettingsView> {
-  const [clinic, dentists, hours, timeOff, procedures] = await Promise.all([
+  const [clinic, dentists, hours, timeOff, procedures, branches] = await Promise.all([
     staff.db
       .from("clinics")
       .select("name, sms_name, slug, mobile, address, maps_url, slot_minutes, min_notice_minutes, max_days_ahead, alert_channel")
@@ -48,7 +73,7 @@ export async function loadSettings(staff: Staff, now: Date): Promise<SettingsVie
       .single()
       .throwOnError(),
     staff.db.from("dentists").select("id, name, sms_name, active").eq("clinic_id", staff.clinicId).order("created_at").order("name").throwOnError(),
-    staff.db.from("working_hours").select("dentist_id, weekday, start_time, end_time").eq("clinic_id", staff.clinicId).throwOnError(),
+    staff.db.from("working_hours").select("dentist_id, branch_id, weekday, start_time, end_time").eq("clinic_id", staff.clinicId).throwOnError(),
     staff.db
       .from("time_off")
       .select("id, dentist_id, starts_at, ends_at, note")
@@ -57,6 +82,7 @@ export async function loadSettings(staff: Staff, now: Date): Promise<SettingsVie
       .order("starts_at")
       .throwOnError(),
     staff.db.from("procedures").select("id, name, duration_minutes, active").eq("clinic_id", staff.clinicId).order("name").throwOnError(),
+    branchRows(staff),
   ]);
   const c = clinic.data as {
     name: string;
@@ -70,7 +96,11 @@ export async function loadSettings(staff: Staff, now: Date): Promise<SettingsVie
     max_days_ahead: number;
     alert_channel: "push" | "sms";
   };
-  const hourRows = hours.data as { dentist_id: string; weekday: number; start_time: string; end_time: string }[];
+  // Nobody books at an inactive branch, so its blocks stay out of the editor; saving the dentist replaces them.
+  const open = new Set(branches.filter((b) => b.active).map((b) => b.id));
+  const hourRows = (hours.data as { dentist_id: string; branch_id: string; weekday: number; start_time: string; end_time: string }[]).filter((h) =>
+    open.has(h.branch_id),
+  );
   const offRows = timeOff.data as { id: string; dentist_id: string; starts_at: string; ends_at: string; note: string }[];
   const clock = (value: string) => formatClock(parseClock(value));
 
@@ -95,7 +125,7 @@ export async function loadSettings(staff: Staff, now: Date): Promise<SettingsVie
       hours: Array.from({ length: 7 }, (_, day) =>
         hourRows
           .filter((h) => h.dentist_id === d.id && h.weekday === day)
-          .map((h) => ({ start: clock(h.start_time), end: clock(h.end_time) }))
+          .map((h) => ({ start: clock(h.start_time), end: clock(h.end_time), branchId: h.branch_id }))
           .sort((x, y) => x.start.localeCompare(y.start)),
       ),
       timeOff: offRows
@@ -108,14 +138,22 @@ export async function loadSettings(staff: Staff, now: Date): Promise<SettingsVie
       minutes: p.duration_minutes,
       active: p.active,
     })),
+    branches: branches.map((b) => ({ id: b.id, name: b.name, smsName: b.sms_name, address: b.address, mapsUrl: b.maps_url ?? "", active: b.active })),
   };
 }
 
-/** Clinic profile. RLS lets staff update only their own clinic row. */
+/**
+ * Clinic profile. RLS lets staff update only their own clinic row. Patients see each branch's own address and map link
+ * (Settings > Branches). With 2 or more active branches, texts add the branch's short name after the clinic's, so a new
+ * text name must leave room for them (booking flow spec 4).
+ */
 export async function saveProfile(staff: Staff, input: unknown): Promise<Saved> {
   const parsed = parseProfile(input);
   if (!parsed.ok) return parsed;
   try {
+    const { data: active } = await staff.db.from("branches").select("sms_name").eq("clinic_id", staff.clinicId).eq("active", true).throwOnError();
+    const problem = clinicSmsNameProblem(parsed.value.sms_name, (active as { sms_name: string }[]).map((b) => b.sms_name));
+    if (problem) return { ok: false, field: "smsName", error: problem };
     const { error } = await staff.db.from("clinics").update(parsed.value).eq("id", staff.clinicId);
     if (error?.code === "23505") return { ok: false, field: "slug", error: "That booking link is taken. Try another." };
     if (error) throw error;
@@ -144,6 +182,20 @@ export async function saveDentist(staff: Staff, id: string | null, input: unknow
   if (!parsed.ok) return parsed;
   const { name, sms_name, hours } = parsed.value;
   try {
+    // Each block at its branch (booking flow spec 4); a block that names none goes to the first active branch.
+    const { data: branchRows } = await staff.db
+      .from("branches")
+      .select("id")
+      .eq("clinic_id", staff.clinicId)
+      .eq("active", true)
+      .order("sort")
+      .order("created_at")
+      .order("id")
+      .throwOnError();
+    const open = (branchRows as { id: string }[]).map((b) => b.id);
+    if (open.length === 0 || hours.some((h) => h.branch_id !== null && !open.includes(h.branch_id))) {
+      return { ok: false, field: "hours", error: "Choose an open branch for each block." };
+    }
     let dentistId: string;
     if (id === null) {
       const { data } = await staff.db
@@ -174,7 +226,7 @@ export async function saveDentist(staff: Staff, id: string | null, input: unknow
       .throwOnError();
     await staff.db
       .from("working_hours")
-      .insert(hours.map((h) => ({ clinic_id: staff.clinicId, dentist_id: dentistId, ...h })))
+      .insert(hours.map((h) => ({ clinic_id: staff.clinicId, dentist_id: dentistId, ...h, branch_id: h.branch_id ?? open[0] })))
       .throwOnError();
     const oldIds = (old as { id: string }[]).map((o) => o.id);
     if (oldIds.length > 0) await staff.db.from("working_hours").delete().in("id", oldIds).throwOnError();
@@ -271,5 +323,80 @@ export async function setProcedureActive(staff: Staff, id: string, active: boole
     return data.length > 0 ? { ok: true } : { ok: false, error: GONE };
   } catch (e) {
     return failure("setProcedureActive", e);
+  }
+}
+
+/**
+ * Adds a branch (id null: active, last in order) or edits one (booking flow spec 4). With 2 or more active branches every
+ * text names the branch after the clinic, so an active branch's short name must fit beside the clinic's text name, and
+ * so must every other active branch's (the first one is checked here when a second becomes active).
+ */
+export async function saveBranch(staff: Staff, id: string | null, input: unknown): Promise<Saved> {
+  if (id !== null && !isUuid(id)) return { ok: false, error: GONE };
+  const parsed = parseBranch(input);
+  if (!parsed.ok) return parsed;
+  try {
+    const [rows, clinicName] = await Promise.all([branchRows(staff), clinicSmsName(staff)]);
+    const current = id === null ? null : rows.find((b) => b.id === id);
+    if (current === undefined) return { ok: false, error: GONE };
+    const others = rows.filter((b) => b.active && b.id !== id).map((b) => ({ name: b.name, smsName: b.sms_name }));
+    if ((current === null || current.active) && others.length > 0) {
+      const mine = branchSmsNameProblem(clinicName, parsed.value.sms_name);
+      if (mine) return { ok: false, field: "smsName", error: mine };
+      const theirs = activeBranchesProblem(clinicName, [...others, { name: parsed.value.name, smsName: parsed.value.sms_name }]);
+      if (theirs) return { ok: false, error: theirs };
+    }
+    if (current === null) {
+      const sort = rows.reduce((last, b) => Math.max(last, b.sort), -1) + 1;
+      await staff.db.from("branches").insert({ clinic_id: staff.clinicId, ...parsed.value, sort }).throwOnError();
+      return { ok: true };
+    }
+    const { data } = await staff.db.from("branches").update(parsed.value).eq("id", current.id).eq("clinic_id", staff.clinicId).select("id").throwOnError();
+    return data.length > 0 ? { ok: true } : { ok: false, error: GONE };
+  } catch (e) {
+    return failure("saveBranch", e);
+  }
+}
+
+/**
+ * Deactivates or reactivates a branch. Its visits stay; an inactive branch leaves the booking page. The database keeps
+ * the last active branch (BSLAB). Opening a branch again checks every active branch's short name for texts.
+ */
+export async function setBranchActive(staff: Staff, id: string, active: boolean): Promise<Saved> {
+  if (!isUuid(id)) return { ok: false, error: GONE };
+  try {
+    if (active) {
+      const [rows, clinicName] = await Promise.all([branchRows(staff), clinicSmsName(staff)]);
+      const after = rows.filter((b) => b.active || b.id === id).map((b) => ({ name: b.name, smsName: b.sms_name }));
+      const problem = activeBranchesProblem(clinicName, after);
+      if (problem) return { ok: false, error: problem };
+    }
+    const { data, error } = await staff.db.from("branches").update({ active }).eq("id", id).eq("clinic_id", staff.clinicId).select("id");
+    if (error?.code === "BSLAB") return { ok: false, error: "Keep at least one active branch, or patients can't book." };
+    if (error) throw error;
+    return data.length > 0 ? { ok: true } : { ok: false, error: GONE };
+  } catch (e) {
+    return failure("setBranchActive", e);
+  }
+}
+
+/** Moves a branch one place up or down in the order patients see (booking flow spec 4). */
+export async function moveBranch(staff: Staff, id: string, direction: "up" | "down"): Promise<Saved> {
+  if (!isUuid(id)) return { ok: false, error: GONE };
+  try {
+    const rows = await branchRows(staff);
+    const from = rows.findIndex((b) => b.id === id);
+    if (from < 0) return { ok: false, error: GONE };
+    const to = direction === "up" ? from - 1 : from + 1;
+    if (to < 0 || to >= rows.length) return { ok: true };
+    const order = [...rows];
+    [order[from], order[to]] = [order[to], order[from]];
+    // ponytail: one update per branch whose place changed, not one transaction; moving again tidies a half-done move.
+    for (const [sort, b] of order.entries()) {
+      if (b.sort !== sort) await staff.db.from("branches").update({ sort }).eq("id", b.id).eq("clinic_id", staff.clinicId).throwOnError();
+    }
+    return { ok: true };
+  } catch (e) {
+    return failure("moveBranch", e);
   }
 }

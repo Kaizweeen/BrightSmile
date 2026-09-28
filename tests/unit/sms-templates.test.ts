@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderSms, smsCredits, toSmsText, type SmsKind } from "@/lib/sms/templates";
 
 const kinds: SmsKind[] = [
-  "otp", "request_alert", "confirmed", "declined", "moved",
+  "otp", "request_alert", "change_alert", "confirmed", "declined", "moved",
   "cancelled", "reminder", "patient_cancel_alert", "low_credit",
 ];
 
@@ -68,6 +68,12 @@ describe("renderSms", () => {
     expect(renderSms("patient_cancel_alert", {
       first: "Juan", lastInitial: "D", date: "Thu Sep 24", time: "10:00 AM", dentist: "Dr. Reyes",
     })).toBe("Cancelled: Juan D., Thu Sep 24, 10:00 AM with Dr. Reyes.");
+  });
+
+  it("tells the clinic that a patient changed a request, to approve again", () => {
+    expect(renderSms("change_alert", {
+      first: "Juan", lastInitial: "D", date: "Thu Sep 24", time: "10:00 AM", dentist: "Dr. Reyes", appUrl: "https://x.ph",
+    })).toBe("Changed request: Juan D., Thu Sep 24 10:00 AM with Dr. Reyes. Approve at https://x.ph/app/requests");
   });
 
   it("ends a reason with a period", () => {

@@ -1,15 +1,27 @@
 import "server-only";
 import { appUrl } from "@/lib/app-url";
-import { LOW_CREDIT_GAP_MS, lowCreditThreshold, reminders, reminderWindow, type ReminderRow } from "@/lib/daily";
+import {
+  LOW_CREDIT_GAP_MS,
+  lowCreditThreshold,
+  reminders,
+  reminderWindow,
+  reportMonday,
+  weeklyCandidates,
+  type ReminderRow,
+  type WeeklyRow,
+} from "@/lib/daily";
 import { logError } from "@/lib/log";
 import { normalizeMobile } from "@/lib/phone";
+import { sendPush, weeklyPushPayload } from "@/lib/push";
+import { sumCounts, type WeekStatsRow } from "@/lib/reports";
 import { smsMode, type SmsMode } from "@/lib/sms/prepare";
 import { semaphoreBalance, sendSms } from "@/lib/sms/send";
 import { adminClient } from "@/lib/supabase/admin";
+import { addDays } from "@/lib/time";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const REMINDER_ROW =
-  "id, clinic_id, status, starts_at, confirmed_at, reminder_sent_at, manage_token, patient:patients(first_name, mobile, anonymized_at), dentist:dentists(sms_name), clinic:clinics(sms_name)";
+  "id, clinic_id, status, starts_at, confirmed_at, reminder_sent_at, manage_token, patient:patients(first_name, mobile, anonymized_at), dentist:dentists(sms_name), branch:branches(sms_name), clinic:clinics(sms_name)";
 
 /**
  * Spec 11 step 1. Each reminder claims reminder_sent_at with a compare-and-set before its text goes out,
@@ -30,18 +42,20 @@ export async function sendReminders(now: Date): Promise<number> {
   const rows = (data ?? []) as unknown as ReminderRow[];
   if (rows.length === 0) return 0;
 
-  const { data: dentists, error: dentistError } = await db
-    .from("dentists")
-    .select("clinic_id")
-    .eq("active", true)
-    .in("clinic_id", [...new Set(rows.map((r) => r.clinic_id))]);
+  const clinicIds = [...new Set(rows.map((r) => r.clinic_id))];
+  const { data: dentists, error: dentistError } = await db.from("dentists").select("clinic_id").eq("active", true).in("clinic_id", clinicIds);
   if (dentistError) throw dentistError;
   const active = new Map<string, number>();
   for (const { clinic_id } of (dentists ?? []) as { clinic_id: string }[]) active.set(clinic_id, (active.get(clinic_id) ?? 0) + 1);
+  // Booking flow spec 4: a clinic with 2 or more active branches names the branch in its texts.
+  const { data: branchRows, error: branchError } = await db.from("branches").select("clinic_id").eq("active", true).in("clinic_id", clinicIds);
+  if (branchError) throw branchError;
+  const branches = new Map<string, number>();
+  for (const { clinic_id } of (branchRows ?? []) as { clinic_id: string }[]) branches.set(clinic_id, (branches.get(clinic_id) ?? 0) + 1);
 
   const app = appUrl();
   let sent = 0;
-  for (const r of reminders(rows, active, now)) {
+  for (const r of reminders(rows, active, now, branches)) {
     const { data: claimed, error: claimError } = await db
       .from("appointments")
       .update({ reminder_sent_at: now.toISOString() })
@@ -64,6 +78,54 @@ export async function sendReminders(now: Date): Promise<number> {
     });
     if (status !== "failed") sent++;
   }
+  return sent;
+}
+
+/**
+ * Teams spec 6.4: on Mondays (Manila), last week's visits and no-shows to each clinic's devices, by push only. Due: not
+ * yet told this Monday (weeklyCandidates), with at least one appointment last week. Each clinic first claims
+ * weekly_report_for with a compare-and-set, so a rerun never pushes twice. Returns how many clinics a push reached.
+ * A failed count, claim, or push (sendPush returning below 0, meaning the clinic's subscriptions could not be read) is
+ * not retried by this run, so after trying every clinic it throws with their ids.
+ * ponytail: reads every clinic (the API returns at most 1000) and counts one clinic at a time; page and batch when clinics near that.
+ */
+export async function sendWeeklyReports(now: Date): Promise<number> {
+  const monday = reportMonday(now);
+  if (!monday) return 0;
+  const lastMonday = addDays(monday, -7);
+  const db = adminClient();
+  const clinics = await db.from("clinics").select("id, name, weekly_report_for");
+  if (clinics.error) throw clinics.error;
+  let sent = 0;
+  const failed: string[] = [];
+  const due = weeklyCandidates((clinics.data ?? []) as WeeklyRow[], now);
+  for (const clinic of due) {
+    const { data: rows, error: countError } = await db.rpc("clinic_week_stats", { p_clinic_id: clinic.id, p_from: lastMonday, p_weeks: 1 });
+    if (countError) {
+      logError("sendWeeklyReports counts", countError);
+      failed.push(clinic.id);
+      continue;
+    }
+    const week = sumCounts((rows ?? []) as WeekStatsRow[]);
+    if (week.online + week.manual === 0) continue;
+    const { data: claimed, error: claimError } = await db
+      .from("clinics")
+      .update({ weekly_report_for: monday })
+      .eq("id", clinic.id)
+      .or(`weekly_report_for.is.null,weekly_report_for.lt.${monday}`)
+      .select("id");
+    if (claimError) {
+      logError("sendWeeklyReports claim", claimError);
+      failed.push(clinic.id);
+      continue;
+    }
+    if (!claimed || claimed.length === 0) continue;
+    const delivered = await sendPush(clinic.id, weeklyPushPayload(clinic.name, week.completed, week.no_show));
+    if (delivered > 0) sent++;
+    else if (delivered < 0) failed.push(clinic.id);
+  }
+  // A failed count, claim, or push is not retried, so name the clinics (ids only) in the log.
+  if (failed.length > 0) throw new Error(`${failed.length} weekly summaries failed, ${sent} sent (clinics ${failed.join(", ")})`);
   return sent;
 }
 
@@ -132,6 +194,7 @@ type Failed = "failed";
 export type DailySummary = {
   ok: boolean;
   reminders: number | Failed;
+  weekly: number | Failed;
   expired: number | Failed;
   cleaned: { codes: number; bodies: number } | Failed;
   credit: { status: CreditCheck; balance: number | null } | Failed;
@@ -153,7 +216,8 @@ export async function runDailyJob(now: Date): Promise<DailySummary> {
   const expired = await step("expiry", () => expirePending());
   const cleaned = await step("cleanup", () => cleanup(now));
   const sent = await step("reminders", () => sendReminders(now));
+  const weekly = await step("weekly reports", () => sendWeeklyReports(now));
   const credit = await step("credit check", () => checkCredit(now));
-  const failed = [sent, expired, cleaned, credit].includes("failed") || (credit !== "failed" && credit.status === "unknown");
-  return { ok: !failed, reminders: sent, expired, cleaned, credit };
+  const failed = [sent, weekly, expired, cleaned, credit].includes("failed") || (credit !== "failed" && credit.status === "unknown");
+  return { ok: !failed, reminders: sent, weekly, expired, cleaned, credit };
 }

@@ -2,6 +2,8 @@
 
 Online booking for dental clinics in the Philippines. Patients request a time from the clinic's booking link, the clinic approves it, and patients get text confirmations and reminders.
 
+BrightSmile is free for clinics, with no billing anywhere in the app, and web-only: there is no Play Store app.
+
 - Spec: `docs/superpowers/specs/2026-09-22-brightsmile-core-booking-design.md`
 - Plans: `docs/superpowers/plans/`
 
@@ -16,7 +18,7 @@ Online booking for dental clinics in the Philippines. Patients request a time fr
 | Script | What it does |
 |---|---|
 | `npm run dev` | Dev server on port 3600 |
-| `npm test` | Unit tests, no network needed |
+| `npm test` | Unit tests and the offline database tests (`tests/sql`, PGlite), no network needed |
 | `npm run test:db` | Database tests against a development Supabase project (they refuse production) |
 | `npm run test:e2e` | The Playwright booking test (starts the dev server if needed) |
 | `npm run test:e2e:install` | Download Chromium for Playwright (once) |
@@ -26,7 +28,7 @@ Online booking for dental clinics in the Philippines. Patients request a time fr
 
 ## End-to-end test
 
-One Playwright test walks the whole booking loop: a patient books on a clinic's page, the code is read from `sms_log`, the clinic approves in the dashboard, and the visit shows on the schedule.
+One Playwright test walks the whole booking loop: a patient verifies their number on a clinic's page (the code is read from `sms_log`), fills in the patient form, and books; the clinic approves in the dashboard; and the visit shows on the schedule.
 
 1. Once: put `PLAYWRIGHT_BROWSERS_PATH=D:\playwright-browsers` (or any folder on a drive with space) in `.env.local`, then run `npm run test:e2e:install`.
 2. Run `npm run test:e2e`. It uses the dev server on port 3600, starting it if needed, with `SMS_MODE=log`. If a dev server is already running, it must be in log mode too (the test reads the code from `sms_log`).
@@ -45,7 +47,7 @@ Do these in order. Kai creates the accounts; nothing here can be done from code.
 
 ### 2. Supabase production project
 
-Production is the project with ref `fmvqwojzsklinbdmfjkn` (first created as `brightsmile-dev`, and empty at launch). Its migrations are already applied, so for it start at step 3. Steps 1 and 2 set up any new project, such as the separate development project that the database and e2e tests need.
+Production is the project with ref `fmvqwojzsklinbdmfjkn` (first created as `brightsmile-dev`, and empty at launch). Migrations 1 to 6 are already applied there, so for it start at step 3; migrations 7 and 8 are pasted as described under "Teams and reports" and "Branches and the booking engine" below. Steps 1 and 2 set up any new project, such as the separate development project that the database and e2e tests need.
 
 1. Create a new project, region Singapore. From **Project Settings > API Keys** copy the project URL, the publishable key, and the secret key.
 2. Apply the migrations in filename order: open each file in `supabase/migrations`, paste it into the **SQL Editor**, and run it before opening the next.
@@ -58,12 +60,14 @@ Production is the project with ref `fmvqwojzsklinbdmfjkn` (first created as `bri
    | 4 | `20260924000100_hardening.sql` |
    | 5 | `20260924000200_default_function_privileges.sql` |
    | 6 | `20260925000100_otp_issue_lock.sql` |
+   | 7 | `20260926000100_teams.sql` |
+   | 8 | `20260928000100_branches_booking.sql` |
 
    Migrations run by hand are not recorded in the project's migration history. Before you ever use `npm run db:push` against this project, link it and mark them as applied, or the CLI will try to run them again:
 
    ```powershell
    npx supabase link --project-ref <production-project-ref>
-   npx supabase migration repair --status applied 20260922000100 20260922000200 20260922000300 20260924000100 20260924000200 20260925000100
+   npx supabase migration repair --status applied 20260922000100 20260922000200 20260922000300 20260924000100 20260924000200 20260925000100 20260926000100 20260928000100
    ```
 
 3. **Authentication > URL Configuration:** Site URL = your `APP_URL` (for example `https://brightsmile.ph`); add `https://brightsmile.ph/**` under Redirect URLs.
@@ -71,7 +75,6 @@ Production is the project with ref `fmvqwojzsklinbdmfjkn` (first created as `bri
    - Confirm signup: link `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next=/onboarding`
    - Reset password: link `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/reset-password`
 5. **Authentication > Emails > SMTP Settings:** set up custom SMTP; it is required. Supabase's built-in sender only delivers to members of your Supabase team, at most 2 emails an hour, so clinics would never get their sign-up email. Without a domain of your own, a Gmail account works: host `smtp.gmail.com`, port `465`, username and sender email = the Gmail address, password = a Google App Password (needs 2-Step Verification).
-6. Keep email confirmation on (**Authentication > Sign In / Providers > Email**).
 
 ### 3. Keys
 
@@ -123,4 +126,56 @@ The Vercel project `bright-smile` already exists and is Git-connected: pushes to
 4. On a phone, add the dashboard to the home screen (iPhone: Safari, Share, Add to Home Screen), open it, and in Settings press "Enable push on this device". Book another visit: the push arrives and opens Requests.
 5. Have a lawyer review `/privacy` and `/terms` and replace every `[bracketed]` placeholder before real clinics sign up.
 6. Check the daily job weekly under **Settings > Cron Jobs** (a failed run shows as an error there), or add a Vercel alert or log drain.
-7. Before charging clinics: check whether NPC registration applies (likely once sensitive data on 1,000 or more people is held), run a trademark check on BrightSmile, and register the business.
+7. Before launch: check whether NPC registration applies (likely once sensitive data on 1,000 or more people is held), run a trademark check on BrightSmile, and register the business.
+
+## Teams and reports
+
+A clinic's owner invites staff with a join link (spec: `docs/superpowers/specs/2026-09-26-brightsmile-teams-reports-design.md`). Staff handle requests, the schedule, new appointments, patients, and dentists' time off; only the owner changes the clinic profile and booking rules, dentists, working hours, procedures, and the team. The database enforces this, not only the pages. Staff cannot see their colleagues' emails either: a staff member reads only their own membership row, and the owner reads every membership (RA 10173 data minimization); the Team page itself is owner only. Staff seats are free. Every clinic also gets a Reports page and a Monday 9:00 AM push that sums up the week before.
+
+### Apply the teams migration (once, before merging the teams branch)
+
+Every merge to `main` deploys, and the new code reads the new columns and functions, so the migration goes first. The OTP locking migration must already be in production: the teams migration checks this itself and refuses to run (it fails on its first statement) if `issue_otp` does not exist yet, so pasting it out of order fails fast instead of leaving `clinic_members` half migrated.
+
+1. Make sure production's `create_clinic` is still the one in `supabase/migrations/20260922000200_access.sql`, because this migration replaces it and a fix made there by hand would be lost. Run `select pg_get_functiondef('public.create_clinic(jsonb)'::regprocedure);` in the production **SQL Editor** and compare the body (between the `$function$` markers) with `create_clinic` there. If they differ, stop and fold the difference into the teams migration first.
+2. Make sure no clinic uses the booking link `join`, which becomes reserved: `select id, name from public.clinics where slug = 'join';` must return no rows. If it returns one, change that clinic's booking link first, or the migration stops at `clinics_slug_not_reserved`.
+3. Open `supabase/migrations/20260926000100_teams.sql`, paste it into the production **SQL Editor**, and run it. Every existing member stays the owner of their clinic and gets their login email copied onto their membership. `npm test` has already applied it to an offline copy of the schema (`tests/sql`).
+4. Check it: `select count(*) from public.clinic_members where email is null or role <> 'owner';` must return `0`.
+5. If you ever link the project for `npm run db:push`, mark it applied first: `npx supabase migration repair --status applied 20260926000100`.
+
+### Invite staff
+
+1. As the owner, open **Settings**, then **Open Team**, and press **Create join link**. Copy the link and send it by Messenger or text. It works once, for 7 days, and is shown only once; make another if it is lost.
+2. The staff member opens it, creates an account (or logs in), confirms their email in the same browser, and presses **Join**. They land on Requests. If they confirmed in another browser and see the clinic setup instead, they open the join link again there.
+3. On the Team page, **Revoke** stops an unused link at once, and **Remove** ends a staff member's access on their next page load and stops their devices getting the clinic's alerts.
+
+One login belongs to one clinic: someone whose login already has a clinic joins with another email.
+
+### Reports and the Monday push
+
+**Reports**, in the dashboard nav, shows a Manila week's (Monday to Sunday) visits, no-shows, no-show rate, cancellations, declined and expired requests, visits nobody marked yet, and online versus staff bookings, per dentist when 2 or more had appointments, and an 8 week table. Every Monday the daily job pushes "Last week at {clinic}" with the week's visits, no-shows, and no-show rate to each clinic that had appointments; tapping it opens Reports. There is no text fallback (it would cost a credit per clinic per week). The daily job's JSON reports how many clinics the push reached as `"weekly"`.
+
+## Branches and the booking engine
+
+A clinic can have several branches, each with its own address and calendar (spec: `docs/superpowers/specs/2026-09-26-brightsmile-booking-flow-branches-design.md`). The booking page opens on three choices: book an appointment, reschedule or edit a booking, or cancel one. Every path starts with the patient's mobile number and a 6 digit code by text (a phone that verified the number before goes straight on). Then the patient books for one of the number's patients or for someone new with the clinic's patient form and waiver, changes a booking (it goes back to the clinic for approval, and the clinic gets a "Changed request" alert), or cancels one. Every clinic starts with one branch, "Main". Once it has 2 or more active branches, patients choose a branch when they book, the dashboard names each visit's branch and filters by it, New appointment and each dentist's working hours ask for the branch, and patients' texts name the branch after the clinic (for example "Bright Dental Makati").
+
+Answers on the patient form are health information, sensitive personal information under RA 10173: only the clinic's members read them (read only, in a "Patient form" section on the patient page), they never appear in texts, pushes, logs, reports, or URLs, and deleting a patient clears all of them. The form's fields (`src/lib/intake.ts`) and the waiver's wording (`src/lib/waiver.ts`) are our draft: they still need Kai's corrections and legal review, and changing the waiver's words means a new `WAIVER_VERSION`.
+
+### Apply the branches migration (once, before merging the branches branch)
+
+Every merge to `main` deploys, and the new code reads the new table, columns, and functions, so the migration goes first. The teams migration must already be in production: this migration checks it and refuses to run (it fails on its first statement) if `clinic_invites` does not exist yet.
+
+1. Make sure production's `create_clinic` is still the one in the teams migration and `create_booking` still the one in the hardening migration, because this migration replaces both and a fix made there by hand would be lost. In the production **SQL Editor**, run `select pg_get_functiondef('public.create_clinic(jsonb)'::regprocedure);` and compare the body (between the `$function$` markers) with `create_clinic` in `supabase/migrations/20260926000100_teams.sql`; then run `select pg_get_functiondef(p.oid) from pg_proc p where p.proname = 'create_booking';` and compare it with `create_booking` in `supabase/migrations/20260924000100_hardening.sql`. If either differs, stop and fold the difference into the branches migration first.
+2. Open `supabase/migrations/20260928000100_branches_booking.sql`, paste it into the production **SQL Editor**, and run it. Every clinic gets one branch, "Main", with the clinic's address and map link, holding all its working hours and appointments. `npm test` has already applied it to an offline copy of the schema (`tests/sql`).
+3. Run `notify pgrst, 'reload schema';` so the API sees the new `create_booking` and `change_booking` at once.
+4. Check it: `select count(*) from public.clinics c where (select count(*) from public.branches b where b.clinic_id = c.id and b.active) <> 1;` must return `0`.
+5. Merge the branch right away. Until the deploy finishes, saving a dentist's working hours in Settings fails (the old code names no branch); saving again after the deploy works. Everything else keeps working in between.
+6. If you ever link the project for `npm run db:push`, mark it applied first: `npx supabase migration repair --status applied 20260928000100`.
+
+The booking pages need no migration of their own: they use the branches migration above.
+
+### Add a branch
+
+1. As the owner, open **Settings**. Under **Branches**, press **Edit** on "Main" and give it its real name, address, and map link: patients see them on the booking page and on the page linked from every text. The clinic profile's address stays the clinic's own.
+2. Press **Add a branch**. Its short name for texts goes after the clinic's name for texts, and the two must fit in 20 characters together (for example "Bright Dental" leaves 6, enough for "Makati"). Settings says how many characters are left, checks every active branch when a second becomes active, and refuses a clinic name for texts that leaves no room.
+3. Open each dentist in **Settings**: with 2 or more active branches, every block of working hours has a **Branch**. One dentist's blocks may not overlap, even at two branches.
+4. **Move up** and **Move down** set the order patients see. **Deactivate** takes a branch off the booking page; its visits stay on the schedule, and the last active branch cannot be deactivated.

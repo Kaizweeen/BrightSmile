@@ -1,15 +1,21 @@
 import { clinicProblems, dentistProblems, type Clock, type OnboardingInput } from "@/lib/onboarding";
 import { normalizeMobile } from "@/lib/phone";
 import { manilaInstant } from "@/lib/time";
-import { cleanText, LIMITS } from "@/lib/validate";
+import { cleanText, isUuid, LIMITS } from "@/lib/validate";
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; field: string; error: string };
 
 export type ProfileRow = { name: string; sms_name: string; slug: string; mobile: string; address: string; maps_url: string | null };
 export type RulesRow = { slot_minutes: number; min_notice_minutes: number; max_days_ahead: number; alert_channel: "push" | "sms" };
-export type DentistRow = { name: string; sms_name: string; hours: { weekday: number; start_time: string; end_time: string }[] };
+/** branch_id null: the clinic's first active branch (the Settings page names none until plan 8). */
+export type DentistRow = {
+  name: string;
+  sms_name: string;
+  hours: { weekday: number; start_time: string; end_time: string; branch_id: string | null }[];
+};
 export type TimeOffRow = { starts_at: string; ends_at: string; note: string };
 export type ProcedureRow = { name: string; duration_minutes: number };
+export type BranchRow = { name: string; sms_name: string; address: string; maps_url: string | null };
 
 const record = (value: unknown) => (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
 const text = (value: unknown) => (typeof value === "string" ? value : "");
@@ -61,13 +67,24 @@ export function parseRules(value: unknown): Parsed<RulesRow> {
 
 const DENTIST_FIELD = { dentistName: "name", dentistSmsName: "smsName", hours: "hours" } as Record<string, string>;
 
-/** A dentist with weekly hours (several blocks per day), checked by the onboarding rules. */
+/**
+ * A dentist with weekly hours (several blocks per day), checked by the onboarding rules. A block may name its branch
+ * (booking flow spec 4). The overlap check runs over all of a dentist's blocks on a weekday together, so blocks at
+ * two branches can never overlap either.
+ */
 export function parseDentist(value: unknown): Parsed<DentistRow> {
   const v = record(value);
   const input = { dentistName: text(v.name), dentistSmsName: text(v.smsName), hours: v.hours };
   const problem = Object.entries(dentistProblems(input as OnboardingInput))[0];
   if (problem) return fail(DENTIST_FIELD[problem[0]], problem[1]);
-  const hours = (v.hours as Clock[][]).flatMap((blocks, weekday) => blocks.map((b) => ({ weekday, start_time: b.start, end_time: b.end })));
+  const blocks = (v.hours as (Clock & { branchId?: unknown })[][]).flatMap((day, weekday) => day.map((b) => ({ ...b, weekday })));
+  if (blocks.some((b) => b.branchId !== undefined && b.branchId !== null && !isUuid(b.branchId))) return fail("hours", "Choose a branch for each block.");
+  const hours = blocks.map((b) => ({
+    weekday: b.weekday,
+    start_time: b.start,
+    end_time: b.end,
+    branch_id: typeof b.branchId === "string" ? b.branchId : null,
+  }));
   return { ok: true, value: { name: input.dentistName.trim(), sms_name: input.dentistSmsName.trim(), hours } };
 }
 
@@ -103,4 +120,22 @@ export function parseProcedure(value: unknown): Parsed<ProcedureRow> {
   const minutes = typeof v.minutes === "string" && v.minutes.trim() === "" ? NaN : Number(v.minutes);
   if (!Number.isInteger(minutes) || minutes < 5 || minutes > 480) return fail("minutes", "Use 5 to 480 minutes.");
   return { ok: true, value: { name, duration_minutes: minutes } };
+}
+
+/**
+ * A branch (booking flow spec 4): the name patients see, a short name for texts, the address patients go to, and an
+ * optional https map link. Whether the short name fits beside the clinic's text name is checked on save, against the
+ * other active branches.
+ */
+export function parseBranch(value: unknown): Parsed<BranchRow> {
+  const v = record(value);
+  const name = cleanText(v.name, LIMITS.branchName);
+  if (!name) return fail("name", `Enter a name, up to ${LIMITS.branchName} characters.`);
+  const smsName = cleanText(v.smsName, LIMITS.branchSmsName);
+  if (!smsName) return fail("smsName", `Use 1 to ${LIMITS.branchSmsName} characters.`);
+  const address = cleanText(v.address, LIMITS.address);
+  if (!address) return fail("address", `Enter the address patients go to, up to ${LIMITS.address} characters.`);
+  const mapsUrl = text(v.mapsUrl).trim();
+  if (mapsUrl && !mapsUrlOk(mapsUrl)) return fail("mapsUrl", `Paste a map link that starts with https://, up to ${LIMITS.mapsUrl} characters.`);
+  return { ok: true, value: { name, sms_name: smsName, address, maps_url: mapsUrl || null } };
 }

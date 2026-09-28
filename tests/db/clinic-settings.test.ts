@@ -77,12 +77,12 @@ describe("dentists and hours", () => {
     let view = await loadSettings(a.staff, new Date());
     const added = view.dentists.find((d) => d.name === "Dr. Ben Lim")!;
     lim = added.id;
-    expect(added.hours[1]).toEqual([{ start: "09:00", end: "12:00" }]);
+    expect(added.hours[1]).toMatchObject([{ start: "09:00", end: "12:00" }]);
 
     const twoBlocks = [[], [{ start: "08:00", end: "11:00" }, { start: "14:00", end: "18:00" }], [], [], [], [], []];
     expect(await saveDentist(a.staff, lim, { name: "Dr. Ben Lim", smsName: "Dr. Lim", hours: twoBlocks })).toEqual({ ok: true });
     view = await loadSettings(a.staff, new Date());
-    expect(view.dentists.find((d) => d.id === lim)!.hours[1]).toEqual([
+    expect(view.dentists.find((d) => d.id === lim)!.hours[1]).toMatchObject([
       { start: "08:00", end: "11:00" },
       { start: "14:00", end: "18:00" },
     ]);

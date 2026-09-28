@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { isCronAuthorized, lowCreditThreshold, reminders, reminderWindow, type ReminderRow } from "@/lib/daily";
+import {
+  isCronAuthorized,
+  lowCreditThreshold,
+  reminders,
+  reminderWindow,
+  reportMonday,
+  weeklyCandidates,
+  type ReminderRow,
+  type WeeklyRow,
+} from "@/lib/daily";
 import { manilaInstant } from "@/lib/time";
 
 const SECRET = "s3cret-s3cret-s3cret-s3cret";
@@ -46,6 +55,7 @@ describe("reminders", () => {
     manage_token: "AbCdEfGhIjKl",
     patient: { first_name: "Ana", mobile: "+639171112222", anonymized_at: null },
     dentist: { sms_name: "Dr. Reyes" },
+    branch: { sms_name: "Makati" },
     clinic: { sms_name: "Bright Dental" },
   };
   const one = new Map([["c1", 1]]);
@@ -69,6 +79,11 @@ describe("reminders", () => {
     ];
     expect(reminders(skipped, one, now)).toEqual([]);
   });
+
+  it("names the branch after the clinic once the clinic has 2 or more active branches", () => {
+    expect(reminders([row], one, now, new Map([["c1", 2]]))[0].clinic).toBe("Bright Dental Makati");
+    expect(reminders([row], one, now, new Map([["c1", 1]]))[0].clinic).toBe("Bright Dental");
+  });
 });
 
 describe("lowCreditThreshold", () => {
@@ -81,5 +96,22 @@ describe("lowCreditThreshold", () => {
     expect(lowCreditThreshold("abc")).toBe(500);
     expect(lowCreditThreshold("-5")).toBe(500);
     expect(lowCreditThreshold("1.5")).toBe(500);
+  });
+});
+
+describe("reportMonday and weeklyCandidates", () => {
+  const monday = manilaInstant("2026-10-05", 9 * 60); // the cron time, 01:00 UTC
+  const clinic = (id: string, weekly_report_for: string | null = null): WeeklyRow => ({ id, name: `Clinic ${id}`, weekly_report_for });
+
+  it("is Monday on the Manila calendar, whatever the UTC date", () => {
+    expect(reportMonday(monday)).toBe("2026-10-05");
+    expect(reportMonday(manilaInstant("2026-10-05", 30))).toBe("2026-10-05"); // 12:30 AM in Manila is still Sunday in UTC
+    expect(reportMonday(manilaInstant("2026-10-04", 23 * 60 + 30))).toBeNull(); // Sunday 11:30 PM in Manila
+    expect(reportMonday(manilaInstant("2026-10-06", 9 * 60))).toBeNull();
+  });
+
+  it("picks clinics with no summary for this Monday yet", () => {
+    const clinics = [clinic("c1"), clinic("c2", "2026-09-28"), clinic("c3", "2026-10-05")];
+    expect(weeklyCandidates(clinics, monday).map((c) => c.id)).toEqual(["c1", "c2"]);
   });
 });

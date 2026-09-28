@@ -1,6 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { parseSubscription, pushPayload, sendPush, vapidSender } from "@/lib/push";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { parseSubscription, pushPayload, sendPush, vapidSender, weeklyPushPayload, type PushSend } from "@/lib/push";
+import { adminClient } from "@/lib/supabase/admin";
 import { manilaInstant } from "@/lib/time";
+
+vi.mock("@/lib/supabase/admin", () => ({ adminClient: vi.fn() }));
 
 const start = manilaInstant("2026-09-24", 600);
 const keys = { p256dh: `B${"A".repeat(86)}`, auth: "A".repeat(22) };
@@ -22,8 +25,28 @@ describe("pushPayload", () => {
     });
   });
 
+  it("describes a changed request, which the clinic approves again", () => {
+    expect(pushPayload("change_alert", start, null)).toEqual({ title: "Booking request changed", body: "Thu Sep 24, 10:00 AM", url: "/app/requests" });
+  });
+
   it("has nowhere to put a patient's name (spec 10.4)", () => {
     expect(Object.keys(pushPayload("request_alert", start, null)).sort()).toEqual(["body", "title", "url"]);
+  });
+});
+
+describe("weeklyPushPayload", () => {
+  it("sums up last week in counts only, and asks for Reports", () => {
+    expect(weeklyPushPayload("Bright Dental", 12, 3)).toEqual({
+      title: "Last week at Bright Dental",
+      body: "12 visits, 3 no-shows (20%). Tap to see Reports.",
+      url: "/app/reports",
+      type: "weekly",
+    });
+    expect(weeklyPushPayload("Bright Dental", 1, 1).body).toBe("1 visit, 1 no-show (50%). Tap to see Reports.");
+  });
+
+  it("gives no rate when nobody came or was marked a no-show", () => {
+    expect(weeklyPushPayload("Bright Dental", 0, 0).body).toBe("0 visits, 0 no-shows. Tap to see Reports.");
   });
 });
 
@@ -80,5 +103,13 @@ describe("vapidSender and sendPush without keys", () => {
     delete process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
     delete process.env.VAPID_PRIVATE_KEY;
     expect(await sendPush("any-clinic", pushPayload("request_alert", start, null))).toBe(0);
+  });
+
+  it("returns -1, not 0, when the clinic's subscriptions cannot even be read", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const failing = { from: () => ({ select: () => ({ eq: async () => ({ data: null, error: { message: "connection reset" } }) }) }) };
+    vi.mocked(adminClient).mockReturnValue(failing as never);
+    const send: PushSend = async () => ({});
+    expect(await sendPush("any-clinic", pushPayload("request_alert", start, null), send)).toBe(-1);
   });
 });

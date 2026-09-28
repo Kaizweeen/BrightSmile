@@ -2,19 +2,39 @@ import "server-only";
 import * as webpush from "web-push";
 import { logError } from "@/lib/log";
 import type { Saved } from "@/lib/staff-input";
+import { formatRate, noShowRate } from "@/lib/reports";
 import { adminClient } from "@/lib/supabase/admin";
 import type { Staff } from "@/lib/supabase/server";
 import { formatDate, formatTime } from "@/lib/time";
 
-export type AlertKind = "request_alert" | "patient_cancel_alert";
-export type PushPayload = { title: string; body: string; url: string };
+export type AlertKind = "request_alert" | "change_alert" | "patient_cancel_alert";
+/** type "weekly" is the one thing the service worker reads besides the words: it opens Reports instead of Requests. */
+export type PushPayload = { title: string; body: string; url: string; type?: "weekly" };
 export type StoredSubscription = { endpoint: string; p256dh: string; auth: string };
 export type PushSend = (sub: StoredSubscription, body: string) => Promise<unknown>;
+
+const ALERT_TITLE: Record<AlertKind, string> = {
+  request_alert: "New booking request",
+  change_alert: "Booking request changed",
+  patient_cancel_alert: "Request cancelled",
+};
 
 /** Spec 10.4: date, time, and dentist only, never a patient's name. Tapping opens the requests page. */
 export function pushPayload(kind: AlertKind, startsAt: Date, dentist: string | null): PushPayload {
   const when = `${formatDate(startsAt)}, ${formatTime(startsAt)}${dentist ? ` with ${dentist}` : ""}`;
-  return { title: kind === "request_alert" ? "New booking request" : "Request cancelled", body: when, url: "/app/requests" };
+  return { title: ALERT_TITLE[kind], body: when, url: "/app/requests" };
+}
+
+/** Teams spec 6.4: the Monday summary of last week, in counts only. A tap opens Reports (type "weekly"). */
+export function weeklyPushPayload(clinicName: string, visits: number, noShows: number): PushPayload {
+  const rate = noShowRate(visits, noShows);
+  const counts = `${visits} ${visits === 1 ? "visit" : "visits"}, ${noShows} ${noShows === 1 ? "no-show" : "no-shows"}`;
+  return {
+    title: `Last week at ${clinicName}`,
+    body: `${counts}${rate === null ? "" : ` (${formatRate(rate)})`}. Tap to see Reports.`,
+    url: "/app/reports",
+    type: "weekly",
+  };
 }
 
 // The push services of Chrome and Android (FCM), Firefox, Safari and iOS, and Edge on Windows.
@@ -67,8 +87,11 @@ function gone(e: unknown): boolean {
 }
 
 /**
- * Sends a push to every subscription of the clinic and returns how many push services accepted it.
- * Uses the secret-key client because a patient's booking triggers it. Never throws (spec 13).
+ * Sends a push to every subscription of the clinic and returns how many push services accepted it, or -1 when the
+ * clinic's subscriptions could not even be read. Uses the secret-key client because a patient's booking triggers it.
+ * Never throws (spec 13). Most callers only ask "did this reach at least one device" (result > 0), so 0 and -1 read
+ * the same to them; the Monday push loop (src/lib/daily-job.ts) is the one caller that also treats a negative result
+ * as a failed clinic, worth naming in its own failure log, rather than simply "nobody had push turned on".
  */
 export async function sendPush(clinicId: string, payload: PushPayload, send: PushSend | null = vapidSender()): Promise<number> {
   if (!send) return 0;
@@ -92,7 +115,7 @@ export async function sendPush(clinicId: string, payload: PushPayload, send: Pus
     return results.filter((r) => r.status === "fulfilled").length;
   } catch (e) {
     logError("sendPush", e);
-    return 0;
+    return -1;
   }
 }
 
@@ -101,7 +124,8 @@ const FAILED = "Something went wrong. Please try again.";
 /**
  * Stores this device's subscription for the signed-in staff member, through their RLS client. The same
  * endpoint again (the browser re-subscribed) updates the keys in place.
- * ponytail: an endpoint already saved by another login on this browser fails RLS and shows FAILED; v1 has one login per clinic.
+ * ponytail: an endpoint another member already saved on this browser (a shared front desk device) fails RLS and shows
+ * FAILED, though the device keeps getting the clinic's alerts through that member's row; let a member take it over if asked.
  */
 export async function saveSubscription(staff: Staff, input: unknown): Promise<Saved> {
   const sub = parseSubscription(input);

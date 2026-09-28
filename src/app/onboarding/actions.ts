@@ -15,6 +15,8 @@ export async function createClinic(input: unknown): Promise<OnboardingResult> {
   if (!auth?.claims?.sub) return { ok: false, field: "form", error: "Your session ended. Log in again to finish." };
 
   const { error } = await db.rpc("create_clinic", { p: parsed.payload });
+  // No join cookie cleanup here: any cookie change in a Server Action re-renders the page, which would send the new
+  // owner to /app before onboarding's last screen. A leftover cookie is harmless, since every reader needs an open link.
   if (!error) return { ok: true, slug: parsed.payload.slug };
   if (error.message.includes("clinics_slug_key")) {
     return { ok: false, field: "slug", error: "That booking link is taken. Try another." };

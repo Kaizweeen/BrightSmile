@@ -54,6 +54,12 @@ export function formatDate(instant: Date): string {
   return `${DAYS[shifted.getUTCDay()]} ${MONTHS[shifted.getUTCMonth()]} ${shifted.getUTCDate()}`;
 }
 
+/** "Fri Oct 9", with the year when it is not this year ("Thu Sep 30, 2027"). */
+export function formatDateWithYear(instant: Date, now: Date): string {
+  const year = manilaDate(instant).slice(0, 4);
+  return year === manilaDate(now).slice(0, 4) ? formatDate(instant) : `${formatDate(instant)}, ${year}`;
+}
+
 /** "10:00 AM". */
 export function formatMinutes(minutes: number): string {
   const h = Math.floor(minutes / 60);

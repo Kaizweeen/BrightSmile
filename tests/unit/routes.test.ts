@@ -24,6 +24,10 @@ describe("guardRedirect", () => {
     }
   });
 
+  it("never redirects a join link, which works signed in or out (teams spec 6.2)", () => {
+    for (const visitor of [out, noClinic, staff]) expect(guardRedirect("/join/AbCdEfGhIjKl", visitor)).toBeNull();
+  });
+
   it("sends signed-in users without a clinic to onboarding", () => {
     expect(guardRedirect("/app", noClinic)).toBe("/onboarding");
     expect(guardRedirect("/login", noClinic)).toBe("/onboarding");

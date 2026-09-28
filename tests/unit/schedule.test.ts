@@ -74,11 +74,14 @@ describe("parseDay", () => {
 });
 
 describe("hoursByDentist", () => {
-  it("builds each dentist's week in minutes, sorted", () => {
-    const week = hoursByDentist([
-      { dentist_id: "d", weekday: 1, start_time: "13:00:00", end_time: "17:00:00" },
-      { dentist_id: "d", weekday: 1, start_time: "09:00:00", end_time: "12:00:00" },
+  it("builds each dentist's week at each branch in minutes, sorted", () => {
+    const byBranch = hoursByDentist([
+      { dentist_id: "d", branch_id: "b", weekday: 1, start_time: "13:00:00", end_time: "17:00:00" },
+      { dentist_id: "d", branch_id: "b", weekday: 1, start_time: "09:00:00", end_time: "12:00:00" },
+      { dentist_id: "d", branch_id: "b2", weekday: 2, start_time: "09:00:00", end_time: "12:00:00" },
     ]).get("d")!;
+    expect([...byBranch.keys()]).toEqual(["b", "b2"]);
+    const week = byBranch.get("b")!;
     expect(week).toHaveLength(7);
     expect(week[1]).toEqual([
       { start: 540, end: 720 },
@@ -99,12 +102,13 @@ describe("assembleDay", () => {
     ends_at: at(end),
     procedure_names: ["Consultation"],
     dentist_id: "d",
+    branch_id: "b",
     patient_id: "p",
     patient: { first_name: "Ana", last_name: "Cruz", mobile: "+639171112222" },
   });
   const hours = hoursByDentist([
-    { dentist_id: "d", weekday: 1, start_time: "09:00", end_time: "12:00" },
-    { dentist_id: "d", weekday: 1, start_time: "13:00", end_time: "17:00" },
+    { dentist_id: "d", branch_id: "b", weekday: 1, start_time: "09:00", end_time: "12:00" },
+    { dentist_id: "d", branch_id: "b", weekday: 1, start_time: "13:00", end_time: "17:00" },
   ]);
   const timeOff = new Map([["d", [{ start: new Date(at(900)), end: new Date(at(960)) }]]]);
   const now = new Date(at(0));
@@ -138,5 +142,22 @@ describe("assembleDay", () => {
     const [item] = assembleDay([{ ...row("x", "confirmed", 540, 570), dentist_id: "other" }], { hours, timeOff, failed: new Set(), now });
     expect(item.outsideHours).toBe(true);
     expect(item.actions).toEqual(["move", "cancel"]);
+  });
+
+  it("checks a visit against its dentist's hours at the visit's own branch, and carries the branch", () => {
+    // Monday mornings at b, Monday afternoons at b2: one dentist at 2 branches (spec 4).
+    const split = hoursByDentist([
+      { dentist_id: "d", branch_id: "b", weekday: 1, start_time: "09:00", end_time: "12:00" },
+      { dentist_id: "d", branch_id: "b2", weekday: 1, start_time: "13:00", end_time: "17:00" },
+    ]);
+    const items = assembleDay(
+      [row("morning", "confirmed", 540, 570), { ...row("wrong", "confirmed", 600, 630), branch_id: "b2" }, { ...row("afternoon", "pending", 840, 870), branch_id: "b2" }],
+      { hours: split, timeOff: new Map(), failed: new Set(), now },
+    );
+    expect(items.map((i) => [i.id, i.branchId, i.outsideHours])).toEqual([
+      ["morning", "b", false],
+      ["wrong", "b2", true],
+      ["afternoon", "b2", false],
+    ]);
   });
 });

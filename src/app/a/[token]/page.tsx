@@ -54,8 +54,20 @@ export default async function PatientLinkPage({ params }: Params) {
               <span className="k">Clinic</span>
               <span className="v">{view.clinicName}</span>
             </div>
+            <div className="cf-row">
+              <span className="k">Branch</span>
+              <span className="v">
+                {view.branchName}
+                {view.branchAddress && <span className="f-hint block">{view.branchAddress}</span>}
+              </span>
+            </div>
           </div>
         </div>
+        {view.branchMapsUrl && (
+          <a href={view.branchMapsUrl} className="link inline-flex min-h-11 items-center" target="_blank" rel="noreferrer">
+            Open the map to {view.branchName}
+          </a>
+        )}
 
         {view.cancellable && <CancelButton token={token} />}
         {rebook && (

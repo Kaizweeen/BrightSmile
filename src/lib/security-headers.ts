@@ -35,6 +35,7 @@ export const NOINDEX_SOURCES = [
   "/reset-password",
   "/auth/:path*",
   "/api/:path*",
+  "/join/:path*",
 ];
 
 /**
@@ -43,7 +44,7 @@ export const NOINDEX_SOURCES = [
  */
 // Folder prefixes only. robots.txt matches by prefix, so a page like /login would also hide a clinic whose
 // booking link is /login-dental; the single auth pages rely on their X-Robots-Tag noindex header instead.
-export const ROBOTS_DISALLOW = ["/app/", "/a/", "/onboarding/", "/auth/", "/api/"];
+export const ROBOTS_DISALLOW = ["/app/", "/a/", "/onboarding/", "/auth/", "/api/", "/join/"];
 
 /** Everything next.config.ts sends. Later rules override earlier ones with the same key, so /sw.js goes last. */
 export function securityHeaders({ dev, https }: { dev: boolean; https: boolean }): HeaderRule[] {

@@ -4,12 +4,16 @@ import { refresh } from "next/cache";
 import * as settings from "@/lib/clinic-settings";
 import { deleteSubscription, saveSubscription } from "@/lib/push";
 import type { Saved } from "@/lib/staff-input";
-import { requireStaff, type Staff } from "@/lib/supabase/server";
+import { OWNER_ONLY, requireOwner, requireStaff, type Staff } from "@/lib/supabase/server";
 import { passwordProblem } from "@/lib/validate";
 
-/** Every settings action: signed-in staff only, untrusted arguments (spec 12), re-render on success. */
-async function run(save: (staff: Staff) => Promise<Saved>): Promise<Saved> {
-  const staff = await requireStaff();
+/**
+ * Every settings action: signed-in staff only, untrusted arguments (spec 12), re-render on success. Owner-only actions
+ * pass requireOwner, which answers staff OWNER_ONLY before anything is read (teams spec 4).
+ */
+async function run(save: (staff: Staff) => Promise<Saved>, who: () => Promise<Staff | null> = requireStaff): Promise<Saved> {
+  const staff = await who();
+  if (!staff) return { ok: false, error: OWNER_ONLY };
   const result = await save(staff);
   if (result.ok) refresh();
   return result;
@@ -18,19 +22,19 @@ async function run(save: (staff: Staff) => Promise<Saved>): Promise<Saved> {
 const idOrNull = (value: unknown) => (value === null ? null : String(value));
 
 export async function updateProfile(input: unknown): Promise<Saved> {
-  return run((staff) => settings.saveProfile(staff, input));
+  return run((staff) => settings.saveProfile(staff, input), requireOwner);
 }
 
 export async function updateRules(input: unknown): Promise<Saved> {
-  return run((staff) => settings.saveRules(staff, input));
+  return run((staff) => settings.saveRules(staff, input), requireOwner);
 }
 
 export async function saveDentistAction(dentistId: unknown, input: unknown): Promise<Saved> {
-  return run((staff) => settings.saveDentist(staff, idOrNull(dentistId), input));
+  return run((staff) => settings.saveDentist(staff, idOrNull(dentistId), input), requireOwner);
 }
 
 export async function setDentistActiveAction(dentistId: unknown, active: unknown): Promise<Saved> {
-  return run((staff) => settings.setDentistActive(staff, String(dentistId), active === true));
+  return run((staff) => settings.setDentistActive(staff, String(dentistId), active === true), requireOwner);
 }
 
 export async function addTimeOffAction(dentistId: unknown, input: unknown): Promise<Saved> {
@@ -42,11 +46,24 @@ export async function removeTimeOffAction(timeOffId: unknown): Promise<Saved> {
 }
 
 export async function saveProcedureAction(procedureId: unknown, input: unknown): Promise<Saved> {
-  return run((staff) => settings.saveProcedure(staff, idOrNull(procedureId), input));
+  return run((staff) => settings.saveProcedure(staff, idOrNull(procedureId), input), requireOwner);
 }
 
 export async function setProcedureActiveAction(procedureId: unknown, active: unknown): Promise<Saved> {
-  return run((staff) => settings.setProcedureActive(staff, String(procedureId), active === true));
+  return run((staff) => settings.setProcedureActive(staff, String(procedureId), active === true), requireOwner);
+}
+
+/** Booking flow spec 4: branches are the owner's, like the rest of the clinic's setup. */
+export async function saveBranchAction(branchId: unknown, input: unknown): Promise<Saved> {
+  return run((staff) => settings.saveBranch(staff, idOrNull(branchId), input), requireOwner);
+}
+
+export async function setBranchActiveAction(branchId: unknown, active: unknown): Promise<Saved> {
+  return run((staff) => settings.setBranchActive(staff, String(branchId), active === true), requireOwner);
+}
+
+export async function moveBranchAction(branchId: unknown, direction: unknown): Promise<Saved> {
+  return run((staff) => settings.moveBranch(staff, String(branchId), direction === "up" ? "up" : "down"), requireOwner);
 }
 
 /** Spec 5.3 account: the current password is checked first, so an unlocked phone alone can't change it. */

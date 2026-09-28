@@ -29,7 +29,10 @@ export async function setStatus(id: unknown, to: unknown, reason: unknown): Prom
 // 20 procedures of up to 480 minutes each.
 const MAX_DURATION = 20 * 480;
 
-/** Open start times (ISO) for New and Move. The duration only shapes the list; saving recomputes it. */
+/**
+ * Open start times (ISO) for New and Move, at the branch New names (booking flow spec 4; Move uses the visit's own).
+ * The duration only shapes the list; saving recomputes it.
+ */
 export async function openTimes(q: unknown): Promise<string[]> {
   const staff = await requireStaff();
   const v = (typeof q === "object" && q !== null ? q : {}) as Record<string, unknown>;
@@ -37,8 +40,9 @@ export async function openTimes(q: unknown): Promise<string[]> {
   if (!isUuid(v.dentistId) || typeof v.date !== "string" || parseDay(v.date, "") !== v.date) return [];
   if (!Number.isInteger(duration) || duration < 5 || duration > MAX_DURATION) return [];
   const ignoreId = isUuid(v.ignoreId) ? v.ignoreId : undefined;
+  const branchId = isUuid(v.branchId) ? v.branchId : undefined;
   try {
-    const starts = await staffOpenStarts(staff, { dentistId: v.dentistId, date: v.date, duration, ignoreId }, new Date());
+    const starts = await staffOpenStarts(staff, { dentistId: v.dentistId, date: v.date, duration, ignoreId, branchId }, new Date());
     return starts.map((s) => s.toISOString());
   } catch (e) {
     console.error("openTimes failed:", String((e as { message?: unknown } | null)?.message ?? e));

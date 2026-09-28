@@ -1,6 +1,7 @@
 import "server-only";
 import { appUrl } from "@/lib/app-url";
 import { canMarkAttendance, canTransition, type Status } from "@/lib/appointments";
+import { smsClinicName } from "@/lib/branches";
 import { newToken } from "@/lib/codes";
 import { staffOpenStarts } from "@/lib/dashboard";
 import { sendSms, type SmsStatus } from "@/lib/sms/send";
@@ -30,11 +31,12 @@ export type Row = {
   manage_token: string;
   patient: { first_name: string; mobile: string | null; anonymized_at: string | null };
   dentist: { sms_name: string };
+  branch: { sms_name: string };
   clinic: { sms_name: string; slug: string };
 };
 
 const ROW =
-  "id, status, starts_at, ends_at, dentist_id, manage_token, patient:patients(first_name, mobile, anonymized_at), dentist:dentists(sms_name), clinic:clinics(sms_name, slug)";
+  "id, status, starts_at, ends_at, dentist_id, manage_token, patient:patients(first_name, mobile, anonymized_at), dentist:dentists(sms_name), branch:branches(sms_name), clinic:clinics(sms_name, slug)";
 
 /** Logs the error message only, never patient details (spec 12). */
 export function logFailure(where: string, e: unknown) {
@@ -63,6 +65,20 @@ export async function showsDentist(staff: Staff): Promise<boolean> {
     .eq("active", true);
   if (error) throw error;
   return (count ?? 0) > 1;
+}
+
+/** The clinic's active branches with their short names for texts, first branch first (booking flow spec 4). */
+export async function activeBranches(staff: Staff): Promise<{ id: string; smsName: string }[]> {
+  const { data, error } = await staff.db
+    .from("branches")
+    .select("id, sms_name")
+    .eq("clinic_id", staff.clinicId)
+    .eq("active", true)
+    .order("sort")
+    .order("created_at")
+    .order("id");
+  if (error) throw error;
+  return (data as { id: string; sms_name: string }[]).map((b) => ({ id: b.id, smsName: b.sms_name }));
 }
 
 export type PatientText = {
@@ -103,15 +119,25 @@ export async function textPatient(staff: Staff, t: PatientText): Promise<SmsStat
   });
 }
 
-/** The text for an existing appointment. A deleted (anonymized) patient has no mobile, so gets no text. */
-export function rowText(row: Row, kind: PatientText["kind"], dentist: string | null, startsAt: Date, reason = ""): PatientText {
+/**
+ * The text for an existing appointment. A deleted (anonymized) patient has no mobile, so gets no text. With 2 or more
+ * active branches the clinic field names the appointment's branch (booking flow spec 4).
+ */
+export function rowText(
+  row: Row,
+  kind: PatientText["kind"],
+  dentist: string | null,
+  startsAt: Date,
+  activeBranches: number,
+  reason = "",
+): PatientText {
   return {
     kind,
     appointmentId: row.id,
     token: row.manage_token,
     first: row.patient.first_name,
     mobile: row.patient.anonymized_at ? null : row.patient.mobile,
-    clinicSmsName: row.clinic.sms_name,
+    clinicSmsName: smsClinicName(row.clinic.sms_name, row.branch.sms_name, activeBranches),
     slug: row.clinic.slug,
     dentist,
     startsAt,
@@ -133,7 +159,7 @@ export async function changeStatus(staff: Staff, id: string, to: StaffTarget, re
   const reason = cleanText(reasonInput, LIMITS.reason, true);
   if (reason === null) return { ok: false, error: `Keep the reason to ${LIMITS.reason} characters or fewer.` };
   try {
-    const [row, dentistShown] = await Promise.all([loadRow(staff, id), showsDentist(staff)]);
+    const [row, dentistShown, branches] = await Promise.all([loadRow(staff, id), showsDentist(staff), activeBranches(staff)]);
     if (!row) return { ok: false, error: MESSAGES.gone };
     const startsAt = new Date(row.starts_at);
     if (row.status === to || !canTransition(row.status, to, "staff")) return { ok: false, error: MESSAGES.notNow };
@@ -157,8 +183,13 @@ export async function changeStatus(staff: Staff, id: string, to: StaffTarget, re
     if (!changed) return { ok: false, error: MESSAGES.changed };
 
     const kind = TEXT_OF[to];
+    // Approving, declining, or cancelling texts the time (and the dentist, when shown): re-read the row so a patient's own
+    // change, landing between the first read above and this compare-and-set, never texts the time or dentist it
+    // replaced. The branch cannot change underneath an appointment, but the re-read row carries it too, at no
+    // extra query.
+    const textRow = kind === "confirmed" || kind === "declined" || kind === "cancelled" ? ((await loadRow(staff, id)) ?? row) : row;
     const text = kind
-      ? await textPatient(staff, rowText(row, kind, dentistShown ? row.dentist.sms_name : null, startsAt, reason))
+      ? await textPatient(staff, rowText(textRow, kind, dentistShown ? textRow.dentist.sms_name : null, new Date(textRow.starts_at), branches.length, reason))
       : "none";
     return { ok: true, text };
   } catch (e) {
@@ -189,22 +220,26 @@ async function activeDentist(staff: Staff, id: string): Promise<{ id: string; sm
  * only needs to be today or later, because the database refuses any overlap (spec 5.3). Moving to a
  * custom time additionally requires it to still be ahead of now: manual New appointment keeps allowing
  * an earlier time today (e.g. logging a walk-in), but moving a visit to a time that already passed
- * would silently no-show it.
+ * would silently no-show it. An open time is checked at the branch it is for (booking flow spec 4): a moved visit's
+ * own, or the branch a New appointment names.
  */
 async function timeProblem(
   staff: Staff,
   slot: SlotChoice,
   duration: number,
   now: Date,
-  ignoreId?: string,
-  requireFuture = false,
+  opts: { ignoreId?: string; requireFuture?: boolean; branchId?: string } = {},
 ): Promise<string | null> {
   if (manilaDate(slot.startsAt) < manilaDate(now)) return "Pick today or a later date.";
   if (slot.custom) {
-    if (requireFuture && slot.startsAt <= now) return "This time has already passed. Pick a later time.";
+    if (opts.requireFuture && slot.startsAt <= now) return "This time has already passed. Pick a later time.";
     return null;
   }
-  const open = await staffOpenStarts(staff, { dentistId: slot.dentistId, date: manilaDate(slot.startsAt), duration, ignoreId }, now);
+  const open = await staffOpenStarts(
+    staff,
+    { dentistId: slot.dentistId, date: manilaDate(slot.startsAt), duration, ignoreId: opts.ignoreId, branchId: opts.branchId },
+    now,
+  );
   return open.some((s) => s.getTime() === slot.startsAt.getTime()) ? null : NOT_OPEN;
 }
 
@@ -213,7 +248,12 @@ export async function moveAppointment(staff: Staff, id: string, slotInput: unkno
   const slot = parseSlot(slotInput);
   if (!slot) return { ok: false, error: "Choose a time." };
   try {
-    const [row, dentist, dentistShown] = await Promise.all([loadRow(staff, id), activeDentist(staff, slot.dentistId), showsDentist(staff)]);
+    const [row, dentist, dentistShown, branches] = await Promise.all([
+      loadRow(staff, id),
+      activeDentist(staff, slot.dentistId),
+      showsDentist(staff),
+      activeBranches(staff),
+    ]);
     if (!row) return { ok: false, error: MESSAGES.gone };
     const oldStart = new Date(row.starts_at);
     if (row.status !== "confirmed" || !canTransition(row.status, "confirmed", "staff") || oldStart <= now) {
@@ -224,7 +264,7 @@ export async function moveAppointment(staff: Staff, id: string, slotInput: unkno
       return { ok: false, error: "That is the current time. Pick a different one." };
     }
     const duration = (new Date(row.ends_at).getTime() - oldStart.getTime()) / 60_000;
-    const problem = await timeProblem(staff, slot, duration, now, row.id, true);
+    const problem = await timeProblem(staff, slot, duration, now, { ignoreId: row.id, requireFuture: true });
     if (problem) return { ok: false, error: problem };
 
     const { data: moved, error } = await staff.db.rpc("move_appointment", {
@@ -238,7 +278,7 @@ export async function moveAppointment(staff: Staff, id: string, slotInput: unkno
     if (error) throw error;
     if (!moved) return { ok: false, error: MESSAGES.changed };
 
-    const text = await textPatient(staff, rowText(row, "moved", dentistShown ? dentist.sms_name : null, slot.startsAt));
+    const text = await textPatient(staff, rowText(row, "moved", dentistShown ? dentist.sms_name : null, slot.startsAt, branches.length));
     return { ok: true, text };
   } catch (e) {
     logFailure("moveAppointment", e);
@@ -249,15 +289,16 @@ export async function moveAppointment(staff: Staff, id: string, slotInput: unkno
 type ProcedureRow = { id: string; name: string; duration_minutes: number };
 
 /**
- * Spec 5.3 New appointment: confirmed immediately, source manual. The confirmation text goes out only
- * when sendText is on and the patient has a mobile.
+ * Spec 5.3 New appointment: confirmed immediately, source manual, at the branch staff chose or the clinic's first
+ * active branch (booking flow spec 4). The confirmation text goes out only when sendText is on and the patient has a
+ * mobile, and names the branch when the clinic has 2 or more active branches.
  */
 export async function createAppointment(staff: Staff, input: unknown, now: Date): Promise<ActionResult> {
   const parsed = parseManualBooking(input, manilaDate(now));
   if (!parsed.ok) return { ok: false, error: Object.values(parsed.errors)[0] };
   const b = parsed.value;
   try {
-    const [dentist, procedures, clinic, dentistShown] = await Promise.all([
+    const [dentist, procedures, clinic, dentistShown, branches] = await Promise.all([
       activeDentist(staff, b.slot.dentistId),
       staff.db
         .from("procedures")
@@ -268,8 +309,11 @@ export async function createAppointment(staff: Staff, input: unknown, now: Date)
         .throwOnError(),
       staff.db.from("clinics").select("sms_name, slug").eq("id", staff.clinicId).single().throwOnError(),
       showsDentist(staff),
+      activeBranches(staff),
     ]);
     if (!dentist) return { ok: false, error: NO_DENTIST };
+    const branch = b.branchId === null ? branches[0] : branches.find((x) => x.id === b.branchId);
+    if (!branch) return { ok: false, error: "Choose an open branch." };
     const chosen = b.procedureIds.map((pid) => (procedures.data as ProcedureRow[]).find((p) => p.id === pid));
     if (chosen.some((p) => !p)) return { ok: false, error: "A chosen procedure was archived. Choose again." };
     const picked = chosen as ProcedureRow[];
@@ -291,13 +335,14 @@ export async function createAppointment(staff: Staff, input: unknown, now: Date)
       person = b.patient!;
     }
 
-    const problem = await timeProblem(staff, b.slot, duration, now);
+    const problem = await timeProblem(staff, b.slot, duration, now, { branchId: branch.id });
     if (problem) return { ok: false, error: problem };
 
     const token = newToken();
     const startsAt = b.slot.startsAt;
     const { data: appointmentId, error } = await staff.db.rpc("create_booking", {
       p_clinic_id: staff.clinicId,
+      p_branch_id: branch.id,
       p_dentist_id: dentist.id,
       p_starts_at: startsAt.toISOString(),
       p_ends_at: new Date(startsAt.getTime() + duration * 60_000).toISOString(),
@@ -327,7 +372,7 @@ export async function createAppointment(staff: Staff, input: unknown, now: Date)
           token,
           first: person.first,
           mobile: person.mobile,
-          clinicSmsName: sms_name,
+          clinicSmsName: smsClinicName(sms_name, branch.smsName, branches.length),
           slug,
           dentist: dentistShown ? dentist.sms_name : null,
           startsAt,

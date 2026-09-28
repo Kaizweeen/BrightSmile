@@ -43,9 +43,9 @@ Odonto ([odonto.ph](https://www.odonto.ph/)) is a Philippine SaaS positioned as 
 ## 3. Roadmap (each piece gets its own spec, plan, and build)
 
 1. **Core booking loop (this spec).**
-2. **Billing:** trial, paid plans, a monthly text allowance, PayMongo or Xendit. Until then, early clinics pay by GCash transfer.
+2. ~~**Billing:** trial, paid plans, a monthly text allowance, PayMongo or Xendit. Until then, early clinics pay by GCash transfer.~~ **Dropped 2026-09-28:** Kai decided BrightSmile is free, so there is no billing.
 3. **Teams and analytics:** staff invites and roles, weekly reports, no-show rates.
-4. **Mobile:** Play Store listing as a thin wrapper around the PWA.
+4. ~~**Mobile:** Play Store listing as a thin wrapper around the PWA.~~ **Dropped 2026-09-28:** Kai decided BrightSmile is web-only, so there is no Play Store app.
 
 ## 4. Goals and success criteria
 
@@ -333,16 +333,16 @@ Vercel Cron, `0 1 * * *` (01:00 UTC = 9:00 AM Manila), calling `/api/cron/daily`
 - [ ] Terms of Service including a data processing agreement with clinics, and a Privacy Notice.
 - [ ] Check whether NPC registration applies (likely once sensitive data on 1,000+ individuals is held).
 - [ ] Domain, plus a trademark check on BrightSmile ("Bright Smile" is a common clinic name, so check for conflicts and for patients mistaking the sender for a clinic).
-- [ ] Business registration before charging clinics (needed for receipts and payment gateways in piece 2).
+- [ ] ~~Business registration before charging clinics~~ Dropped 2026-09-28: BrightSmile is free, so there is no billing.
 
 ## 17. Deferred decisions
 
 | Decision | Deferred to |
 |---|---|
 | Domain | Before launch |
-| Prices and monthly text allowance | Piece 2 |
+| Prices and monthly text allowance | Dropped 2026-09-28 (BrightSmile is free) |
 | Staff invites and roles | Piece 3 |
-| Play Store listing | Piece 4 |
+| Play Store listing | Dropped 2026-09-28 (web app only) |
 
 ## Revisions
 

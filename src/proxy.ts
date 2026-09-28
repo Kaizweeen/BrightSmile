@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { ownMembership } from "@/lib/membership";
 import { guardRedirect } from "@/lib/routes";
 
 /** Refreshes the staff session and keeps visitors on the right side of /app and /onboarding. */
@@ -20,12 +21,9 @@ export async function proxy(request: NextRequest) {
 
   // Verifies the session and refreshes it when it is about to expire (new cookies go through setAll).
   const { data } = await supabase.auth.getClaims();
-  const signedIn = Boolean(data?.claims?.sub);
-  let hasClinic = false;
-  if (signedIn) {
-    const { data: member } = await supabase.from("clinic_members").select("clinic_id").maybeSingle();
-    hasClinic = Boolean(member);
-  }
+  const userId = data?.claims?.sub;
+  const signedIn = Boolean(userId);
+  const hasClinic = userId ? (await ownMembership(supabase, userId)) !== null : false;
 
   const target = guardRedirect(request.nextUrl.pathname, { signedIn, hasClinic });
   if (!target) return response;
@@ -35,6 +33,8 @@ export async function proxy(request: NextRequest) {
 }
 
 // Public pages (the booking page and patient links) never touch the staff session, so they skip the proxy.
+// /join passes through only to keep its session fresh: guardRedirect never redirects it, and a join link
+// works signed in or out (teams spec 6.2).
 export const config = {
-  matcher: ["/app/:path*", "/onboarding/:path*", "/login", "/signup"],
+  matcher: ["/app/:path*", "/onboarding/:path*", "/login", "/signup", "/join/:path*"],
 };

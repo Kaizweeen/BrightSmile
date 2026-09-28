@@ -12,13 +12,16 @@ export const metadata: Metadata = { title: "Patient" };
 
 type Props = { params: Promise<{ id: string }> };
 
-/** Spec 5.3 patient detail: editable details, appointment history, no-show count, and Delete. */
+/**
+ * Spec 5.3 patient detail: editable details, the patient form read only (booking flow spec 6), appointment history,
+ * no-show count, and Delete.
+ */
 export default async function PatientPage({ params }: Props) {
   const staff = await requireStaff();
   const { id } = await params;
   const detail = await loadPatient(staff, id);
   if (!detail) notFound();
-  const { patient, history, noShows } = detail;
+  const { patient, history, noShows, form } = detail;
 
   return (
     <>
@@ -57,6 +60,43 @@ export default async function PatientPage({ params }: Props) {
           <PatientEditor patient={patient} />
         )}
       </div>
+
+      {!patient.anonymized && (
+        <section className="card card-pad mb-3" aria-labelledby="form-h">
+          <h2 id="form-h" className="font-display text-[17px] font-bold">
+            Patient form
+          </h2>
+          {form ? (
+            <>
+              <p className="f-hint">Health information. Only your clinic&apos;s team can see it.</p>
+              <div className="cf-box mt-3">
+                <div className="cf-row">
+                  <span className="k">Allergies</span>
+                  <span className="v">{form.allergies.length > 0 ? form.allergies.join(", ") : "None ticked"}</span>
+                </div>
+                <div className="cf-row">
+                  <span className="k">Has or had</span>
+                  <span className="v">{form.conditions.length > 0 ? form.conditions.join(", ") : "None ticked"}</span>
+                </div>
+              </div>
+              <div className="mt-3">
+                {form.rows.map((r) => (
+                  <div key={r.label} className="cf-row">
+                    <span className="k">{r.label}</span>
+                    <span className="v">{r.value}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="f-hint mt-3">
+                Waiver signed by {form.signed.name} on {formatDate(new Date(form.signed.at))} {manilaDate(new Date(form.signed.at)).slice(0, 4)} (version{" "}
+                {form.signed.version}).
+              </p>
+            </>
+          ) : (
+            <p className="f-hint">No patient form on file.</p>
+          )}
+        </section>
+      )}
 
       <section className="card card-pad">
         <h2 className="font-display text-[17px] font-bold">History</h2>

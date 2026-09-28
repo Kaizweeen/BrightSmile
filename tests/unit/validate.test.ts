@@ -10,7 +10,7 @@ describe("slugProblem", () => {
     expect(slugProblem(slug)).not.toBeNull();
   });
 
-  it.each(["app", "login", "privacy", "reset-password"])("rejects reserved %s", (slug) => {
+  it.each(["app", "login", "privacy", "reset-password", "join"])("rejects reserved %s", (slug) => {
     expect(slugProblem(slug)).toMatch(/reserved/);
   });
 });

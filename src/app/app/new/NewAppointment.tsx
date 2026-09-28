@@ -13,8 +13,11 @@ import SlotPicker, { type Slot } from "../SlotPicker";
 
 type Props = BookingOptions & { today: string; initialPatient: PatientHit | null };
 
-/** Spec 5.3 New appointment: for walk-ins, phone and Messenger bookings, seniors and PWDs. Confirmed immediately. */
-export default function NewAppointment({ dentists, procedures, today, initialPatient }: Props) {
+/**
+ * Spec 5.3 New appointment: for walk-ins, phone and Messenger bookings, seniors and PWDs. Confirmed immediately. With 2
+ * or more active branches it asks where first (booking flow spec 4); with one it books there without asking.
+ */
+export default function NewAppointment({ dentists, procedures, branches, today, initialPatient }: Props) {
   const router = useRouter();
   const [patient, setPatient] = useState<PatientHit | null>(initialPatient);
   const [adding, setAdding] = useState(false);
@@ -24,6 +27,9 @@ export default function NewAppointment({ dentists, procedures, today, initialPat
   const [procedureIds, setProcedureIds] = useState<string[]>([]);
   const [slot, setSlot] = useState<Slot | null>(null);
   const [sendText, setSendText] = useState(true);
+  // With one branch, book there without asking (today's behavior); with 2 or more, no branch is chosen yet, so When
+  // stays closed until staff picks one (booking flow spec 4).
+  const [branchId, setBranchId] = useState(branches.length === 1 ? (branches[0]?.id ?? "") : "");
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
   const searches = useRef(0);
@@ -55,6 +61,7 @@ export default function NewAppointment({ dentists, procedures, today, initialPat
       procedureIds,
       slot,
       sendText: hasMobile && sendText,
+      branchId: branchId || null,
     };
     startTransition(async () => {
       const result = await createVisit(input);
@@ -164,14 +171,47 @@ export default function NewAppointment({ dentists, procedures, today, initialPat
         {duration > 0 && <p className="f-hint">Total: {duration} minutes</p>}
       </section>
 
+      {branches.length > 1 && (
+        <section className="card card-pad mb-3" aria-labelledby="branch-h">
+          <h2 id="branch-h" className="font-display text-[17px] font-bold">
+            Branch
+          </h2>
+          <div className="member-list mt-2">
+            {branches.map((b) => (
+              <label key={b.id} className="member-row">
+                <input
+                  type="radio"
+                  name="branch"
+                  checked={branchId === b.id}
+                  onChange={() => {
+                    setBranchId(b.id);
+                    setSlot(null); // the picker remounts (its key has the branch)
+                  }}
+                />
+                <span className="nm">{b.name}</span>
+              </label>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="card card-pad mb-3" aria-labelledby="when-h">
         <h2 id="when-h" className="font-display text-[17px] font-bold">
           When
         </h2>
         {duration === 0 ? (
           <p className="f-hint">Choose procedures first.</p>
+        ) : branches.length > 1 && !branchId ? (
+          <p className="f-hint">Choose a branch first.</p>
         ) : (
-          <SlotPicker key={procedureIds.join(",")} dentists={dentists} duration={duration} today={today} onChange={setSlot} />
+          <SlotPicker
+            key={`${branchId} ${procedureIds.join(",")}`}
+            dentists={dentists}
+            duration={duration}
+            today={today}
+            branchId={branchId || undefined}
+            onChange={setSlot}
+          />
         )}
       </section>
 

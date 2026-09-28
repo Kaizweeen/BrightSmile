@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseDentist, parseProcedure, parseProfile, parseRules, parseTimeOff } from "@/lib/settings-input";
+import { parseBranch, parseDentist, parseProcedure, parseProfile, parseRules, parseTimeOff } from "@/lib/settings-input";
 import { manilaInstant } from "@/lib/time";
 
 const profile = {
@@ -65,10 +65,36 @@ describe("parseDentist", () => {
         name: "Dr. Ben Lim",
         sms_name: "Dr. Lim",
         hours: [
-          { weekday: 1, start_time: "09:00", end_time: "12:00" },
-          { weekday: 1, start_time: "13:00", end_time: "17:00" },
+          { weekday: 1, start_time: "09:00", end_time: "12:00", branch_id: null },
+          { weekday: 1, start_time: "13:00", end_time: "17:00", branch_id: null },
         ],
       },
+    });
+  });
+
+  it("keeps each block's branch, and refuses blocks that overlap even at different branches", () => {
+    const makati = "0b6a3c52-8a47-4a55-9a77-6f2b0e1d9c01";
+    const pasig = "7d2e9f10-3b5c-4e8a-b1d4-2c6f8a0e5b92";
+    const monday = (blocks: object[]) => [[], blocks, [], [], [], [], []];
+    const dentist = { name: "Dr. Ben Lim", smsName: "Dr. Lim" };
+    expect(
+      parseDentist({ ...dentist, hours: monday([{ start: "09:00", end: "12:00", branchId: makati }, { start: "13:00", end: "17:00", branchId: pasig }]) }),
+    ).toMatchObject({
+      ok: true,
+      value: {
+        hours: [
+          { weekday: 1, start_time: "09:00", end_time: "12:00", branch_id: makati },
+          { weekday: 1, start_time: "13:00", end_time: "17:00", branch_id: pasig },
+        ],
+      },
+    });
+    expect(
+      parseDentist({ ...dentist, hours: monday([{ start: "09:00", end: "12:00", branchId: makati }, { start: "11:00", end: "13:00", branchId: pasig }]) }),
+    ).toEqual({ ok: false, field: "hours", error: "The blocks on Monday overlap." });
+    expect(parseDentist({ ...dentist, hours: monday([{ start: "09:00", end: "12:00", branchId: "Makati" }]) })).toEqual({
+      ok: false,
+      field: "hours",
+      error: "Choose a branch for each block.",
     });
   });
 
@@ -117,5 +143,22 @@ describe("parseProcedure", () => {
     expect(parseProcedure({ name: "X", minutes: 4 })).toMatchObject({ field: "minutes" });
     expect(parseProcedure({ name: "X", minutes: 481 })).toMatchObject({ field: "minutes" });
     expect(parseProcedure({ name: "X", minutes: "" })).toMatchObject({ field: "minutes" });
+  });
+});
+
+describe("parseBranch", () => {
+  const branch = { name: " Makati ", smsName: " Makati ", address: "12 Rizal St, Makati", mapsUrl: "" };
+
+  it("cleans the branch and stores an empty map link as null", () => {
+    expect(parseBranch(branch)).toEqual({ ok: true, value: { name: "Makati", sms_name: "Makati", address: "12 Rizal St, Makati", maps_url: null } });
+    expect(parseBranch({ ...branch, mapsUrl: "https://maps.app.goo.gl/abc" })).toMatchObject({ ok: true, value: { maps_url: "https://maps.app.goo.gl/abc" } });
+  });
+
+  it("names the field that is wrong", () => {
+    expect(parseBranch({ ...branch, name: "x".repeat(41) })).toMatchObject({ ok: false, field: "name" });
+    expect(parseBranch({ ...branch, smsName: "  " })).toEqual({ ok: false, field: "smsName", error: "Use 1 to 18 characters." });
+    expect(parseBranch({ ...branch, address: "" })).toMatchObject({ ok: false, field: "address" });
+    expect(parseBranch({ ...branch, mapsUrl: "http://maps.example.com" })).toMatchObject({ ok: false, field: "mapsUrl" });
+    expect(parseBranch("Makati")).toMatchObject({ ok: false, field: "name" });
   });
 });
