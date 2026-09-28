@@ -11,6 +11,10 @@ export type PatientView = {
   clinicName: string;
   clinicMobile: string;
   slug: string;
+  /** Where to go (booking flow spec 4). */
+  branchName: string;
+  branchAddress: string;
+  branchMapsUrl: string | null;
   cancellable: boolean;
 };
 
@@ -22,6 +26,7 @@ type Row = {
   patient: { first_name: string; last_name: string };
   dentist: { name: string; sms_name: string };
   clinic: { name: string; slug: string; mobile: string };
+  branch: { name: string; address: string; maps_url: string | null };
 };
 
 const TOKEN = /^[A-Za-z0-9]{12}$/;
@@ -31,7 +36,7 @@ async function findByToken(token: string): Promise<Row | null> {
   const { data, error } = await adminClient()
     .from("appointments")
     .select(
-      "id, clinic_id, status, starts_at, patient:patients(first_name, last_name), dentist:dentists(name, sms_name), clinic:clinics(name, slug, mobile)",
+      "id, clinic_id, status, starts_at, patient:patients(first_name, last_name), dentist:dentists(name, sms_name), clinic:clinics(name, slug, mobile), branch:branches(name, address, maps_url)",
     )
     .eq("manage_token", token)
     .maybeSingle();
@@ -39,7 +44,7 @@ async function findByToken(token: string): Promise<Row | null> {
   return data as unknown as Row | null;
 }
 
-/** Spec 5.2: status, clinic, dentist, date, time, and the patient's first name only. */
+/** Spec 5.2: status, clinic, branch (booking flow spec 4), dentist, date, time, and the patient's first name only. */
 export async function loadPatientView(token: string, now: Date): Promise<PatientView | null> {
   const row = await findByToken(token);
   if (!row) return null;
@@ -52,6 +57,9 @@ export async function loadPatientView(token: string, now: Date): Promise<Patient
     clinicName: row.clinic.name,
     clinicMobile: row.clinic.mobile,
     slug: row.clinic.slug,
+    branchName: row.branch.name,
+    branchAddress: row.branch.address,
+    branchMapsUrl: row.branch.maps_url,
     cancellable: isCancellable({ status: row.status, starts_at: startsAt }, now),
   };
 }
