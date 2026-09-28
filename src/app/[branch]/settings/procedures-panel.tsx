@@ -3,9 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
+import { StateBadge } from "@/components/state-badge";
 import { FormAlert } from "@/components/form-alert";
 import { TextField } from "@/components/text-field";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -50,7 +50,7 @@ export function ProceduresPanel() {
                 <TableCell className="font-medium">{p.name}</TableCell>
                 <TableCell>{`${p.durationMinutes} min`}</TableCell>
                 <TableCell>{`${p.bufferMinutes} min`}</TableCell>
-                <TableCell>{p.active ? <Badge variant="secondary">Offered</Badge> : <Badge variant="outline">Retired</Badge>}</TableCell>
+                <TableCell><StateBadge on={p.active} yes="Offered" no="Retired" /></TableCell>
                 <TableCell className="text-right">
                   <Button variant="ghost" onClick={() => setEditing(p)}>
                     Edit

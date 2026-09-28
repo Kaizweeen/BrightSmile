@@ -5,11 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
+import { StateBadge } from "@/components/state-badge";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { FormAlert } from "@/components/form-alert";
 import { HoursEditor } from "@/components/hours-editor";
 import { TextField } from "@/components/text-field";
-import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -69,7 +69,7 @@ export function BranchesPanel() {
                   </TableCell>
                   <TableCell className="whitespace-normal">{hoursSummary(b.operatingHours)}</TableCell>
                   <TableCell>{b.chairCount}</TableCell>
-                  <TableCell>{b.active ? <Badge variant="secondary">Open</Badge> : <Badge variant="outline">Closed</Badge>}</TableCell>
+                  <TableCell><StateBadge on={b.active} yes="Open" no="Closed" /></TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1">
                       <Button variant="ghost" onClick={() => setEditing(b)}>

@@ -5,9 +5,9 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { FormAlert } from "@/components/form-alert";
+import { StateBadge } from "@/components/state-badge";
 import { BranchChoice, RoleChoice } from "@/components/staff-fields";
 import { TextField } from "@/components/text-field";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -132,7 +132,7 @@ export function StaffScreen({ me, branches }: { me: Me; branches: BranchOption[]
                     <TableCell>{roleLabel(s.role, s.title)}</TableCell>
                     <TableCell>{s.role === "owner" ? "All branches" : s.branchIds.map(branchName).join(", ") || "None"}</TableCell>
                     <TableCell>
-                      {s.status === "active" ? <Badge variant="secondary">Active</Badge> : <Badge variant="destructive">Disabled</Badge>}
+                      <StateBadge on={s.status === "active"} yes="Active" no="Disabled" warn />
                     </TableCell>
                     <TableCell>
                       {s.canManage && (
@@ -207,7 +207,7 @@ function ApproveDialog({
   const [title, setTitle] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const approve = useMutation({
-    mutationFn: () => api(`/join-requests/${request.id}/approve`, { method: "POST", body: { role, branchIds, title: title.trim() || null } }),
+    mutationFn: () => api(`/join-requests/${request.id}/approve`, { method: "POST", body: { role, branchIds, title: role === "dentist" ? title.trim() || null : null } }),
     onSuccess: async () => {
       toast.success(`${request.name} can now use DentaSync.`);
       onClose();
