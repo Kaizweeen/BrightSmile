@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { toast } from "sonner";
 import { FormAlert } from "@/components/form-alert";
 import { Button } from "@/components/ui/button";
@@ -38,7 +38,8 @@ export function SchedulePanel({ me, canEdit }: { me: Me; canEdit: boolean }) {
       ) : week.isError ? (
         <FormAlert message={errorMessage(week.error)} />
       ) : (
-        <WeekEditor key={`${dentist.id}-${week.dataUpdatedAt}`} dentist={dentist} blocks={week.data} branches={branches.data} editable={editable} />
+        // Keyed by the dentist only: a background refresh must not throw away hours being edited.
+        <WeekEditor key={dentist.id} dentist={dentist} blocks={week.data} branches={branches.data} editable={editable} />
       )}
     </div>
   );
@@ -46,7 +47,9 @@ export function SchedulePanel({ me, canEdit }: { me: Me; canEdit: boolean }) {
 
 function WeekEditor({ dentist, blocks, branches, editable }: { dentist: Dentist; blocks: WeekBlock[]; branches: Branch[]; editable: Set<string> }) {
   const client = useQueryClient();
-  const [drafts, setDrafts] = useState<Draft[]>(() => blocks.map(({ id, ...block }) => ({ key: id, ...block })));
+  const id = useId();
+  const toDrafts = (week: WeekBlock[]) => week.map(({ id: key, ...block }) => ({ key, ...block }));
+  const [drafts, setDrafts] = useState<Draft[]>(() => toDrafts(blocks));
   const [problems, setProblems] = useState<Record<number, string>>({});
   const workplaces = branches.filter((b) => b.active && dentist.branchIds.includes(b.id) && editable.has(b.id));
   const branchName = (id: string) => branches.find((b) => b.id === id)?.name ?? "A closed branch";
@@ -60,9 +63,10 @@ function WeekEditor({ dentist, blocks, branches, editable }: { dentist: Dentist;
         method: "PUT",
         body: { blocks: drafts.map(({ branchId, dayOfWeek, startTime, endTime }) => ({ branchId, dayOfWeek, startTime, endTime })) },
       }),
-    onSuccess: async () => {
+    onSuccess: (saved) => {
       toast.success(`Saved the week of ${dentist.name}.`);
-      await client.invalidateQueries({ queryKey: ["schedule", dentist.id] });
+      setDrafts(toDrafts(saved));
+      client.setQueryData(["schedule", dentist.id], saved);
     },
     onError: (error) => {
       // Each broken block comes back as a field error keyed "blocks.<row>".
@@ -88,8 +92,9 @@ function WeekEditor({ dentist, blocks, branches, editable }: { dentist: Dentist;
           <fieldset key={day} className="grid gap-2 rounded-lg border p-3">
             <legend className="px-1 font-medium">{WEEKDAYS[day]}</legend>
             {rows.length === 0 && <p className="text-sm text-muted-foreground">Not working.</p>}
-            {rows.map(({ draft, index }) =>
-              editable.has(draft.branchId) ? (
+            {rows.map(({ draft, index }) => {
+              const errorId = problems[index] ? `${id}-${index}` : undefined;
+              return editable.has(draft.branchId) ? (
                 <div key={draft.key} className="grid gap-1">
                   <div className="flex flex-wrap items-end gap-2">
                     <label className="grid gap-1 text-sm">
@@ -104,24 +109,42 @@ function WeekEditor({ dentist, blocks, branches, editable }: { dentist: Dentist;
                     </label>
                     <label className="grid gap-1 text-sm">
                       From
-                      <Input type="time" step={900} value={draft.startTime} onChange={(event) => change(drafts.map((d, i) => (i === index ? { ...d, startTime: event.target.value } : d)))} />
+                      <Input
+                        type="time"
+                        step={900}
+                        aria-invalid={errorId ? true : undefined}
+                        aria-describedby={errorId}
+                        value={draft.startTime}
+                        onChange={(event) => change(drafts.map((d, i) => (i === index ? { ...d, startTime: event.target.value } : d)))}
+                      />
                     </label>
                     <label className="grid gap-1 text-sm">
                       To
-                      <Input type="time" step={900} value={draft.endTime} onChange={(event) => change(drafts.map((d, i) => (i === index ? { ...d, endTime: event.target.value } : d)))} />
+                      <Input
+                        type="time"
+                        step={900}
+                        aria-invalid={errorId ? true : undefined}
+                        aria-describedby={errorId}
+                        value={draft.endTime}
+                        onChange={(event) => change(drafts.map((d, i) => (i === index ? { ...d, endTime: event.target.value } : d)))}
+                      />
                     </label>
                     <Button type="button" variant="ghost" onClick={() => change(drafts.filter((_, i) => i !== index))}>
                       Remove
                     </Button>
                   </div>
-                  {problems[index] && <p className="text-sm text-destructive">{problems[index]}</p>}
+                  {errorId && (
+                    <p id={errorId} className="text-sm text-destructive">
+                      {problems[index]}
+                    </p>
+                  )}
                 </div>
               ) : (
                 <p key={draft.key} className="text-sm">
                   {`${branchName(draft.branchId)}, ${draft.startTime} to ${draft.endTime}`}
                 </p>
-              ),
-            )}
+              );
+            })}
             {workplaces.length > 0 && (
               <div>
                 <Button

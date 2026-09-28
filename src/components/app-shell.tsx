@@ -1,8 +1,10 @@
 "use client";
 
+import { ChevronDownIcon } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { usePathname } from "next/navigation";
+import { buttonVariants } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { UserMenu } from "@/components/user-menu";
 import type { NavItem } from "@/lib/nav";
 import { withBranch } from "@/lib/paths";
@@ -20,7 +22,7 @@ type Props = {
 /** Header with the branch switcher, the navigation, and the account menu (spec section 10). */
 export function AppShell({ practice, branch, branches, nav, user, children }: Props) {
   const pathname = usePathname();
-  const router = useRouter();
+  const here = branches.find((b) => b.code === branch)?.name ?? branch;
   return (
     <div className="min-h-dvh">
       <a
@@ -34,21 +36,23 @@ export function AppShell({ practice, branch, branches, nav, user, children }: Pr
           <Link href="/" className="font-semibold">
             {practice}
           </Link>
-          <label htmlFor="branch-switcher" className="sr-only">
-            Branch
-          </label>
-          <NativeSelect
-            id="branch-switcher"
-            value={branch}
-            onChange={(event) => router.push(withBranch(pathname, event.target.value))}
-            className="w-44"
-          >
-            {branches.map((b) => (
-              <NativeSelectOption key={b.code} value={b.code}>
-                {b.name}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+          {/* A menu of links rather than a select, so arrowing through the branches never leaves the page (WCAG 3.2.2). */}
+          <DropdownMenu>
+            <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline" }), "w-44 justify-between")}>
+              <span className="truncate">
+                <span className="sr-only">Branch: </span>
+                {here}
+              </span>
+              <ChevronDownIcon aria-hidden />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {branches.map((b) => (
+                <DropdownMenuItem key={b.code} render={<Link href={withBranch(pathname, b.code)} />} aria-current={b.code === branch ? "page" : undefined}>
+                  {b.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <nav aria-label="Main" className="order-last -mx-1 flex w-full gap-1 overflow-x-auto md:order-none md:mx-0 md:w-auto">
             {nav.map((item) => {
               const current = pathname === item.href || pathname.startsWith(`${item.href}/`);

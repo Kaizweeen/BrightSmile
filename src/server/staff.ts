@@ -68,7 +68,6 @@ const usernameTaken = () =>
 export async function requestToJoin(code: string, input: z.infer<typeof joinSchema>, ip: string): Promise<{ username: string }> {
   const branch = await branchForJoinCode(code);
   if (!branch) throw new ApiError(404, "qr_replaced", "This QR code no longer works. Ask the owner for the current one.");
-  const passwordHash = await hashPassword(input.password);
   return db.transaction(async (tx) => {
     // One join at a time, so two requests cannot both pass the per-connection and per-branch counts below. Joins are rare.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('dentasync.join'))`);
@@ -89,6 +88,8 @@ export async function requestToJoin(code: string, input: z.infer<typeof joinSche
     }
     const [taken] = await tx.select({ id: users.id }).from(users).where(eq(users.username, input.username));
     if (taken) throw usernameTaken();
+    // Hashing is slow on purpose, so it comes after every cheap refusal.
+    const passwordHash = await hashPassword(input.password);
     const user = await createCredentialUser(
       {
         name: input.name,
@@ -262,29 +263,28 @@ export async function updateStaff(actor: Staff, userId: string, patch: z.infer<t
     if (patch.seesPatients !== undefined) set.seesPatients = patch.seesPatients;
     if (patch.status) set.status = patch.status;
     if (patch.role) {
+      // A new role clears the old title (an Orthodontist who moves to the front desk), unless a new title comes with it.
+      if (patch.role !== targetRole && patch.title === undefined) set.title = null;
       set.role = patch.role;
       set.seesPatients = patch.role === "dentist";
       if (patch.role === "manager") await tx.delete(dentistSchedules).where(eq(dentistSchedules.dentistId, userId));
     }
     if (patch.branchIds) {
       const wanted = [...new Set(patch.branchIds)];
-      if (actor.role !== "owner" && wanted.some((branchId) => !current.includes(branchId) && !covers(actor, branchId))) {
+      const all = await tx.select({ id: branches.id, active: branches.active }).from(branches);
+      const isOpen = (branchId: string) => all.some((b) => b.id === branchId && b.active);
+      if (!wanted.every(isOpen)) {
+        throw new ApiError(400, "invalid", "Pick open branches only.", { fields: { branchIds: "Pick open branches only." } });
+      }
+      if (wanted.some((branchId) => !current.includes(branchId) && !covers(actor, branchId))) {
         throw forbidden("You can only give branches you work at.");
       }
-      // A manager changes only the branches they cover; the person keeps their other branches.
-      const next = [
-        ...new Set(
-          actor.role === "owner"
-            ? wanted
-            : [...current.filter((branchId) => !covers(actor, branchId)), ...wanted.filter((branchId) => covers(actor, branchId))],
-        ),
-      ];
+      // The editor changes only the open branches they cover. The person keeps the rest: their closed branches, and
+      // for a manager's colleague, the branches that manager does not cover.
+      const kept = current.filter((branchId) => !isOpen(branchId) || !covers(actor, branchId));
+      const next = [...new Set([...kept, ...wanted.filter((branchId) => covers(actor, branchId))])];
       if (next.length === 0) {
         throw new ApiError(400, "invalid", "Keep at least one branch.", { fields: { branchIds: "Keep at least one branch." } });
-      }
-      const known = await tx.select({ id: branches.id }).from(branches).where(inArray(branches.id, next));
-      if (known.length !== next.length) {
-        throw new ApiError(400, "invalid", "Pick branches that exist.", { fields: { branchIds: "Pick branches that exist." } });
       }
       await tx.delete(userBranches).where(eq(userBranches.userId, userId));
       await tx.insert(userBranches).values(next.map((branchId) => ({ userId, branchId })));
@@ -315,14 +315,15 @@ export async function createResetLink(actor: Staff, userId: string): Promise<{ u
 }
 
 export async function resetWithToken(token: string, input: z.infer<typeof resetSchema>): Promise<{ username: string }> {
-  const passwordHash = await hashPassword(input.password);
   const expired = () =>
     new ApiError(404, "link_expired", "This reset link has expired or was already used. Ask your manager for a new one.");
+  const live = and(eq(verifications.identifier, `${RESET_PREFIX}${sha256(token)}`), gt(verifications.expiresAt, new Date()));
+  // Hashing is slow on purpose, so a dead link is refused before it.
+  const [known] = await db.select({ id: verifications.id }).from(verifications).where(live);
+  if (!known) throw expired();
+  const passwordHash = await hashPassword(input.password);
   return db.transaction(async (tx) => {
-    const [link] = await tx
-      .delete(verifications)
-      .where(and(eq(verifications.identifier, `${RESET_PREFIX}${sha256(token)}`), gt(verifications.expiresAt, new Date())))
-      .returning();
+    const [link] = await tx.delete(verifications).where(live).returning();
     if (!link) throw expired();
     const [user] = await tx
       .select({ id: users.id, username: users.username })

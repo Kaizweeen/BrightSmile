@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { and, eq } from "drizzle-orm";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { db } from "@/db";
-import { appointments, auditLog, chairs, patients } from "@/db/schema";
-import { auth } from "@/lib/auth";
+import { appointments, auditLog, chairs, patients, sessions } from "@/db/schema";
+import { auth, SESSION_SECONDS } from "@/lib/auth";
 import { endSessions } from "@/server/accounts";
 import { json, readJson, staffRoute } from "@/server/api";
 import { ApiError } from "@/server/errors";
@@ -33,10 +34,50 @@ describe("signing in", () => {
     expect(JSON.stringify(rows)).not.toContain("a wrong password");
   });
 
-  it("keeps Better Auth's own sign-up closed", async () => {
-    await expect(
-      auth.api.signUpEmail({ body: { email: "someone@users.invalid", password: PASSWORD, name: "Someone" } }),
-    ).rejects.toThrow();
+  it("keeps a failed sign-in's username only when it names an account", async () => {
+    await expect(signIn("ghost.person", "my secret phrase")).rejects.toThrow();
+    const failed = await db.select().from(auditLog).where(eq(auditLog.action, "auth.sign_in_failed"));
+    expect(failed.some((r) => r.entityId === null && r.details.username === null)).toBe(true);
+    expect(JSON.stringify(failed)).not.toContain("ghost.person");
+  });
+
+  it("refuses a disabled account exactly like a wrong password, so its password is never confirmed", async () => {
+    const ana = await makeUser({ role: "manager", status: "disabled" });
+    const attempt = (password: string) => auth.api.signInUsername({ body: { username: ana.username, password }, asResponse: true });
+    const right = await attempt(PASSWORD);
+    const wrong = await attempt("not the password");
+    expect(right.status).toBe(401);
+    expect(await right.json()).toEqual(await wrong.json());
+  });
+
+  it("ends every session 12 hours after sign-in, even one asked for without remember me", async () => {
+    const ana = await makeUser({ role: "manager" });
+    await auth.api.signInUsername({ body: { username: ana.username, password: PASSWORD, rememberMe: false } });
+    const [session] = await db.select().from(sessions).where(eq(sessions.userId, ana.id));
+    expect(session.expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + SESSION_SECONDS * 1000);
+  });
+
+  it("audits a password change, without the password", async () => {
+    const ana = await makeUser({ role: "manager" });
+    const cookie = await signIn(ana.username);
+    await auth.api.changePassword({ body: { currentPassword: PASSWORD, newPassword: "another good password" }, headers: new Headers({ cookie }) });
+    const rows = await db.select().from(auditLog).where(and(eq(auditLog.action, "auth.password_changed"), eq(auditLog.entityId, ana.id)));
+    expect(rows).toHaveLength(1);
+    expect(JSON.stringify(rows)).not.toContain("another good password");
+  });
+
+  it("keeps Better Auth's own sign-up and its other unused doors closed, even to someone signed in", async () => {
+    const cookie = await signIn((await makeUser({ role: "manager" })).username);
+    for (const path of ["/sign-up/email", "/sign-in/email", "/update-user", "/is-username-available", "/delete-user"]) {
+      const res = await auth.handler(
+        new Request(`http://localhost:3700/api/auth${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: "http://localhost:3700", cookie },
+          body: JSON.stringify({ email: "someone@users.invalid", password: PASSWORD, name: "Someone", username: "someone" }),
+        }),
+      );
+      expect(res.status, path).toBe(404);
+    }
   });
 });
 
@@ -91,6 +132,25 @@ describe("staffRoute", () => {
     res = await call(failing(new Error("boom")), request("/x", { cookie }));
     expect(res.status).toBe(500);
     expect((await res.json()).error.code).toBe("server_error");
+  });
+
+  it("logs an unexpected failure by its kind and SQL, never the values it was given", async () => {
+    const cookie = await signIn((await makeUser({ role: "manager" })).username);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      // The check on first_name (1 to 50 characters) refuses this row, and Postgres quotes the whole row back.
+      const failing = staffRoute(async () => {
+        await db.insert(patients).values({ lastName: "Privado", firstName: "x".repeat(51), medicalAlerts: "Takes warfarin" });
+        return json({ ok: true });
+      });
+      expect((await call(failing, request("/x", { method: "POST", cookie }))).status).toBe(500);
+      const text = JSON.stringify(logged.mock.calls);
+      expect(text).toContain("patients_first_name");
+      expect(text).not.toContain("Privado");
+      expect(text).not.toContain("warfarin");
+    } finally {
+      logged.mockRestore();
+    }
   });
 
   it("turns an overlap refused by the database into 409", async () => {

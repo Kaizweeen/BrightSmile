@@ -24,7 +24,7 @@ function ownerCookie() {
 
 const newcomer = (username: string, role = "dentist") => ({ name: "New Person", username, password: PASSWORD, role });
 const join = (code: string, body: unknown, ip = "10.0.0.1") =>
-  call(joinRoute.POST, request(`/api/v1/join/${code}`, { method: "POST", body, headers: { "x-forwarded-for": ip } }), { code });
+  call(joinRoute.POST, request(`/api/v1/join/${code}`, { method: "POST", body, headers: { "x-nf-client-connection-ip": ip } }), { code });
 const approve = (cookie: string, id: string, body: unknown) =>
   call(approveRoute.POST, request(`/api/v1/join-requests/${id}/approve`, { method: "POST", cookie, body }), { id });
 const patch = (cookie: string, id: string, body: unknown) =>
@@ -195,6 +195,37 @@ describe("changing staff", () => {
     const none = await patch(cookie, dentist.id, { branchIds: [] });
     expect(none.status).toBe(400);
     expect((await none.json()).error.fields).toEqual({ branchIds: "Keep at least one branch." });
+  });
+
+  it("clears a dentist's title when they move to the front desk", async () => {
+    const a = await makeBranch();
+    const dentist = await makeUser({ role: "dentist", branchIds: [a.id] });
+    await db.update(users).set({ title: "Orthodontist" }).where(eq(users.id, dentist.id));
+    const { cookie } = await ownerCookie();
+    expect((await patch(cookie, dentist.id, { role: "manager" })).status).toBe(200);
+    expect((await userRow(dentist.id)).title).toBeNull();
+    expect((await patch(cookie, dentist.id, { role: "dentist", title: "Hygienist" })).status).toBe(200);
+    expect((await userRow(dentist.id)).title).toBe("Hygienist");
+  });
+
+  it("gives open branches only, keeps a person's closed ones, and covers only open ones", async () => {
+    const a = await makeBranch();
+    const closed = await makeBranch();
+    const b = await makeBranch();
+    const dentist = await makeUser({ role: "dentist", branchIds: [a.id, closed.id] });
+    await db.update(branches).set({ active: false }).where(eq(branches.id, closed.id));
+    expect((await staffById(dentist.id))?.branchIds).toEqual([a.id]);
+    const { cookie } = await ownerCookie();
+    const refused = await patch(cookie, dentist.id, { branchIds: [a.id, closed.id] });
+    expect(refused.status).toBe(400);
+    expect((await refused.json()).error.fields).toEqual({ branchIds: "Pick open branches only." });
+    expect((await patch(cookie, dentist.id, { branchIds: [b.id] })).status).toBe(200);
+    expect(await branchesOf(dentist.id)).toEqual([closed.id, b.id].sort());
+  });
+
+  it("answers 404 to an id that is not one", async () => {
+    const { cookie } = await ownerCookie();
+    expect((await patch(cookie, "not-an-id", { title: "Dentist" })).status).toBe(404);
   });
 
   it("refuses a branch the manager does not cover", async () => {

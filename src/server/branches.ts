@@ -165,6 +165,9 @@ export async function addChair(actor: Staff, branchId: string, input: z.infer<ty
 export async function updateChair(actor: Staff, branchId: string, number: number, patch: z.infer<typeof chairPatchSchema>) {
   requireCan(actor, "settings.edit");
   return db.transaction(async (tx) => {
+    // Locked before counting, so no booking lands in between (bookings read the chair with a shared lock).
+    const [chair] = await tx.select().from(chairs).where(and(eq(chairs.branchId, branchId), eq(chairs.number, number))).for("update");
+    if (!chair) throw notFound("That chair");
     if (patch.active === false) {
       const [visits] = await tx
         .select({ n: count() })
@@ -182,7 +185,6 @@ export async function updateChair(actor: Staff, branchId: string, number: number
       }
     }
     const [row] = await tx.update(chairs).set(patch).where(and(eq(chairs.branchId, branchId), eq(chairs.number, number))).returning();
-    if (!row) throw notFound("That chair");
     await audit({ userId: actor.id, action: "chair.updated", entity: "chair", entityId: `${branchId}:${number}`, branchId, details: patch }, tx);
     return row;
   });

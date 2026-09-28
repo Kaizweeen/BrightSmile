@@ -1,5 +1,7 @@
 "use client";
 
+import { useId } from "react";
+
 type StaffRole = "manager" | "dentist";
 
 const ROLES: readonly [StaffRole, string, string][] = [
@@ -35,8 +37,9 @@ export function BranchChoice({
   onChange: (branchIds: string[]) => void;
   error?: string;
 }) {
+  const errorId = `${useId()}-error`;
   return (
-    <fieldset className="grid gap-2" aria-describedby={error ? "branch-choice-error" : undefined}>
+    <fieldset className="grid gap-2" aria-describedby={error ? errorId : undefined}>
       <legend className="mb-1 text-sm font-medium">Branches</legend>
       {branches.map((branch) => (
         <label key={branch.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border px-3">
@@ -50,7 +53,7 @@ export function BranchChoice({
         </label>
       ))}
       {error && (
-        <p id="branch-choice-error" className="text-sm text-destructive">
+        <p id={errorId} className="text-sm text-destructive">
           {error}
         </p>
       )}

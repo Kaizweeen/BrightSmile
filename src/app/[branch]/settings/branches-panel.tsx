@@ -2,7 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { StateBadge } from "@/components/state-badge";
@@ -15,17 +15,22 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, errorMessage, fieldErrors } from "@/lib/fetcher";
 import { DEFAULT_HOURS, hoursSummary } from "@/lib/hours";
+import { withBranch } from "@/lib/paths";
 import { useBranches, type Branch } from "@/lib/queries";
 
 export function BranchesPanel() {
   const branches = useBranches();
   const client = useQueryClient();
   const router = useRouter();
+  const pathname = usePathname();
+  const here = useParams<{ branch: string }>().branch;
   const [editing, setEditing] = useState<Branch | "new" | null>(null);
   const [replacing, setReplacing] = useState<Branch | null>(null);
-  const saved = async () => {
+  const saved = async (from?: string, to?: string) => {
     await client.invalidateQueries({ queryKey: ["branches"] });
-    router.refresh();
+    // A new code for the branch in the address moves this page to the new address; the old one no longer exists.
+    if (from === here && to && to !== from) router.replace(withBranch(pathname, to));
+    else router.refresh();
   };
   const replace = useMutation({
     mutationFn: (b: Branch) => api(`/branches/${b.code}/join-code`, { method: "POST" }),
@@ -103,7 +108,15 @@ export function BranchesPanel() {
   );
 }
 
-function BranchDialog({ branch, onClose, onSaved }: { branch: Branch | null; onClose: () => void; onSaved: () => Promise<void> }) {
+function BranchDialog({
+  branch,
+  onClose,
+  onSaved,
+}: {
+  branch: Branch | null;
+  onClose: () => void;
+  onSaved: (from?: string, to?: string) => Promise<void>;
+}) {
   const [form, setForm] = useState({
     code: branch?.code ?? "",
     name: branch?.name ?? "",
@@ -121,19 +134,20 @@ function BranchDialog({ branch, onClose, onSaved }: { branch: Branch | null; onC
     onSuccess: async () => {
       toast.success(branch ? `Saved ${form.name}.` : `Added ${form.name}.`);
       onClose();
-      await onSaved();
+      await onSaved(branch?.code, form.code);
     },
     onError: (error) => {
       setErrors(fieldErrors(error));
       if (Object.keys(fieldErrors(error)).length === 0) toast.error(errorMessage(error));
     },
   });
-  // Hours errors come back keyed operatingHours.<day>.<field>; the editor shows each under its day.
-  const hoursErrors = Object.fromEntries(
-    Object.entries(errors)
-      .filter(([key]) => key.startsWith("operatingHours"))
-      .map(([key, message]) => [key.split(".")[1] ?? "", message]),
-  );
+  // Hours errors come back keyed operatingHours.<day>.<field>; the editor shows each day's under that day.
+  const hoursErrors: Record<string, string> = {};
+  for (const [key, message] of Object.entries(errors)) {
+    if (!key.startsWith("operatingHours")) continue;
+    const day = key.split(".")[1] ?? "";
+    hoursErrors[day] = hoursErrors[day] ? `${hoursErrors[day]}; ${message}` : message;
+  }
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">

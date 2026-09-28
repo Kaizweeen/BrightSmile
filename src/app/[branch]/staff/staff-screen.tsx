@@ -262,16 +262,22 @@ function EditDialog({
   onDone: () => Promise<unknown>;
 }) {
   const isOwner = person.role === "owner";
-  const [role, setRole] = useState<"manager" | "dentist">(person.role === "dentist" ? "dentist" : "manager");
-  const [branchIds, setBranchIds] = useState(person.branchIds.filter((id) => branches.some((b) => b.id === id)));
+  const firstRole = person.role === "dentist" ? "dentist" : "manager";
+  const shown = person.branchIds.filter((id) => branches.some((b) => b.id === id));
+  const [role, setRole] = useState<"manager" | "dentist">(firstRole);
+  const [branchIds, setBranchIds] = useState(shown);
   const [title, setTitle] = useState(person.title ?? "");
+  // Branches go only when changed, so saving a title never touches memberships the dialog does not list.
+  const branchesChanged = branchIds.length !== shown.length || branchIds.some((id) => !shown.includes(id));
   const [seesPatients, setSeesPatients] = useState(person.seesPatients);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const save = useMutation({
     mutationFn: () =>
       api(`/staff/${person.id}`, {
         method: "PATCH",
-        body: isOwner ? { title: title.trim() || null, seesPatients } : { role, branchIds, title: title.trim() || null },
+        body: isOwner
+          ? { title: title.trim() || null, seesPatients }
+          : { role, ...(branchesChanged ? { branchIds } : {}), title: title.trim() || null },
       }),
     onSuccess: async () => {
       toast.success(`Saved ${person.name}.`);
@@ -307,7 +313,14 @@ function EditDialog({
             </label>
           ) : (
             <>
-              <RoleChoice value={role} onChange={setRole} />
+              <RoleChoice
+                value={role}
+                onChange={(next) => {
+                  setRole(next);
+                  // A new role starts with no title (an Orthodontist moving to the front desk); back again restores it.
+                  setTitle(next === firstRole ? (person.title ?? "") : "");
+                }}
+              />
               <BranchChoice branches={branches} value={branchIds} onChange={setBranchIds} error={errors.branchIds} />
               {me.role !== "owner" && <p className="text-sm text-muted-foreground">Branches you do not work at stay as they are.</p>}
             </>

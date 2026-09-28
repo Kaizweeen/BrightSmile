@@ -1,10 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { appUrl } from "@/lib/env";
 import { contentSecurityPolicy, HSTS } from "@/lib/security";
 
 /** A fresh nonce for every page (Next's CSP guide), so only DentaSync's own scripts run. */
 export function proxy(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
-  const https = request.nextUrl.protocol === "https:";
+  // APP_URL, not the request: behind the host's proxy the request itself may arrive over plain http.
+  const https = appUrl().startsWith("https://");
   const csp = contentSecurityPolicy(nonce, { dev: process.env.NODE_ENV === "development", https });
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);

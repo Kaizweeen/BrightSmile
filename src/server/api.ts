@@ -1,7 +1,9 @@
+import { getIP } from "better-auth/api";
 import { NextResponse, type NextRequest } from "next/server";
 import { ZodError, z } from "zod";
+import { auth } from "@/lib/auth";
 import { appUrl } from "@/lib/env";
-import { ApiError, pgCode, pgMessage } from "./errors";
+import { ApiError, loggable, pgCode, pgMessage } from "./errors";
 import { staffFromHeaders, type Staff } from "./session";
 
 type Params = Record<string, string>;
@@ -35,9 +37,12 @@ export function toResponse(error: unknown): NextResponse {
       return errorBody(422, "locked", "This record cannot be changed.");
     case "23505":
       return errorBody(409, "duplicate", "That already exists.");
+    case "22P02":
+      // Postgres refuses a text that is not a UUID where an id belongs.
+      return errorBody(404, "not_found", "That was not found.");
   }
   const requestId = crypto.randomUUID();
-  console.error(`Request ${requestId} failed:`, error);
+  console.error(`Request ${requestId} failed:`, loggable(error));
   return errorBody(500, "server_error", `Something went wrong. Reference: ${requestId}`, { requestId });
 }
 
@@ -95,7 +100,7 @@ export async function readJson<S extends z.ZodType>(req: NextRequest, schema: S)
   return schema.parse(raw);
 }
 
-/** The caller's IP address, for rate limits. Hosting platforms set x-forwarded-for. */
+/** The caller's IP address for the join limit, read from the same header as the sign-in limit (src/lib/auth.ts). */
 export function clientIp(req: NextRequest): string {
-  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
+  return getIP(req, auth.options) ?? "unknown";
 }
