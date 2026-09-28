@@ -1133,6 +1133,9 @@ export default defineConfig({
         test: {
           name: "db",
           include: ["tests/db/**/*.test.ts", "tests/api/**/*.test.ts"],
+          // Each file runs its own in-memory Postgres; more than two at once can crash the workers on Windows.
+          maxWorkers: 2,
+          sequence: { groupOrder: 1 },
           setupFiles: ["tests/setup-db.ts"],
           testTimeout: 20_000,
           hookTimeout: 60_000,
@@ -2460,6 +2463,9 @@ export const auth = betterAuth({
   // Accounts are created only by /setup and the join QR (src/server/setup.ts, src/server/staff.ts).
   emailAndPassword: { enabled: true, disableSignUp: true, minPasswordLength: 10, maxPasswordLength: 128 },
   plugins: [username()],
+  // Better Auth refuses a user table with required columns it does not know. These two are DentaSync's, and only our
+  // own code (src/server/accounts.ts) writes them.
+  user: { additionalFields: { role: { type: "string", input: false }, status: { type: "string", input: false } } },
   session: { expiresIn: SESSION_SECONDS, disableSessionRefresh: true },
   rateLimit: { storage: "database", customRules: { "/sign-in/username": { window: 15 * 60, max: 10 } } },
   disabledPaths: ["/sign-up/email", "/sign-in/email", "/update-user", "/is-username-available"],
