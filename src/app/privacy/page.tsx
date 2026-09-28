@@ -37,6 +37,11 @@ export default function PrivacyPage() {
           <li>First and last name, and mobile number.</li>
           <li>The procedures you choose and the time you ask for. These can say something about your health, so we treat them as sensitive personal information.</li>
           <li>Your birthday and HMO provider, only if you give them.</li>
+          <li>
+            If you are new to the clinic, its patient form: your middle name, sex, home address, occupation, email, a parent or
+            guardian, HMO card number, dental history, medical history (for example allergies, medicines, and conditions), an
+            emergency contact, and the name you type to sign the clinic&apos;s consent, with the date.
+          </li>
           <li>When you agreed to this notice.</li>
           <li>
             A one-time verification code (we keep only a scrambled form of it), your internet address to stop repeated code requests,
@@ -44,6 +49,16 @@ export default function PrivacyPage() {
           </li>
         </ul>
         <p>From clinic staff: email address, password (stored scrambled by our login provider), the clinic&apos;s details, and a push notification address for each device that turns on alerts.</p>
+
+        <h2>Health information</h2>
+        <p>
+          The answers on the patient form, and the procedures you ask for, are health information: sensitive personal information
+          under the Data Privacy Act (RA 10173). The clinic collects them only with your consent, which you give on the form by
+          ticking &quot;I have read and agree&quot; and typing your name. Only the clinic&apos;s staff can read them, in the
+          clinic&apos;s dashboard, and only to book and manage your appointments and for your dental care. They never appear in text
+          messages or push alerts. When the clinic deletes a patient, the whole form is erased with the patient&apos;s other details.
+          [Legal review: health information wording and the basis for processing it.]
+        </p>
 
         <h2>Why we use it</h2>
         <ul>
@@ -73,7 +88,7 @@ export default function PrivacyPage() {
           <li>The words of text messages: erased after 90 days. A record that a text was sent, and its cost, is kept for billing.</li>
           <li>
             Patient records and appointments: kept while the clinic uses BrightSmile. When the clinic deletes a patient, the name becomes
-            &quot;Deleted patient&quot; and the mobile number, birthday, and HMO are erased; the visits stay only as counts.
+            &quot;Deleted patient&quot; and the mobile number, birthday, HMO, and patient form are erased; the visits stay only as counts.
           </li>
           <li>A clinic&apos;s whole account: deleted when the clinic asks us to.</li>
         </ul>
