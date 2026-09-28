@@ -1282,6 +1282,16 @@ const change = (cookie: string, id: string, body: Record<string, unknown>) =>
   call(transitionsRoute.POST, request(`/api/v1/appointments/${id}/transitions`, { method: "POST", cookie, body }), { id });
 const visitRow = async (id: string) => (await db.select().from(appointments).where(eq(appointments.id, id)))[0];
 
+/** Runs `meanwhile` just before the next transaction starts, as if another front desk saved first (spec 8.8). */
+function beforeNextTransaction(meanwhile: () => Promise<unknown>) {
+  const real = (globalThis as unknown as { __dentasync: { db: typeof db } }).__dentasync.db;
+  const original = real.transaction.bind(real);
+  return vi.spyOn(real, "transaction").mockImplementationOnce((async (run: never, config: never) => {
+    await meanwhile();
+    return original(run, config);
+  }) as never);
+}
+
 let first = ""; // Ana with Dr. Reyes, booked in the first test and used by later ones
 let requested = "";
 let walkIn = "";
@@ -1397,6 +1407,25 @@ describe("moving", () => {
     const res = await move(w.deskDt, walkIn, { start: at("09:00").toISOString() });
     expect(res.status).toBe(422);
     expect((await res.json()).error.message).toBe("A checked-in visit can change only its chair.");
+  });
+
+  it("refuses a move that lost a race to another change of the same visit, and keeps dentists from moving visits", async () => {
+    const w = await world();
+    const res = await book(w.deskDt, { branch: "downtown", chairNumber: 1, dentistId: w.lim.id, patientId: w.ben.id, start: at("15:00").toISOString(), procedureIds: [w.cleaning.id] });
+    expect(res.status).toBe(201);
+    const { id } = await res.json();
+    expect((await move(w.limCookie, id, { chairNumber: 2 })).status).toBe(403);
+    // Another front desk moves it to chair 2 after this move read the visit and before it saved (spec 8.8).
+    const race = beforeNextTransaction(() => db.update(appointments).set({ chairNumber: 2 }).where(eq(appointments.id, id)));
+    const late = await move(w.deskDt, id, { start: at("15:30").toISOString() });
+    race.mockRestore();
+    expect(late.status).toBe(409);
+    expect((await late.json()).error.code).toBe("changed");
+    const row = await visitRow(id);
+    expect(row.chairNumber).toBe(2);
+    expect(row.startTime.toISOString()).toBe(at("15:00").toISOString());
+    const bare = await change(w.deskDt, id, { to: "cancelled", reason: null });
+    expect((await bare.json()).error.fields).toEqual({ reason: "Give a reason for cancelling." });
   });
 });
 
@@ -1672,7 +1701,7 @@ export const moveSchema = z.object({
 
 export const transitionSchema = z.object({
   to: z.enum(STATUSES),
-  reason: z.string().trim().min(1, "Give a reason").max(200, "Use at most 200 characters").optional(),
+  reason: z.string().trim().min(1, "Give a reason").max(200, "Use at most 200 characters").nullish(),
 });
 
 export const listSchema = z.object({ branch: z.string().min(1), from: instant, to: instant, dentist: z.uuid().optional() });
@@ -1801,6 +1830,20 @@ export async function createAppointment(actor: Staff, input: z.infer<typeof book
   }
 }
 
+/** Spec 8.8: locks the visit for the move, and refuses it when the visit changed after it was read (a check-in, another move). */
+async function lockUnchanged(tx: Db, visit: typeof appointments.$inferSelect): Promise<void> {
+  const [now] = await tx.select().from(appointments).where(eq(appointments.id, visit.id)).for("update");
+  const same = (a: Date, b: Date) => a.getTime() === b.getTime();
+  const unchanged =
+    now &&
+    now.status === visit.status &&
+    now.dentistId === visit.dentistId &&
+    now.chairNumber === visit.chairNumber &&
+    same(now.startTime, visit.startTime) &&
+    same(now.endTime, visit.endTime);
+  if (!unchanged) throw new ApiError(409, "changed", "Someone just changed this visit. Refresh to see it, then try again.");
+}
+
 /** Spec 8.7: a requested or confirmed visit moves through the same checks as a new booking; a checked-in one changes chair only. */
 export async function moveAppointment(actor: Staff, id: string, input: z.infer<typeof moveSchema>): Promise<void> {
   const [visit] = await db.select().from(appointments).where(eq(appointments.id, id));
@@ -1814,6 +1857,7 @@ export async function moveAppointment(actor: Staff, id: string, input: z.infer<t
       throw new ApiError(422, "checked_in", "A checked-in visit can change only its chair.");
     }
     await db.transaction(async (tx) => {
+      await lockUnchanged(tx, visit);
       const [chair] = await tx.select().from(chairs).where(and(eq(chairs.branchId, visit.branchId), eq(chairs.number, chairNumber))).for("share");
       if (!chair?.active) throw new ApiError(422, "refused", `Chair ${chairNumber} is not in use.`);
       const clashes = await activeVisits(
@@ -1857,6 +1901,7 @@ export async function moveAppointment(actor: Staff, id: string, input: z.infer<t
   };
   try {
     await db.transaction(async (tx) => {
+      await lockUnchanged(tx, visit);
       const { result, procedures } = await check(tx, req, now);
       if (!result.ok) refuse(result);
       if (result.warnings.length > 0 && !input.acknowledgeWarnings) askToConfirm(result);
@@ -2148,11 +2193,12 @@ git commit -m "feat: add booking, moving, and the visit lifecycle with conflict 
 - [ ] **Step 1: Write the failing test, `tests/db/availability.test.ts`**
 
 ```ts
+import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import * as availabilityRoute from "@/app/api/v1/availability/route";
 import * as overviewRoute from "@/app/api/v1/overview/route";
 import { db } from "@/db";
-import { appointments, chairs, dentistSchedules, patients, procedures } from "@/db/schema";
+import { appointments, branches, chairs, dentistSchedules, patients, procedures, userBranches } from "@/db/schema";
 import { fromMinutes, manilaMinutes } from "@/lib/time";
 import { call, makeBranch, makeUser, request, signIn } from "../helpers";
 
@@ -2215,6 +2261,18 @@ describe("open times", () => {
     ]);
     const forAna = await call(availabilityRoute.GET, request(`/api/v1/availability?branch=downtown&date=${MONDAY}&procedures=${w.cleaning.id}&patient=${w.ana.id}`, { cookie: w.desk }));
     expect(((await forAna.json()) as Times).times.map((t) => clock(t.start))).toEqual(["09:30", "09:45"]);
+  });
+
+  it("has none at a closed branch", async () => {
+    const w = await world();
+    const east = await makeBranch({ code: "eastside", name: "Eastside" });
+    await db.insert(chairs).values({ branchId: east.id, number: 1 });
+    await db.insert(userBranches).values({ userId: w.lim.id, branchId: east.id });
+    await db.insert(dentistSchedules).values({ dentistId: w.lim.id, branchId: east.id, dayOfWeek: 1, startTime: "11:00", endTime: "12:00" });
+    await db.update(branches).set({ active: false }).where(eq(branches.id, east.id));
+    const res = await call(availabilityRoute.GET, request(`/api/v1/availability?branch=eastside&date=${MONDAY}&procedures=${w.cleaning.id}`, { cookie: w.owner }));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Times).times).toEqual([]);
   });
 
   it("is for people who book", async () => {
@@ -2297,6 +2355,8 @@ export async function availability(
   const minutes = picked.reduce((sum, p) => sum + p.durationMinutes, 0);
   const turnover = Math.max(0, ...picked.map((p) => p.bufferMinutes));
   const empty = { date: q.date, minutes, turnover, times: [] };
+  // A closed branch takes no bookings (spec 8.3), so it has no open times.
+  if (!branch.active) return empty;
 
   const chairNumbers = (
     await db
@@ -2393,7 +2453,7 @@ export async function overview(actor: Staff, date: string): Promise<{ date: stri
     .select({ branchId: dentistSchedules.branchId, name: users.name })
     .from(dentistSchedules)
     .innerJoin(users, eq(users.id, dentistSchedules.dentistId))
-    .where(and(eq(dentistSchedules.dayOfWeek, weekday(date)), eq(users.status, "active")));
+    .where(and(eq(dentistSchedules.dayOfWeek, weekday(date)), eq(users.status, "active"), eq(users.seesPatients, true)));
   const now = Date.now();
   return {
     date,
