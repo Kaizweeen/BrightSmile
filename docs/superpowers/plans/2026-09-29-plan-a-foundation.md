@@ -3352,7 +3352,7 @@ export function LoginForm() {
 
 ```tsx
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { AuthCard } from "@/components/auth-card";
 import { ownerExists } from "@/server/setup";
@@ -3363,7 +3363,8 @@ export const metadata: Metadata = { title: "Set up" };
 export default async function SetupPage() {
   // Request time only: `next build` must never open the database.
   await connection();
-  if (await ownerExists()) redirect("/login");
+  // Spec 6.1: once an owner exists, /setup answers 404; the owner's own reset lives at /setup/recover.
+  if (await ownerExists()) notFound();
   return (
     <AuthCard
       title="Set up DentaSync"
@@ -3500,7 +3501,8 @@ export function RecoverForm() {
         method: "POST",
         body: { setupCode: value("setupCode"), password: value("password") },
       });
-      await authClient.signIn.username({ username, password: value("password") });
+      const { error } = await authClient.signIn.username({ username, password: value("password") });
+      if (error) throw new Error("The password is changed, but signing in failed. Sign in with the new password.");
       router.replace("/");
       router.refresh();
     } catch (error) {
@@ -3529,7 +3531,7 @@ export function RecoverForm() {
 
 Create `.env.local` from `.env.example` with `BETTER_AUTH_SECRET` and `SETUP_TOKEN` set to two different values from `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`. Run `npm run dev` and open http://localhost:3700.
 
-Expected: `/` redirects to `/setup`. Submitting with a wrong code shows "That setup code is not right." under the code field. The right code creates the owner and lands on `/all/settings` (a 404 until Task 10; that is expected here). `/setup` now redirects to `/login`, and signing in with the new username works.
+Expected: `/` redirects to `/setup`. Submitting with a wrong code shows "That setup code is not right." under the code field. The right code creates the owner and lands on `/all/settings` (a 404 until Task 10; that is expected here). `/setup` now answers 404, and signing in at `/login` with the new username works.
 
 - [ ] **Step 16: Run everything and commit**
 
@@ -6269,7 +6271,8 @@ export function JoinForm({ code }: { code: string }) {
         method: "POST",
         body: { name: value("name"), username: value("username"), password: value("password"), role },
       });
-      await authClient.signIn.username({ username, password: value("password") });
+      const { error } = await authClient.signIn.username({ username, password: value("password") });
+      if (error) throw new Error("Your request is sent, but signing in failed. Sign in to see whether it is approved.");
       router.replace("/waiting");
       router.refresh();
     } catch (error) {
@@ -6349,7 +6352,8 @@ export function ResetForm({ token }: { token: string }) {
     setAlert(null);
     try {
       const { username } = await api<{ username: string }>(`/reset/${token}`, { method: "POST", body: { password: value("password") } });
-      await authClient.signIn.username({ username, password: value("password") });
+      const { error } = await authClient.signIn.username({ username, password: value("password") });
+      if (error) throw new Error("The password is changed, but signing in failed. Sign in with the new password.");
       router.replace("/");
       router.refresh();
     } catch (error) {
