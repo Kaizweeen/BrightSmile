@@ -2,7 +2,6 @@ export type ErrorBody = {
   code: string;
   message: string;
   fields?: Record<string, string>;
-  blocks?: { index: number; message: string }[];
   conflicts?: unknown[];
   warnings?: { code: string; message: string }[];
   requestId?: string;

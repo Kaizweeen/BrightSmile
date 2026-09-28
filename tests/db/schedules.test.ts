@@ -58,13 +58,13 @@ describe("weekly schedules", () => {
       { branchId: b.id, dayOfWeek: 2, startTime: "11:00", endTime: "14:00" },
     ]);
     expect(res.status).toBe(400);
-    expect((await res.json()).error.blocks).toEqual([
-      { index: 0, message: "The branch is open 09:00 to 18:00 on Monday." },
-      { index: 1, message: "The branch is open 12:00 to 20:00 on Monday." },
-      { index: 2, message: "The branch is closed on Sunday." },
-      { index: 3, message: "Overlaps another block on Tuesday." },
-      { index: 4, message: "Overlaps another block on Tuesday." },
-    ]);
+    expect((await res.json()).error.fields).toEqual({
+      "blocks.0": "The branch is open 09:00 to 18:00 on Monday.",
+      "blocks.1": "The branch is open 12:00 to 20:00 on Monday.",
+      "blocks.2": "The branch is closed on Sunday.",
+      "blocks.3": "Overlaps another block on Tuesday.",
+      "blocks.4": "Overlaps another block on Tuesday.",
+    });
   });
 
   it("refuses a branch the dentist does not work at", async () => {
@@ -72,7 +72,7 @@ describe("weekly schedules", () => {
     const other = await makeBranch();
     const { cookie } = await ownerCookie();
     const res = await put(cookie, dentist.id, [{ branchId: other.id, dayOfWeek: 1, startTime: "09:00", endTime: "12:00" }]);
-    expect((await res.json()).error.blocks).toEqual([{ index: 0, message: "This dentist does not work at that branch." }]);
+    expect((await res.json()).error.fields).toEqual({ "blocks.0": "This dentist does not work at that branch." });
   });
 
   it("lets a manager change only the blocks at their branches", async () => {

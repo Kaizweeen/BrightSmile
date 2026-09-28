@@ -20,11 +20,11 @@ export const weekSchema = z.object({
 
 export const timeOffSchema = z
   .object({
-    startsAt: z.coerce.date(),
-    endsAt: z.coerce.date(),
+    startsAt: z.iso.datetime({ offset: true }),
+    endsAt: z.iso.datetime({ offset: true }),
     reason: z.string().trim().max(100, "Use at most 100 characters"),
   })
-  .refine((t) => t.startsAt < t.endsAt, { message: "The end must be after the start", path: ["endsAt"] });
+  .refine((t) => Date.parse(t.startsAt) < Date.parse(t.endsAt), { message: "The end must be after the start", path: ["endsAt"] });
 
 export type DentistView = { id: string; name: string; title: string | null; branchIds: string[] };
 export type WeekBlock = Block & { id: string };
@@ -107,7 +107,12 @@ export async function replaceWeek(actor: Staff, dentistId: string, input: z.infe
     const problems = blockProblems([...submitted.map((s) => s.block), ...kept], { allowedBranchIds: allowed, hours })
       .filter((problem) => problem.index < submitted.length)
       .map((problem) => ({ index: submitted[problem.index].index, message: problem.message }));
-    if (problems.length > 0) throw new ApiError(400, "invalid", "Check the highlighted blocks.", { blocks: problems });
+    if (problems.length > 0) {
+      // Spec 12: each broken block is a field error keyed "blocks.<index sent>", like any array field.
+      throw new ApiError(400, "invalid", "Check the highlighted blocks.", {
+        fields: Object.fromEntries(problems.map((problem) => [`blocks.${problem.index}`, problem.message])),
+      });
+    }
 
     const replaced = current.filter(mine).map((row) => row.id);
     if (replaced.length > 0) await tx.delete(dentistSchedules).where(inArray(dentistSchedules.id, replaced));
@@ -142,7 +147,7 @@ export async function addTimeOff(
       .insert(dentistTimeOff)
       .values({ dentistId, startsAt, endsAt, reason: input.reason, createdBy: actor.id })
       .returning({ id: dentistTimeOff.id });
-    await audit({ userId: actor.id, action: "time_off.added", entity: "user", entityId: dentistId, details: { startsAt: input.startsAt.toISOString(), endsAt: input.endsAt.toISOString() } }, tx);
+    await audit({ userId: actor.id, action: "time_off.added", entity: "user", entityId: dentistId, details: { startsAt: input.startsAt, endsAt: input.endsAt } }, tx);
     const visits = await tx
       .select({ id: appointments.id, startTime: appointments.startTime, branchName: branches.name, lastName: patients.lastName, firstName: patients.firstName })
       .from(appointments)
