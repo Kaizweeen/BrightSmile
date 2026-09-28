@@ -61,6 +61,51 @@ export type Medical = {
   conditionOther: string | null;
 };
 
+/** Nothing answered yet: where a new form starts (spec 6 marks only its required fields). */
+export const NO_ANSWERS: Medical = {
+  goodHealth: null,
+  underTreatment: null,
+  treatmentCondition: null,
+  seriousIllness: null,
+  illnessDetail: null,
+  hospitalized: null,
+  hospitalDetail: null,
+  takingMedicine: null,
+  medicineDetail: null,
+  tobacco: null,
+  allergies: [],
+  allergyOther: null,
+  pregnant: null,
+  nursing: null,
+  birthControl: null,
+  conditions: [],
+  conditionOther: null,
+};
+
+/** A Yes or No question of the medical history, and the detail box its Yes opens (spec 6, item 5). */
+export type Question = {
+  key: "goodHealth" | "underTreatment" | "seriousIllness" | "hospitalized" | "takingMedicine" | "tobacco" | "pregnant" | "nursing" | "birthControl";
+  label: string;
+  detail?: { key: "treatmentCondition" | "illnessDetail" | "hospitalDetail" | "medicineDetail"; label: string };
+};
+
+/** The questions every patient answers, in the form's order. The public form and the dashboard both read these. */
+export const QUESTIONS: Question[] = [
+  { key: "goodHealth", label: "Are you in good health?" },
+  { key: "underTreatment", label: "Are you under medical treatment now?", detail: { key: "treatmentCondition", label: "For what condition?" } },
+  { key: "seriousIllness", label: "Have you had a serious illness or an operation?", detail: { key: "illnessDetail", label: "What was it?" } },
+  { key: "hospitalized", label: "Have you been in the hospital?", detail: { key: "hospitalDetail", label: "When, and why?" } },
+  { key: "takingMedicine", label: "Are you taking any medicine now?", detail: { key: "medicineDetail", label: "Which medicine?" } },
+  { key: "tobacco", label: "Do you smoke or use tobacco?" },
+];
+
+/** Asked only when the patient is female (parseMedical keeps these answers for women only). */
+export const WOMEN_QUESTIONS: Question[] = [
+  { key: "pregnant", label: "Are you pregnant?" },
+  { key: "nursing", label: "Are you nursing?" },
+  { key: "birthControl", label: "Are you taking birth control pills?" },
+];
+
 /** The patient form (spec 6) as create_booking stores it. The patient's mobile is the verified number, never a field here. */
 export type IntakeForm = {
   first: string;
@@ -278,4 +323,13 @@ export function formColumns(f: IntakeForm): Record<string, unknown> {
     waiver_version: f.waiverVersion,
     medical: f.medical,
   };
+}
+
+/**
+ * A parsed form as bookForNumber and changeForNumber take it back. The page keeps the parsed form in the flow; the
+ * server parses it again, reading the tick and the typed name the way the form sends them. The waiver's version is
+ * always the server's own.
+ */
+export function intakeInput(f: IntakeForm): Record<string, unknown> {
+  return { ...f, agree: true, signature: f.waiverName };
 }

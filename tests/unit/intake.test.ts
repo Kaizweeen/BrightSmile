@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ageOn, formColumns, parseIntakeForm, parseMedical, type Medical } from "@/lib/intake";
+import { ageOn, formColumns, intakeInput, NO_ANSWERS, parseIntakeForm, parseMedical, QUESTIONS, WOMEN_QUESTIONS, type Medical } from "@/lib/intake";
 import { WAIVER_VERSION, waiverText } from "@/lib/waiver";
 
 const today = "2026-09-28";
@@ -190,5 +190,21 @@ describe("waiverText", () => {
     const paragraphs = waiverText("Bright Dental");
     expect(paragraphs.map((p) => p.title)).toEqual(["Consent for dental examination and treatment.", "Data privacy consent."]);
     expect(paragraphs.every((p) => p.text.includes("Bright Dental"))).toBe(true);
+  });
+});
+
+describe("intakeInput", () => {
+  it("gives the server back a form it parses to the same form", () => {
+    const result = parseIntakeForm(adult, today);
+    if (!result.ok) throw new Error("the adult form should parse");
+    expect(parseIntakeForm(intakeInput(result.form), today)).toEqual(result);
+  });
+});
+
+describe("the form's questions", () => {
+  it("start with nothing answered and ask every Yes or No question once", () => {
+    expect(NO_ANSWERS).toEqual(EMPTY_MEDICAL);
+    const keys = [...QUESTIONS, ...WOMEN_QUESTIONS].map((q) => q.key).sort();
+    expect(keys).toEqual(["birthControl", "goodHealth", "hospitalized", "nursing", "pregnant", "seriousIllness", "takingMedicine", "tobacco", "underTreatment"]);
   });
 });
