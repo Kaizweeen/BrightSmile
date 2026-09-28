@@ -138,4 +138,4 @@ Changing branch while rescheduling; branch-level staff permissions; per-branch p
 
 ## Revisions
 
-**2026-09-28**, after Kai decided BrightSmile is free: billing was removed before release; nothing in this spec depended on it.
+**2026-09-28**, after Kai decided BrightSmile is free: billing was removed before release, so a clinic can no longer lapse; the "lapsed clinic" paused notice this spec describes (section 3) no longer applies, and the three buttons always show.
