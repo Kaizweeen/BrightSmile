@@ -32,11 +32,12 @@ describe("shell helpers", () => {
   it("builds the navigation for each role", () => {
     expect(navItems({ role: "owner", seesPatients: false }, "all").map((i) => i.label)).toEqual(["Patients", "Staff", "Settings"]);
     expect(navItems({ role: "manager", seesPatients: false }, "downtown").map((i) => i.href)).toEqual([
+      "/downtown/calendar",
       "/downtown/patients",
       "/downtown/staff",
       "/downtown/settings",
     ]);
-    expect(navItems({ role: "dentist", seesPatients: true }, "downtown").map((i) => i.label)).toEqual(["Patients", "Schedules"]);
+    expect(navItems({ role: "dentist", seesPatients: true }, "downtown").map((i) => i.label)).toEqual(["Calendar", "Patients", "Schedules"]);
   });
 
   it("keeps the page when switching branch", () => {
