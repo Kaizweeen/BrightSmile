@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { cache } from "react";
-import BookingSheet from "./BookingSheet";
+import BookingFlow from "./BookingFlow";
 import { loadClinic } from "@/lib/availability";
 import { bookingOpen } from "@/lib/billing-data";
 import { slugProblem } from "@/lib/validate";
@@ -23,13 +23,14 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 }
 
 /**
- * A clinic's public booking page and website (spec 5.1). It receives no patient data and no busy times.
- * A lapsed clinic's page shows how to call instead of the booking form (billing spec 7.5).
+ * A clinic's public booking page and website (spec 5.1, booking flow spec 3): the main page, then booking, rescheduling
+ * or editing, and cancelling for a verified number. It receives no patient data and no busy times. A lapsed clinic's
+ * page shows how to call instead of the three buttons (billing spec 7.5).
  */
 export default async function ClinicBookingPage({ params }: Params) {
   const clinic = await clinicFor((await params).slug);
   if (!clinic) notFound();
   const now = new Date();
   const open = await bookingOpen(clinic.id, now);
-  return <BookingSheet clinic={clinic} nowIso={now.toISOString()} paused={!open} />;
+  return <BookingFlow clinic={clinic} nowIso={now.toISOString()} paused={!open} />;
 }

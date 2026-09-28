@@ -3,7 +3,7 @@
 import { cookies, headers } from "next/headers";
 import { dayOpenStarts, loadClinic, monthOpenDates } from "@/lib/availability";
 import * as booking from "@/lib/booking";
-import { resolveSelection } from "@/lib/booking-input";
+import { resolveSelection, type PublicClinic } from "@/lib/booking-input";
 import { DEVICE_COOKIE, readDevice, signDevice } from "@/lib/codes";
 import * as numbers from "@/lib/number-booking";
 import { clientIp } from "@/lib/request";
@@ -52,6 +52,15 @@ async function chosen(slug: unknown, selection: unknown) {
   const clinic = await loadClinic({ slug }, branchId);
   const picked = clinic ? resolveSelection(clinic, selection) : null;
   return clinic && picked ? { clinic, picked, ignoreId } : null;
+}
+
+/**
+ * The booking page at one active branch: its dentists with their hours there, and the procedures (booking flow spec 3.3
+ * step 1, 3.4 step 3). Public, like the page itself; null for a branch that is not one of the clinic's active ones.
+ */
+export async function getBranch(slug: string, branchId: string): Promise<PublicClinic | null> {
+  if (typeof slug !== "string" || !isUuid(branchId)) return null;
+  return loadClinic({ slug }, branchId);
 }
 
 /** Enabled days of a month: dates only, never busy times (spec 6). */
