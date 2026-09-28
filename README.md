@@ -2,6 +2,8 @@
 
 Online booking for dental clinics in the Philippines. Patients request a time from the clinic's booking link, the clinic approves it, and patients get text confirmations and reminders.
 
+BrightSmile is free for clinics, with no billing anywhere in the app, and web-only: there is no Play Store app.
+
 - Spec: `docs/superpowers/specs/2026-09-22-brightsmile-core-booking-design.md`
 - Plans: `docs/superpowers/plans/`
 
@@ -45,7 +47,7 @@ Do these in order. Kai creates the accounts; nothing here can be done from code.
 
 ### 2. Supabase production project
 
-Production is the project with ref `fmvqwojzsklinbdmfjkn` (first created as `brightsmile-dev`, and empty at launch). Migrations 1 to 6 are already applied there, so for it start at step 3; migrations 7 to 9 are pasted as described under "Billing", "Teams and reports", and "Branches and the booking engine" below. Steps 1 and 2 set up any new project, such as the separate development project that the database and e2e tests need.
+Production is the project with ref `fmvqwojzsklinbdmfjkn` (first created as `brightsmile-dev`, and empty at launch). Migrations 1 to 6 are already applied there, so for it start at step 3; migrations 7 and 8 are pasted as described under "Teams and reports" and "Branches and the booking engine" below. Steps 1 and 2 set up any new project, such as the separate development project that the database and e2e tests need.
 
 1. Create a new project, region Singapore. From **Project Settings > API Keys** copy the project URL, the publishable key, and the secret key.
 2. Apply the migrations in filename order: open each file in `supabase/migrations`, paste it into the **SQL Editor**, and run it before opening the next.
@@ -58,15 +60,14 @@ Production is the project with ref `fmvqwojzsklinbdmfjkn` (first created as `bri
    | 4 | `20260924000100_hardening.sql` |
    | 5 | `20260924000200_default_function_privileges.sql` |
    | 6 | `20260925000100_otp_issue_lock.sql` |
-   | 7 | `20260925000200_billing.sql` |
-   | 8 | `20260926000100_teams.sql` |
-   | 9 | `20260928000100_branches_booking.sql` |
+   | 7 | `20260926000100_teams.sql` |
+   | 8 | `20260928000100_branches_booking.sql` |
 
    Migrations run by hand are not recorded in the project's migration history. Before you ever use `npm run db:push` against this project, link it and mark them as applied, or the CLI will try to run them again:
 
    ```powershell
    npx supabase link --project-ref <production-project-ref>
-   npx supabase migration repair --status applied 20260922000100 20260922000200 20260922000300 20260924000100 20260924000200 20260925000100 20260925000200 20260926000100 20260928000100
+   npx supabase migration repair --status applied 20260922000100 20260922000200 20260922000300 20260924000100 20260924000200 20260925000100 20260926000100 20260928000100
    ```
 
 3. **Authentication > URL Configuration:** Site URL = your `APP_URL` (for example `https://brightsmile.ph`); add `https://brightsmile.ph/**` under Redirect URLs.
@@ -74,7 +75,6 @@ Production is the project with ref `fmvqwojzsklinbdmfjkn` (first created as `bri
    - Confirm signup: link `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next=/onboarding`
    - Reset password: link `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/reset-password`
 5. **Authentication > Emails > SMTP Settings:** set up custom SMTP; it is required. Supabase's built-in sender only delivers to members of your Supabase team, at most 2 emails an hour, so clinics would never get their sign-up email. Without a domain of your own, a Gmail account works: host `smtp.gmail.com`, port `465`, username and sender email = the Gmail address, password = a Google App Password (needs 2-Step Verification).
-6. Keep email confirmation on (**Authentication > Sign In / Providers > Email**). `/admin` depends on it: with confirmation off a new sign-up counts as confirmed at once, so anyone could claim an `OPERATOR_EMAILS` address that has no login yet.
 
 ### 3. Keys
 
@@ -105,9 +105,6 @@ The Vercel project `bright-smile` already exists and is Git-connected: pushes to
    | `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | From step 3 |
    | `VAPID_SUBJECT` | `mailto:` plus a monitored address |
    | `NEXT_PUBLIC_CONTACT_EMAIL` | The address on the Privacy Notice and Terms |
-   | `OPERATOR_EMAILS` | The login emails that may open `/admin`, comma separated (see "Billing > Environment" below) |
-   | `BILLING_GCASH_NAME`, `BILLING_GCASH_NUMBER` | The GCash account clinics pay, shown on the Billing page |
-   | `PAYMONGO_SECRET_KEY`, `PAYMONGO_WEBHOOK_SECRET` | Optional, both or neither, live keys only (see "Turn on PayMongo" below) |
 
    For **Preview**, use the development Supabase keys (until a development project exists, leave Preview unset: previews then fail to start, which is harmless), `SMS_MODE=log`, and set `APP_URL` to any fixed preview URL of the project (for example the `main` branch alias shown on a preview deployment); previews only log texts, so the exact value matters little, but it must be set or previews fail to start. Previews never text anyone and never run the cron job.
 
@@ -124,78 +121,22 @@ The Vercel project `bright-smile` already exists and is Git-connected: pushes to
 ### 5. After the first deploy
 
 1. Open the site: the landing page loads; `curl.exe -s -I https://brightsmile.ph/` shows `Strict-Transport-Security` and `Content-Security-Policy`.
-2. Create the demo clinic: sign up with a demo email and use the booking link `demo`, so the landing page's demo link works, then extend its trial by 365 days on `/admin` (again each year) so the demo link never pauses.
+2. Create the demo clinic: sign up with a demo email and use the booking link `demo`, so the landing page's demo link works.
 3. Book a visit on `/demo` with your own mobile: the code text arrives from `BrightSmile`. Approve it in the dashboard: the confirmation text arrives.
 4. On a phone, add the dashboard to the home screen (iPhone: Safari, Share, Add to Home Screen), open it, and in Settings press "Enable push on this device". Book another visit: the push arrives and opens Requests.
 5. Have a lawyer review `/privacy` and `/terms` and replace every `[bracketed]` placeholder before real clinics sign up.
 6. Check the daily job weekly under **Settings > Cron Jobs** (a failed run shows as an error there), or add a Vercel alert or log drain.
-7. Before charging clinics: check whether NPC registration applies (likely once sensitive data on 1,000 or more people is held), run a trademark check on BrightSmile, and register the business.
-
-## Billing
-
-Clinics get a 14 day free trial at signup, then prepay 1 to 12 months (spec: `docs/superpowers/specs/2026-09-25-brightsmile-billing-design.md`). Prices are in `TIERS` in `src/lib/billing.ts`: Solo (1 to 2 active dentists) ₱399 a month, Team (3 to 6) ₱1,299, Group (7 or more) ₱1,799. Three days before a plan ends the clinic gets a push or a text; 3 days after it ends, its booking page and reminder texts pause until it pays. The dashboard always keeps working.
-
-### Apply the billing migration (once, before merging the billing branch)
-
-Every merge to `main` deploys, and the new code reads the new tables, so the migration goes first.
-
-1. Before pasting, make sure production's `create_clinic` is still the one in the migrations, because this migration replaces it and a fix made there by hand would be lost. Run `select pg_get_functiondef('public.create_clinic(jsonb)'::regprocedure);` in the production **SQL Editor** and compare the body (between the `$function$` markers) with `create_clinic` in `supabase/migrations/20260922000200_access.sql`. If they differ, stop and fold the difference into the billing migration first.
-2. Open `supabase/migrations/20260925000200_billing.sql`, paste it into the production **SQL Editor**, and run it. It creates `clinic_billing` and `payments`, gives every existing clinic a fresh 14 day trial from the moment it runs (so nothing pauses at deploy), and adds `record_payment`, `extend_trial`, and `admin_overview`. `npm test` has already applied it to an offline copy of the schema (`tests/sql`).
-3. Check it: `select count(*) from public.clinics c left join public.clinic_billing b on b.clinic_id = c.id where b.clinic_id is null;` must return `0`. If it shows any clinic without a billing row, run the backfill again; it only adds the missing rows:
-
-   ```sql
-   insert into public.clinic_billing (clinic_id, trial_ends_at)
-   select id, now() + interval '14 days' from public.clinics
-   on conflict (clinic_id) do nothing;
-   ```
-
-4. If you ever link the project for `npm run db:push`, mark it applied first: `npx supabase migration repair --status applied 20260925000200`.
-
-### Environment
-
-| Variable | Needed |
-|---|---|
-| `OPERATOR_EMAILS` | Production. The login emails that may open `/admin`, comma separated. List only addresses that already have a confirmed login, and keep email confirmation on (Deploy step 2.6). |
-| `BILLING_GCASH_NAME`, `BILLING_GCASH_NUMBER` | Production. The GCash account clinics pay, shown on the Billing page. |
-| `PAYMONGO_SECRET_KEY`, `PAYMONGO_WEBHOOK_SECRET` | Optional, both or neither. Set them once live PayMongo keys exist (they need a registered business). Production refuses a test secret key (`sk_test_`). |
-
-Set the first three in Vercel (**Settings > Environment Variables**, Production) before merging the billing branch: the server refuses to start without them.
-
-### Record a GCash payment
-
-1. A clinic sends the amount shown on its Billing page, with its booking link name (for example `bright-dental`) as the GCash note.
-2. When it arrives in your GCash app, log in with an `OPERATOR_EMAILS` address, open `/admin`, find the clinic, choose the months, check the amount (prefilled with the price), type the GCash reference number, and press **Record payment**. The plan extends from its current end, or from today after a lapse.
-3. **Extend trial** on the same card adds days to a trial, for example for the `demo` clinic.
-4. To void a payment recorded by mistake, use the production **SQL Editor**: find it by its GCash reference (stored without spaces), delete it, then set the clinic's `paid_through` back to where its remaining payments leave it (`null` when none remain), with the ids from the first query in place of `<payment id>` and `<id>`:
-
-   ```sql
-   select id, clinic_id, months, amount_centavos, paid_at from public.payments where method = 'gcash' and reference = '<reference>';
-   delete from public.payments where id = '<payment id>';
-   update public.clinic_billing set paid_through = (select max(paid_through_after) from public.payments where clinic_id = '<id>') where clinic_id = '<id>';
-   ```
-
-   This is exact when the mistaken payment is the clinic's latest. A payment recorded after it extended from the mistaken end, so in that case set `paid_through` by hand.
-
-### Turn on PayMongo
-
-1. In the PayMongo dashboard (Developers), in live mode, create a webhook for the event `checkout_session.payment.paid` pointing at `{APP_URL}/api/paymongo/webhook`, and copy its secret. Production refuses a test secret key (`sk_test_`) at start and ignores test events, so test payments never extend real plans.
-2. In Vercel, set `PAYMONGO_SECRET_KEY` (the live secret key from the same page) and `PAYMONGO_WEBHOOK_SECRET`, then redeploy. The Billing page then shows **Pay online** (GCash, Maya, or card on PayMongo's page).
-3. Pay 1 month for the demo clinic: within a minute the payment shows in its Billing page history and on `/admin`. A payment that never shows means the webhook failed: check the Vercel logs for "paymongo webhook", and record it by hand on `/admin` meanwhile.
-
-If the webhook fails:
-
-- A 401 on `POST /api/paymongo/webhook` in Vercel's request logs means `PAYMONGO_WEBHOOK_SECRET` does not match this webhook (test and live webhooks have different secrets).
-- A log line saying a paid checkout is for a clinic that no longer exists names the checkout session: refund it in PayMongo.
+7. Before launch: check whether NPC registration applies (likely once sensitive data on 1,000 or more people is held), run a trademark check on BrightSmile, and register the business.
 
 ## Teams and reports
 
-A clinic's owner invites staff with a join link (spec: `docs/superpowers/specs/2026-09-26-brightsmile-teams-reports-design.md`). Staff handle requests, the schedule, new appointments, patients, and dentists' time off; only the owner changes the clinic profile and booking rules, dentists, working hours, procedures, billing, and the team. The database enforces this, not only the pages. Staff cannot see the clinic's payment history or its colleagues' emails either: a staff member reads only their own membership row, and the owner reads every membership and payment (RA 10173 data minimization); the Team page itself is owner only. Staff seats are free. Every clinic also gets a Reports page and a Monday 9:00 AM push that sums up the week before.
+A clinic's owner invites staff with a join link (spec: `docs/superpowers/specs/2026-09-26-brightsmile-teams-reports-design.md`). Staff handle requests, the schedule, new appointments, patients, and dentists' time off; only the owner changes the clinic profile and booking rules, dentists, working hours, procedures, and the team. The database enforces this, not only the pages. Staff cannot see their colleagues' emails either: a staff member reads only their own membership row, and the owner reads every membership (RA 10173 data minimization); the Team page itself is owner only. Staff seats are free. Every clinic also gets a Reports page and a Monday 9:00 AM push that sums up the week before.
 
 ### Apply the teams migration (once, before merging the teams branch)
 
-Every merge to `main` deploys, and the new code reads the new columns and functions, so the migration goes first. The billing migration must already be in production: the teams migration checks this itself and refuses to run (it fails on its first statement) if `clinic_billing` does not exist yet, so pasting it out of order fails fast instead of leaving `clinic_members` half migrated.
+Every merge to `main` deploys, and the new code reads the new columns and functions, so the migration goes first. The OTP locking migration must already be in production: the teams migration checks this itself and refuses to run (it fails on its first statement) if `issue_otp` does not exist yet, so pasting it out of order fails fast instead of leaving `clinic_members` half migrated.
 
-1. Make sure production's `create_clinic` is still the one in the billing migration, because this migration replaces it and a fix made there by hand would be lost. Run `select pg_get_functiondef('public.create_clinic(jsonb)'::regprocedure);` in the production **SQL Editor** and compare the body (between the `$function$` markers) with `create_clinic` in `supabase/migrations/20260925000200_billing.sql`. If they differ, stop and fold the difference into the teams migration first.
+1. Make sure production's `create_clinic` is still the one in `supabase/migrations/20260922000200_access.sql`, because this migration replaces it and a fix made there by hand would be lost. Run `select pg_get_functiondef('public.create_clinic(jsonb)'::regprocedure);` in the production **SQL Editor** and compare the body (between the `$function$` markers) with `create_clinic` there. If they differ, stop and fold the difference into the teams migration first.
 2. Make sure no clinic uses the booking link `join`, which becomes reserved: `select id, name from public.clinics where slug = 'join';` must return no rows. If it returns one, change that clinic's booking link first, or the migration stops at `clinics_slug_not_reserved`.
 3. Open `supabase/migrations/20260926000100_teams.sql`, paste it into the production **SQL Editor**, and run it. Every existing member stays the owner of their clinic and gets their login email copied onto their membership. `npm test` has already applied it to an offline copy of the schema (`tests/sql`).
 4. Check it: `select count(*) from public.clinic_members where email is null or role <> 'owner';` must return `0`.
@@ -211,7 +152,7 @@ One login belongs to one clinic: someone whose login already has a clinic joins 
 
 ### Reports and the Monday push
 
-**Reports**, in the dashboard nav, shows a Manila week's (Monday to Sunday) visits, no-shows, no-show rate, cancellations, declined and expired requests, visits nobody marked yet, and online versus staff bookings, per dentist when 2 or more had appointments, and an 8 week table. Every Monday the daily job pushes "Last week at {clinic}" with the week's visits, no-shows, and no-show rate to each clinic that is not paused and had appointments; tapping it opens Reports. There is no text fallback (it would cost a credit per clinic per week). The daily job's JSON reports how many clinics the push reached as `"weekly"`.
+**Reports**, in the dashboard nav, shows a Manila week's (Monday to Sunday) visits, no-shows, no-show rate, cancellations, declined and expired requests, visits nobody marked yet, and online versus staff bookings, per dentist when 2 or more had appointments, and an 8 week table. Every Monday the daily job pushes "Last week at {clinic}" with the week's visits, no-shows, and no-show rate to each clinic that had appointments; tapping it opens Reports. There is no text fallback (it would cost a credit per clinic per week). The daily job's JSON reports how many clinics the push reached as `"weekly"`.
 
 ## Branches and the booking engine
 

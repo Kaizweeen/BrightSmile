@@ -43,9 +43,9 @@ Odonto ([odonto.ph](https://www.odonto.ph/)) is a Philippine SaaS positioned as 
 ## 3. Roadmap (each piece gets its own spec, plan, and build)
 
 1. **Core booking loop (this spec).**
-2. **Billing:** trial, paid plans, a monthly text allowance, PayMongo or Xendit. Until then, early clinics pay by GCash transfer.
+2. ~~**Billing:** trial, paid plans, a monthly text allowance, PayMongo or Xendit. Until then, early clinics pay by GCash transfer.~~ **Dropped 2026-09-28:** Kai decided BrightSmile is free, so there is no billing.
 3. **Teams and analytics:** staff invites and roles, weekly reports, no-show rates.
-4. **Mobile:** Play Store listing as a thin wrapper around the PWA.
+4. ~~**Mobile:** Play Store listing as a thin wrapper around the PWA.~~ **Dropped 2026-09-28:** Kai decided BrightSmile is web-only, so there is no Play Store app.
 
 ## 4. Goals and success criteria
 

@@ -145,3 +145,5 @@ A new daily job step. On Mondays (Manila), for each clinic that is not lapsed (p
 5. Logging in through a still-open join link returns to it, even for an account that already has a clinic, so it sees why it cannot join instead of landing on `/app` with no explanation.
 6. The Monday push loop counts a clinic as failed, not sent, when `sendPush` cannot even read its subscriptions (a negative result), rather than only ever counting a successful push as the alternative to sent.
 7. The member refusal (an account that already has a clinic) names the clinic when it can still be looked up, instead of a plain "a clinic".
+
+**2026-09-28**, after Kai decided BrightSmile is free: billing was removed before release, so item 1's `payments` narrowing and item 3's `clinic_billing` paste guard above no longer apply; the teams migration's first statement now checks that `issue_otp` exists instead.

@@ -1,5 +1,7 @@
 # BrightSmile Plan 7: Branches and the Booking Engine Implementation Plan
 
+> **Revision (2026-09-28):** Kai decided BrightSmile is free, so billing was removed before release; every reference to billing, a lapsed clinic, or a paused booking page below no longer applies.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A clinic can have several branches, each with its own address and calendar, and everything behind the new patient booking flow exists and is proven offline: the data model, the database functions, the server services and Server Actions, and the flow's logic as a pure reducer. Patients verify their number first; a verified number can book for one of its patients or for someone new with the clinic's patient form and waiver, change a booking (which goes back to the clinic for approval), and cancel one, and the server checks the number and every row on each call. This plan adds no page and changes no page's look: today's booking page, the patient link `/a/`, the dashboard, Settings, and onboarding keep working exactly as today, at each clinic's first (and, until plan 8, only) branch. Plan 8 builds the new pages on top.

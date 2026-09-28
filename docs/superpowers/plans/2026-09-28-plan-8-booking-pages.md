@@ -1,5 +1,7 @@
 # BrightSmile Plan 8: The Booking Pages Implementation Plan
 
+> **Revision (2026-09-28):** Kai decided BrightSmile is free, so billing was removed before release; every reference to billing, a lapsed clinic, or a paused booking page below no longer applies.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Every page of the booking flow and branches spec exists on top of plan 7's engine. The public booking page opens on three choices (book, reschedule or edit, cancel) with the clinic's branches, their addresses, and map links, and each path starts with the patient's number and code; booking runs through branch, who, the new patient form and waiver, services, date and time at the branch, and a summary with a Change button per part and one "Send request"; reschedule or edit and cancel run through the number's upcoming appointments. The page only renders plan 7's reducer and calls plan 7's actions. The old booking sheet and its code path are gone. The owner manages branches in Settings, with the combined short name check for texts; with 2 or more active branches the dashboard names and filters by branch, New appointment and the working hours ask for it, and "Outside hours" is per branch. Staff read the patient form on the patient page, the Privacy Notice explains health information, and the patient link page names the branch.

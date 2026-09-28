@@ -1,5 +1,7 @@
 # BrightSmile piece 2: Billing
 
+> **Superseded (2026-09-28):** Kai decided BrightSmile is free, so billing was removed before release.
+
 - **Date:** 2026-09-25
 - **Status:** Draft for Kai's review
 - **Scope:** Piece 2 of 4 (roadmap in `2026-09-22-brightsmile-core-booking-design.md`, section 3). Builds on piece 1 as deployed.

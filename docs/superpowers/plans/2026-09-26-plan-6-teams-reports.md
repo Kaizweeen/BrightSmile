@@ -1,5 +1,7 @@
 # BrightSmile Plan 6: Teams and Reports Implementation Plan
 
+> **Revision (2026-09-28):** Kai decided BrightSmile is free, so billing was removed before release; every reference to billing, paying, trials, or a lapsed/paused clinic below no longer applies.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A clinic's owner invites staff with a join link that works once, for 7 days. Staff run the day (requests, schedule, new appointments, patients, dentists' time off); only the owner changes the clinic's setup, pays, and manages the team, and the database refuses staff everything else even when a Server Action is called directly. Every clinic gets a Reports page (visits, no-shows, the no-show rate, cancellations, and more, by Manila week and by dentist) and a free Monday 9:00 AM push that sums up the week before. Every database change is proven offline before Kai pastes it into production.

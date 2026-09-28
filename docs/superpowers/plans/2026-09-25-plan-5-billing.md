@@ -1,5 +1,7 @@
 # BrightSmile Plan 5: Billing Implementation Plan
 
+> **Superseded (2026-09-28):** Kai decided BrightSmile is free, so billing was removed before release.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Every clinic gets a 14 day free trial at signup and then prepays 1 to 12 months, by GCash (Kai records it on `/admin`) or through PayMongo checkout once its two keys are set. Three days before a plan ends the clinic gets a heads-up; 3 days after, its public booking page and reminder texts pause while the dashboard keeps working. Every database change is proven offline before Kai pastes it into production.

@@ -138,4 +138,4 @@ Changing branch while rescheduling; branch-level staff permissions; per-branch p
 
 ## Revisions
 
-None yet.
+**2026-09-28**, after Kai decided BrightSmile is free: billing was removed before release; nothing in this spec depended on it.
