@@ -1550,7 +1550,9 @@ export type ProcedureSnapshot = { id: string; name: string; durationMinutes: num
 
 /** Everything the booking rules need (spec 8.2 to 8.4), read in one place so the rules stay pure. */
 export async function bookingFacts(tx: Db, req: BookingRequest, now: Date): Promise<{ facts: BookingFacts; procedures: ProcedureSnapshot[] }> {
-  const [branch] = await tx.select().from(branches).where(eq(branches.id, req.branchId));
+  // Shared locks on the branch and the chair: closing either one waits for this booking, and a closing that committed
+  // first is seen here (src/server/branches.ts locks them before counting visits).
+  const [branch] = await tx.select().from(branches).where(eq(branches.id, req.branchId)).for("share");
   if (!branch) throw notFound("That branch");
   const [dentist] = await tx.select().from(users).where(eq(users.id, req.dentistId));
   if (!dentist) throw notFound("That dentist");
@@ -1568,7 +1570,7 @@ export async function bookingFacts(tx: Db, req: BookingRequest, now: Date): Prom
   const end = new Date(req.start.getTime() + minutes * 60_000);
   const chairFreeAt = new Date(end.getTime() + turnover * 60_000);
 
-  const [chair] = await tx.select().from(chairs).where(and(eq(chairs.branchId, branch.id), eq(chairs.number, req.chairNumber)));
+  const [chair] = await tx.select().from(chairs).where(and(eq(chairs.branchId, branch.id), eq(chairs.number, req.chairNumber))).for("share");
   const link = await tx
     .select({ id: userBranches.branchId })
     .from(userBranches)
@@ -1812,7 +1814,7 @@ export async function moveAppointment(actor: Staff, id: string, input: z.infer<t
       throw new ApiError(422, "checked_in", "A checked-in visit can change only its chair.");
     }
     await db.transaction(async (tx) => {
-      const [chair] = await tx.select().from(chairs).where(and(eq(chairs.branchId, visit.branchId), eq(chairs.number, chairNumber)));
+      const [chair] = await tx.select().from(chairs).where(and(eq(chairs.branchId, visit.branchId), eq(chairs.number, chairNumber))).for("share");
       if (!chair?.active) throw new ApiError(422, "refused", `Chair ${chairNumber} is not in use.`);
       const clashes = await activeVisits(
         tx,

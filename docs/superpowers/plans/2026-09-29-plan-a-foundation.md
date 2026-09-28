@@ -7925,3 +7925,21 @@ git commit -m "feat: add the settings screens, weekly schedule editor, time off,
 - Spec 8.1 time and the weekly schedules: Tasks 3 and 9. Booking rules (8.2 to 8.8): plan B.
 - Spec 10 shell, branch URL, switcher, Staff, Settings, poster: Tasks 10 to 12. Calendar, patients, charts: plans B and C.
 - Spec 12 errors: Task 5 (`toResponse`); Spec 13 headers, CSP, noindex, audit: Tasks 5 and 10.
+
+## Final review fixes
+
+The whole-branch review of plan A found no critical problems. Its fixes, made after Task 12 and before plan B, change the code above as follows (commit `fix: settle plan A's final review`):
+
+- **Logs** (spec 12 and 13). `toResponse` logs `loggable(error)` (`src/server/errors.ts`): the error's name, the Postgres code, constraint, and table, the SQL text, and the stack frames. Never the message, the query's values, or the row Postgres quotes back, which can hold patient details or password hashes. A test fails a patient insert on purpose and checks its values never reach `console.error`.
+- **A malformed id answers 404**: `toResponse` maps Postgres `22P02` to `not_found` (this was plan C Task 2's step).
+- **Sign-in** (`src/lib/auth.ts`). A disabled account, or a join request older than 7 days, is refused with Better Auth's own "Invalid username or password" (401), so the answer never confirms the password. No session outlives 12 hours, even with `rememberMe: false` (which asked Better Auth for 24). A failed sign-in keeps the username only when it names an account, with that account as the entity, so a password typed into the username field is never stored. A password change is audited as `auth.password_changed`. The sign-in audit goes through `audit()`.
+- **Rate limits by the right address.** Better Auth reads the visitor's address from one header the host sets and never takes from the visitor: `x-real-ip` on Vercel, else Netlify's `x-nf-client-connection-ip`, or `CLIENT_IP_HEADER`. The join limit reads the same address through Better Auth's `getIP` (`clientIp` in `src/server/api.ts`). Sign-in allows 30 tries per address in 15 minutes, since a branch's staff often share one address.
+- **Slow hashing after cheap refusals.** `requestToJoin` hashes the password after the join limits and the username check; `resetWithToken` refuses a dead link before hashing.
+- **Closed branches.** Everyone covers only open branches (`staffById`; the owner already did). `homePath` lands on the main branch only while it is open. `updateStaff` gives open branches only ("Pick open branches only.", as approval does) and keeps a person's closed branches and, for a manager's colleague, the branches that manager does not cover. `updateChair` locks the chair before counting its visits; plan B's bookings read the branch and the chair `for share`.
+- **Titles.** A role change clears the title unless a new one comes with it; the Edit dialog empties the title when the role changes and restores it when the role goes back.
+- **The Edit dialog** sends `branchIds` only when they changed, so saving a title never touches memberships the dialog does not list.
+- **HSTS** is keyed off `APP_URL` (https in production), not the request, which may arrive over plain http behind the host's proxy.
+- **Accessibility.** Tab triggers, menu items, and the dialog's close button are 44 pixels tall on phones. The branch switcher is a menu of links, so arrowing through branches never leaves the page (WCAG 3.2.2). Hours errors (joined when a day has two) and schedule errors are tied to their time fields with `aria-invalid` and `aria-describedby`; `BranchChoice` uses a generated id.
+- **The weekly schedule editor** is keyed by the dentist only and resets from the saved week, so a background refresh never throws away hours being edited.
+- **A renamed branch code** moves the Settings page to the new address instead of refreshing the old one into a 404.
+- Tests pin the closed Better Auth endpoints (404 even to someone signed in), the disabled account's refusal, the 12-hour cap, the failed sign-in's username, the password change audit, titles, closed branches, and the malformed id.

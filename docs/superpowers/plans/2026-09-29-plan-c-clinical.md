@@ -361,7 +361,7 @@ git commit -m "feat: add the PDA chart layout, legend, surface rules, and exam s
 
 **Files:**
 - Create: `src/server/clinical.ts`, `src/app/api/v1/patients/[id]/chart/route.ts`, `src/app/api/v1/patients/[id]/chart-entries/route.ts`, `src/app/api/v1/chart-entries/[id]/void/route.ts`, `src/app/api/v1/appointments/[id]/exam/route.ts`, `src/app/api/v1/patients/[id]/notes/route.ts`, `src/app/api/v1/appointments/[id]/notes/route.ts`
-- Modify: `src/server/patients.ts` (visits carry their charted teeth), `src/server/api.ts` (a malformed id is a 404)
+- Modify: `src/server/patients.ts` (visits carry their charted teeth). Plan A's `toResponse` already answers a malformed id with 404.
 - Test: `tests/db/clinical.test.ts`
 
 **Interfaces:**
@@ -834,16 +834,7 @@ import { addNote, noteSchema } from "@/server/clinical";
 export const POST = staffRoute<{ id: string }>(async (req, staff, { id }) => json(await addNote(staff, id, await readJson(req, noteSchema)), 201));
 ```
 
-- [ ] **Step 4: Answer a malformed id with 404, in `src/server/api.ts`**
-
-In `toResponse`, add this case to the `switch (pgCode(error))`, after the `"23505"` case (Postgres refuses a text that is not a UUID with `22P02`):
-
-```ts
-    case "22P02":
-      return errorBody(404, "not_found", "That was not found.");
-```
-
-- [ ] **Step 5: Give each visit its dentist and its charted teeth, in `src/server/patients.ts`**
+- [ ] **Step 4: Give each visit its dentist and its charted teeth, in `src/server/patients.ts`**
 
 Add `isNull` to the `drizzle-orm` import and `chartEntries` to the `@/db/schema` import. In `type PatientVisit`, add `dentistId: string;` before `dentistName` and `teeth: number[];` after `procedures`. In `patientVisits`, add `dentistId: appointments.dentistId,` to the `select` right before `dentistName: users.name,`, then replace the `const visits = rows.map(...)` statement with:
 
@@ -864,7 +855,7 @@ Add `isNull` to the `drizzle-orm` import and `chartEntries` to the `@/db/schema`
   }));
 ```
 
-- [ ] **Step 6: Run the tests**
+- [ ] **Step 5: Run the tests**
 
 ```powershell
 npx vitest run tests/db/clinical.test.ts tests/db/patients.test.ts
@@ -872,7 +863,7 @@ npx vitest run tests/db/clinical.test.ts tests/db/patients.test.ts
 
 Expected: PASS, 10 tests in `clinical.test.ts` and every test in `patients.test.ts`.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```powershell
 npm test; npm run lint; npm run typecheck
@@ -1921,6 +1912,7 @@ Expected: FAIL, because `@/lib/access-log` does not exist.
 const ACTIONS: Record<string, string> = {
   "auth.signed_in": "Signed in",
   "auth.sign_in_failed": "Failed to sign in",
+  "auth.password_changed": "Changed their password",
   "setup.completed": "Set up DentaSync",
   "setup.owner_password_reset": "Reset the owner's password with the setup code",
   "patient.view": "Viewed the record",
@@ -2463,7 +2455,7 @@ Appointments, chairs, and dental charts for a dental practice with three branche
 Spec section 16 holds the decisions. The steps:
 
 1. **Database.** Create a Postgres 17 database in Singapore (Neon Free to start). From a trusted computer, apply the migrations: `$env:DATABASE_URL = "postgres://..."; npm run db:migrate` in PowerShell, or `DATABASE_URL="postgres://..." npm run db:migrate`. Run it again after any release that adds a file under `drizzle/`, before that release goes out.
-2. **App.** Deploy the repository to Netlify (the free plan allows commercial use; it pauses the site when the month's credits run out, so batch releases about weekly) or to Vercel Pro. The build command is `npm run build`. Set four environment variables: `DATABASE_URL`; `BETTER_AUTH_SECRET` and `SETUP_TOKEN`, each 32 or more random characters, the setup code kept private; and `APP_URL`, the site's https origin with no trailing slash. The server refuses to start if any is missing or if `DATABASE_URL` points at PGlite.
+2. **App.** Deploy the repository to Netlify (the free plan allows commercial use; it pauses the site when the month's credits run out, so batch releases about weekly) or to Vercel Pro. The build command is `npm run build`. Set four environment variables: `DATABASE_URL`; `BETTER_AUTH_SECRET` and `SETUP_TOKEN`, each 32 or more random characters, the setup code kept private; and `APP_URL`, the site's https origin with no trailing slash. The server refuses to start if any is missing or if `DATABASE_URL` points at PGlite. The sign-in and join limits count per visitor, by the address in a header the host sets and never takes from the visitor: Netlify's `x-nf-client-connection-ip`, or `x-real-ip` on Vercel (found on its own there). On any other host, set `CLIENT_IP_HEADER` to that host's header.
 3. **First run.** Open `/setup` with the setup code to create the practice and the owner. In Settings, add the real branches, hours, chairs, and procedures, then each dentist's weekly schedule, and print each branch's QR poster for its staff room.
 4. **Backups.** Every night, dump the database and encrypt the dump with a key only the owner holds, then keep it away from the database host:
 
