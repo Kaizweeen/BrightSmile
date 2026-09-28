@@ -30,7 +30,8 @@ export function RecoverForm() {
         method: "POST",
         body: { setupCode: value("setupCode"), password: value("password") },
       });
-      await authClient.signIn.username({ username, password: value("password") });
+      const { error } = await authClient.signIn.username({ username, password: value("password") });
+      if (error) throw new Error("The password is changed, but signing in failed. Sign in with the new password.");
       router.replace("/");
       router.refresh();
     } catch (error) {

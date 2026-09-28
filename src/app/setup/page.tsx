@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { AuthCard } from "@/components/auth-card";
 import { ownerExists } from "@/server/setup";
@@ -10,7 +10,8 @@ export const metadata: Metadata = { title: "Set up" };
 export default async function SetupPage() {
   // Request time only: `next build` must never open the database.
   await connection();
-  if (await ownerExists()) redirect("/login");
+  // Spec 6.1: once an owner exists, /setup answers 404; the owner's own reset lives at /setup/recover.
+  if (await ownerExists()) notFound();
   return (
     <AuthCard
       title="Set up DentaSync"
