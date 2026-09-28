@@ -4,6 +4,7 @@ export type ErrorBody = {
   fields?: Record<string, string>;
   conflicts?: unknown[];
   warnings?: { code: string; message: string }[];
+  candidates?: unknown[];
   requestId?: string;
 };
 
