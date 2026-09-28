@@ -6788,11 +6788,11 @@ export function HoursEditor({ value, onChange, error }: { value: OperatingHours;
               <>
                 <label className="grid gap-1 text-sm">
                   Opens
-                  <Input type="time" step={900} value={today.open} onChange={(event) => set({ ...today, open: event.target.value })} />
+                  <Input type="time" step={900} aria-label={`${WEEKDAYS[day]} opens`} value={today.open} onChange={(event) => set({ ...today, open: event.target.value })} />
                 </label>
                 <label className="grid gap-1 text-sm">
                   Closes
-                  <Input type="time" step={900} value={today.close} onChange={(event) => set({ ...today, close: event.target.value })} />
+                  <Input type="time" step={900} aria-label={`${WEEKDAYS[day]} closes`} value={today.close} onChange={(event) => set({ ...today, close: event.target.value })} />
                 </label>
               </>
             ) : (
