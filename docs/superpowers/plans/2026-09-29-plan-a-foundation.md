@@ -6177,7 +6177,7 @@ git commit -m "feat: add the app shell with the branch switcher, and strict secu
 ### Task 11: Joining, password reset, and the Staff screen
 
 **Files:**
-- Create: `src/lib/queries.ts`, `src/components/staff-fields.tsx`, `src/app/join/[code]/page.tsx`, `src/app/join/[code]/join-form.tsx`, `src/app/reset/[token]/page.tsx`, `src/app/reset/[token]/reset-form.tsx`, `src/app/[branch]/staff/page.tsx`, `src/app/[branch]/staff/staff-screen.tsx`
+- Create: `src/lib/queries.ts`, `src/components/staff-fields.tsx`, `src/components/state-badge.tsx`, `src/app/join/[code]/page.tsx`, `src/app/join/[code]/join-form.tsx`, `src/app/reset/[token]/page.tsx`, `src/app/reset/[token]/reset-form.tsx`, `src/app/[branch]/staff/page.tsx`, `src/app/[branch]/staff/staff-screen.tsx`
 
 **Interfaces:**
 - Consumes: routes from Tasks 7 and 8; `ConfirmDialog`, `TextField`, `FormAlert`, `AuthCard`; `api`, `RequestError`, `errorMessage`, `fieldErrors`.
@@ -6273,6 +6273,27 @@ export function BranchChoice({
         </p>
       )}
     </fieldset>
+  );
+}
+```
+
+`src/components/state-badge.tsx`, the on or off badge the Staff page and the Settings panels show (a word and an icon):
+
+```tsx
+import { CircleCheck, CircleMinus } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+
+/**
+ * On or off (a person active or disabled, a branch open or closed, a procedure offered or retired) as a word and an
+ * icon: spec 10 never shows a state by colour alone.
+ */
+export function StateBadge({ on, yes, no, warn = false }: { on: boolean; yes: string; no: string; warn?: boolean }) {
+  const Icon = on ? CircleCheck : CircleMinus;
+  return (
+    <Badge variant={on ? "secondary" : warn ? "destructive" : "outline"}>
+      <Icon data-icon="inline-start" aria-hidden />
+      {on ? yes : no}
+    </Badge>
   );
 }
 ```
@@ -6480,9 +6501,9 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { FormAlert } from "@/components/form-alert";
+import { StateBadge } from "@/components/state-badge";
 import { BranchChoice, RoleChoice } from "@/components/staff-fields";
 import { TextField } from "@/components/text-field";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -6607,7 +6628,7 @@ export function StaffScreen({ me, branches }: { me: Me; branches: BranchOption[]
                     <TableCell>{roleLabel(s.role, s.title)}</TableCell>
                     <TableCell>{s.role === "owner" ? "All branches" : s.branchIds.map(branchName).join(", ") || "None"}</TableCell>
                     <TableCell>
-                      {s.status === "active" ? <Badge variant="secondary">Active</Badge> : <Badge variant="destructive">Disabled</Badge>}
+                      <StateBadge on={s.status === "active"} yes="Active" no="Disabled" warn />
                     </TableCell>
                     <TableCell>
                       {s.canManage && (
@@ -6682,7 +6703,7 @@ function ApproveDialog({
   const [title, setTitle] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const approve = useMutation({
-    mutationFn: () => api(`/join-requests/${request.id}/approve`, { method: "POST", body: { role, branchIds, title: title.trim() || null } }),
+    mutationFn: () => api(`/join-requests/${request.id}/approve`, { method: "POST", body: { role, branchIds, title: role === "dentist" ? title.trim() || null : null } }),
     onSuccess: async () => {
       toast.success(`${request.name} can now use DentaSync.`);
       onClose();
@@ -7076,11 +7097,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
+import { StateBadge } from "@/components/state-badge";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { FormAlert } from "@/components/form-alert";
 import { HoursEditor } from "@/components/hours-editor";
 import { TextField } from "@/components/text-field";
-import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -7140,7 +7161,7 @@ export function BranchesPanel() {
                   </TableCell>
                   <TableCell className="whitespace-normal">{hoursSummary(b.operatingHours)}</TableCell>
                   <TableCell>{b.chairCount}</TableCell>
-                  <TableCell>{b.active ? <Badge variant="secondary">Open</Badge> : <Badge variant="outline">Closed</Badge>}</TableCell>
+                  <TableCell><StateBadge on={b.active} yes="Open" no="Closed" /></TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1">
                       <Button variant="ghost" onClick={() => setEditing(b)}>
@@ -7355,9 +7376,9 @@ function ChairRow({ code, chair, onChanged }: { code: string; chair: Chair; onCh
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
+import { StateBadge } from "@/components/state-badge";
 import { FormAlert } from "@/components/form-alert";
 import { TextField } from "@/components/text-field";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -7402,7 +7423,7 @@ export function ProceduresPanel() {
                 <TableCell className="font-medium">{p.name}</TableCell>
                 <TableCell>{`${p.durationMinutes} min`}</TableCell>
                 <TableCell>{`${p.bufferMinutes} min`}</TableCell>
-                <TableCell>{p.active ? <Badge variant="secondary">Offered</Badge> : <Badge variant="outline">Retired</Badge>}</TableCell>
+                <TableCell><StateBadge on={p.active} yes="Offered" no="Retired" /></TableCell>
                 <TableCell className="text-right">
                   <Button variant="ghost" onClick={() => setEditing(p)}>
                     Edit
