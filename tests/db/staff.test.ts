@@ -225,6 +225,11 @@ describe("changing staff", () => {
     const back = await patch(cookie, leaver.id, { status: "active" });
     expect(back.status).toBe(400);
     expect((await back.json()).error.fields).toEqual({ branchIds: "Keep at least one open branch." });
+    // Disabling is never blocked, even together with taking every branch away.
+    const gone = await makeUser({ role: "dentist", branchIds: [a.id] });
+    expect((await patch(cookie, gone.id, { status: "disabled", branchIds: [] })).status).toBe(200);
+    expect(await userRow(gone.id)).toMatchObject({ status: "disabled", primaryBranchId: null });
+    expect(await branchesOf(gone.id)).toEqual([]);
   });
 
   it("answers 404 to an id that is not one", async () => {

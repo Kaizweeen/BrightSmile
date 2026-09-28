@@ -285,16 +285,17 @@ export async function updateStaff(actor: Staff, userId: string, patch: z.infer<t
       const kept = current.filter((branchId) => !isOpen(branchId) || !covers(actor, branchId));
       memberships = [...new Set([...kept, ...wanted.filter((branchId) => covers(actor, branchId))])];
     }
-    // Staff cover open branches only (staffById), so everyone but the owner keeps one while active or given branches.
+    // Staff cover open branches only (staffById), so everyone but the owner keeps one while active. Disabling is never
+    // blocked (spec 6.5), even together with a branch change.
     const active = (patch.status ?? target.status) === "active";
-    if (targetRole !== "owner" && (patch.branchIds || active) && !memberships.some(isOpen)) {
+    if (targetRole !== "owner" && active && !memberships.some(isOpen)) {
       throw new ApiError(400, "invalid", "Keep at least one open branch.", { fields: { branchIds: "Keep at least one open branch." } });
     }
     if (patch.branchIds) {
       await tx.delete(userBranches).where(eq(userBranches.userId, userId));
-      await tx.insert(userBranches).values(memberships.map((branchId) => ({ userId, branchId })));
+      if (memberships.length > 0) await tx.insert(userBranches).values(memberships.map((branchId) => ({ userId, branchId })));
       await tx.delete(dentistSchedules).where(and(eq(dentistSchedules.dentistId, userId), notInArray(dentistSchedules.branchId, memberships)));
-      if (!target.primaryBranchId || !memberships.includes(target.primaryBranchId)) set.primaryBranchId = memberships.find(isOpen);
+      if (!target.primaryBranchId || !memberships.includes(target.primaryBranchId)) set.primaryBranchId = memberships.find(isOpen) ?? memberships[0] ?? null;
     }
     await tx.update(users).set(set).where(eq(users.id, userId));
     if (patch.status === "disabled") await endSessions(userId, tx);
