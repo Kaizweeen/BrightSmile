@@ -2319,7 +2319,7 @@ export async function userRow(id: string) {
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { db } from "@/db";
-import { appointments, chairs, patients } from "@/db/schema";
+import { appointments, auditLog, chairs, patients } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import { endSessions } from "@/server/accounts";
 import { json, readJson, staffRoute } from "@/server/api";
@@ -2340,6 +2340,15 @@ describe("signing in", () => {
   it("refuses a wrong password", async () => {
     const ana = await makeUser({ role: "manager" });
     await expect(signIn(ana.username, "not the password")).rejects.toThrow();
+  });
+
+  it("audits every sign-in, a failed one with the username only", async () => {
+    const ben = await makeUser({ role: "manager" });
+    await signIn(ben.username);
+    await expect(signIn(ben.username, "a wrong password")).rejects.toThrow();
+    const rows = (await db.select().from(auditLog)).filter((r) => r.entityId === ben.id || r.details.username === ben.username);
+    expect(rows.map((r) => r.action)).toEqual(["auth.signed_in", "auth.sign_in_failed"]);
+    expect(JSON.stringify(rows)).not.toContain("a wrong password");
   });
 
   it("keeps Better Auth's own sign-up closed", async () => {
@@ -2447,9 +2456,10 @@ Expected: FAIL, `@/lib/auth` cannot be found.
 ```ts
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { createAuthMiddleware, getIP } from "better-auth/api";
 import { username } from "better-auth/plugins/username";
 import { db } from "@/db";
-import { accounts, rateLimits, sessions, users, verifications } from "@/db/schema";
+import { accounts, auditLog, rateLimits, sessions, users, verifications } from "@/db/schema";
 import { appUrl } from "@/lib/env";
 
 /** One working day (spec 6.7). Sessions are never extended by activity. */
@@ -2471,6 +2481,22 @@ export const auth = betterAuth({
   // own code (src/server/accounts.ts) writes them.
   user: { additionalFields: { role: { type: "string", input: false }, status: { type: "string", input: false } } },
   session: { expiresIn: SESSION_SECONDS, disableSessionRefresh: true },
+  hooks: {
+    // Spec 13: every sign-in is audited, a failed one with the username tried (never the password).
+    after: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== "/sign-in/username") return;
+      const user = ctx.context.newSession?.user;
+      const from = ctx.request ?? ctx.headers;
+      const ip = from ? getIP(from, ctx.context.options) : null;
+      await db.insert(auditLog).values({
+        userId: user?.id ?? null,
+        action: user ? "auth.signed_in" : "auth.sign_in_failed",
+        entity: "user",
+        entityId: user?.id ?? null,
+        details: user ? { ip } : { ip, username: String(ctx.body?.username ?? "").trim().toLowerCase().slice(0, 30) },
+      });
+    }),
+  },
   rateLimit: { storage: "database", customRules: { "/sign-in/username": { window: 15 * 60, max: 10 } } },
   disabledPaths: ["/sign-up/email", "/sign-in/email", "/update-user", "/is-username-available"],
   advanced: { database: { generateId: "uuid" } },
@@ -2810,7 +2836,7 @@ export function clientIp(req: NextRequest): string {
 npx vitest run tests/api/auth.test.ts
 ```
 
-Expected: PASS, 8 tests (the 500 case prints one "Request ... failed" line; that is expected).
+Expected: PASS, 10 tests (the 500 case prints one "Request ... failed" line; that is expected).
 
 - [ ] **Step 12: Typecheck and commit**
 
@@ -4829,7 +4855,7 @@ export const POST = staffRoute<{ id: string }>(async (_req, staff, { id }) => js
 npx vitest run tests/db/staff.test.ts tests/api/auth.test.ts
 ```
 
-Expected: PASS, 17 and 8 tests.
+Expected: PASS, 17 and 10 tests.
 
 - [ ] **Step 9: Commit**
 
