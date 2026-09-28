@@ -115,6 +115,12 @@ beforeAll(async () => {
 }, 60_000);
 
 describe("the migration on an existing database", () => {
+  it("refuses to run before the teams migration", async () => {
+    const early = await freshDb(MIGRATIONS.indexOf("20260926000100_teams.sql"));
+    await expect(migrate(early, BRANCHES)).rejects.toThrow(/clinic_invites/);
+    await early.close();
+  });
+
   it("gives each clinic one branch, Main, from its address and map link, holding all its hours and appointments", async () => {
     const early = await freshDb(MIGRATIONS.indexOf(BRANCHES));
     const old = await newClinic(early);

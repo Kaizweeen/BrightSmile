@@ -13,8 +13,8 @@ export const metadata: Metadata = { title: "Settings" };
 
 /**
  * Spec 5.3 Settings: clinic profile, branches (booking flow spec 4), booking rules and alerts, dentists, procedures,
- * account. Staff see only what they may use (teams spec 4): alerts on their device, dentists' time off, the plan's
- * status, and their account.
+ * account. Staff see only what they may use (teams spec 4): alerts on their device, dentists' time off, and their
+ * account.
  */
 export default async function SettingsPage() {
   const staff = await requireStaff();

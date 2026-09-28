@@ -32,7 +32,7 @@ export default function TermsPage() {
 
         <h2>Your account</h2>
         <ul>
-          <li>Each clinic has one login in this version. Keep the password private; you are responsible for what happens under it.</li>
+          <li>The clinic&apos;s owner can invite staff, each with their own login. Keep passwords private; the clinic is responsible for what happens under its logins.</li>
           <li>Give accurate clinic details, hours, and mobile number. Patients rely on them.</li>
           <li>Use BrightSmile only to take and manage appointments for your clinic.</li>
         </ul>
