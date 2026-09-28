@@ -1,7 +1,5 @@
-import { ALLERGIES } from "@/db/schema";
-
 /** The allergies the PDA form lists (src/db/schema.ts keeps the same keys for its check constraint). */
-export const ALLERGY_KEYS = ALLERGIES;
+export const ALLERGY_KEYS = ["local_anesthetic", "penicillin", "sulfa", "aspirin", "latex"] as const;
 export type Allergy = (typeof ALLERGY_KEYS)[number];
 
 export const ALLERGY_LABELS: Record<Allergy, string> = {

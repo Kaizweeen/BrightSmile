@@ -16,13 +16,13 @@ import type { Staff } from "./session";
 const blankToNull = (value: unknown) => (typeof value === "string" && value.trim() === "" ? null : value);
 const optional = <T extends z.ZodType>(schema: T) => z.preprocess(blankToNull, schema.nullable()).optional();
 const text = (max: number) => optional(z.string().trim().max(max, `Use at most ${max} characters`));
-const isoDate = z.string().refine((d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= "1900-01-01" && d <= manilaDate(new Date()), "Use a date like 1990-04-02");
+const isoDate = z.iso.date("Use a date like 1990-04-02");
 
 export const patientSchema = z.object({
   lastName: z.string().trim().min(1, "Enter the last name").max(50, "Use at most 50 characters"),
   firstName: z.string().trim().min(1, "Enter the first name").max(50, "Use at most 50 characters"),
   middleName: text(50),
-  birthday: optional(isoDate),
+  birthday: optional(isoDate.refine((d) => d >= "1900-01-01" && d <= manilaDate(new Date()), "Use a real birthday")),
   sex: optional(z.enum(["female", "male"])),
   mobile: optional(mobileSchema),
   email: optional(z.string().trim().max(254, "Use at most 254 characters").pipe(z.email("Use an email like name@example.com"))),
