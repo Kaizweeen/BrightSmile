@@ -58,6 +58,16 @@ const change = (cookie: string, id: string, body: Record<string, unknown>) =>
   call(transitionsRoute.POST, request(`/api/v1/appointments/${id}/transitions`, { method: "POST", cookie, body }), { id });
 const visitRow = async (id: string) => (await db.select().from(appointments).where(eq(appointments.id, id)))[0];
 
+/** Runs `meanwhile` just before the next transaction starts, as if another front desk saved first (spec 8.8). */
+function beforeNextTransaction(meanwhile: () => Promise<unknown>) {
+  const real = (globalThis as unknown as { __dentasync: { db: typeof db } }).__dentasync.db;
+  const original = real.transaction.bind(real);
+  return vi.spyOn(real, "transaction").mockImplementationOnce((async (run: never, config: never) => {
+    await meanwhile();
+    return original(run, config);
+  }) as never);
+}
+
 let first = ""; // Ana with Dr. Reyes, booked in the first test and used by later ones
 let requested = "";
 let walkIn = "";
@@ -173,6 +183,25 @@ describe("moving", () => {
     const res = await move(w.deskDt, walkIn, { start: at("09:00").toISOString() });
     expect(res.status).toBe(422);
     expect((await res.json()).error.message).toBe("A checked-in visit can change only its chair.");
+  });
+
+  it("refuses a move that lost a race to another change of the same visit, and keeps dentists from moving visits", async () => {
+    const w = await world();
+    const res = await book(w.deskDt, { branch: "downtown", chairNumber: 1, dentistId: w.lim.id, patientId: w.ben.id, start: at("15:00").toISOString(), procedureIds: [w.cleaning.id] });
+    expect(res.status).toBe(201);
+    const { id } = await res.json();
+    expect((await move(w.limCookie, id, { chairNumber: 2 })).status).toBe(403);
+    // Another front desk moves it to chair 2 after this move read the visit and before it saved (spec 8.8).
+    const race = beforeNextTransaction(() => db.update(appointments).set({ chairNumber: 2 }).where(eq(appointments.id, id)));
+    const late = await move(w.deskDt, id, { start: at("15:30").toISOString() });
+    race.mockRestore();
+    expect(late.status).toBe(409);
+    expect((await late.json()).error.code).toBe("changed");
+    const row = await visitRow(id);
+    expect(row.chairNumber).toBe(2);
+    expect(row.startTime.toISOString()).toBe(at("15:00").toISOString());
+    const bare = await change(w.deskDt, id, { to: "cancelled", reason: null });
+    expect((await bare.json()).error.fields).toEqual({ reason: "Give a reason for cancelling." });
   });
 });
 
