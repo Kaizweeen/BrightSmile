@@ -5,6 +5,12 @@
 /* Dark mode follows the device (spec section 10), so there is no theme switch. */
 @custom-variant dark (@media (prefers-color-scheme: dark));
 
+/* The staff QR poster (src/app/poster) prints on A4 (spec 6.2). */
+@page {
+  size: A4;
+  margin: 12mm;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

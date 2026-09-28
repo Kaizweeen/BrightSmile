@@ -76,7 +76,7 @@ export function BranchesPanel() {
                         Edit
                       </Button>
                       <Link href={`/poster/${b.code}`} target="_blank" className={buttonVariants({ variant: "ghost" })}>
-                        QR poster
+                        Print QR poster
                       </Link>
                       <Button variant="ghost" onClick={() => setReplacing(b)}>
                         Replace QR
@@ -128,7 +128,12 @@ function BranchDialog({ branch, onClose, onSaved }: { branch: Branch | null; onC
       if (Object.keys(fieldErrors(error)).length === 0) toast.error(errorMessage(error));
     },
   });
-  const hoursError = Object.entries(errors).find(([key]) => key.startsWith("operatingHours"))?.[1];
+  // Hours errors come back keyed operatingHours.<day>.<field>; the editor shows each under its day.
+  const hoursErrors = Object.fromEntries(
+    Object.entries(errors)
+      .filter(([key]) => key.startsWith("operatingHours"))
+      .map(([key, message]) => [key.split(".")[1] ?? "", message]),
+  );
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
@@ -147,7 +152,7 @@ function BranchDialog({ branch, onClose, onSaved }: { branch: Branch | null; onC
           <TextField label="Code" value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} maxLength={24} autoCapitalize="none" error={errors.code} hint="2 to 24 lowercase letters, numbers, or hyphens." />
           <TextField label="Address" value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} maxLength={200} error={errors.address} />
           <TextField label="Phone" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} maxLength={20} error={errors.phone} />
-          <HoursEditor value={form.operatingHours} onChange={(operatingHours) => setForm({ ...form, operatingHours })} error={hoursError} />
+          <HoursEditor value={form.operatingHours} onChange={(operatingHours) => setForm({ ...form, operatingHours })} errors={hoursErrors} />
           {branch && (
             <label className="flex min-h-11 items-center gap-3">
               <input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} className="size-4 accent-primary" />

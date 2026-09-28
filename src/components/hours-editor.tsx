@@ -6,8 +6,19 @@ import { WEEKDAYS } from "@/lib/hours";
 
 const MONDAY_FIRST = [1, 2, 3, 4, 5, 6, 0];
 
-/** One row per weekday: open or closed, and the opening and closing times on the 15-minute grid. */
-export function HoursEditor({ value, onChange, error }: { value: OperatingHours; onChange: (hours: OperatingHours) => void; error?: string }) {
+/**
+ * One row per weekday: open or closed, and the opening and closing times on the 15-minute grid. `errors` is keyed by
+ * day ("0" Sunday to "6" Saturday), each shown under its own day; "" holds an error about the week as a whole.
+ */
+export function HoursEditor({
+  value,
+  onChange,
+  errors = {},
+}: {
+  value: OperatingHours;
+  onChange: (hours: OperatingHours) => void;
+  errors?: Record<string, string>;
+}) {
   return (
     <fieldset className="grid gap-2">
       <legend className="mb-1 text-sm font-medium">Opening hours</legend>
@@ -34,10 +45,11 @@ export function HoursEditor({ value, onChange, error }: { value: OperatingHours;
             ) : (
               <span className="text-sm text-muted-foreground">Closed</span>
             )}
+            {errors[String(day)] && <p className="w-full text-sm text-destructive">{`${WEEKDAYS[day]}: ${errors[String(day)]}`}</p>}
           </div>
         );
       })}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {errors[""] && <p className="text-sm text-destructive">{errors[""]}</p>}
     </fieldset>
   );
 }
