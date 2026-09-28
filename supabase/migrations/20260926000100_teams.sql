@@ -1,9 +1,9 @@
 -- Teams and reports (teams spec section 5): owner and staff roles, join links, the Monday summary's claim, and the
 -- weekly counts behind the Reports page. Staff run the day; only the owner changes the clinic's setup and its team.
 
--- Refuses to run before the billing migration: regclass raises when clinic_billing does not exist yet, so pasting
+-- Refuses to run before the OTP locking migration: regproc raises when issue_otp does not exist yet, so pasting
 -- this migration out of order fails fast instead of leaving clinic_members half migrated.
-do $$ begin perform 'public.clinic_billing'::regclass; end $$;
+do $$ begin perform 'public.issue_otp'::regproc; end $$;
 
 -- 1. security definer, like is_clinic_member, so policies can read clinic_members without recursing. Defined first
 -- because the clinic_members policy below, and the setup policies further down, both need it.
@@ -136,7 +136,7 @@ alter table public.clinics add constraint clinics_slug_not_reserved check (
                'reset-password', 'privacy', 'terms', 'admin', 'static', '_next', 'join')
 );
 
--- 7. Onboarding also records the owner's email (teams spec 5). The rest is 20260925000200_billing.sql unchanged.
+-- 7. Onboarding also records the owner's email (teams spec 5). The rest is 20260922000200_access.sql unchanged.
 create or replace function public.create_clinic(p jsonb)
 returns uuid
 language plpgsql
@@ -173,8 +173,6 @@ begin
   insert into public.procedures (clinic_id, name, duration_minutes)
   select v_clinic, x->>'name', (x->>'minutes')::int
   from jsonb_array_elements(p->'procedures') x;
-
-  insert into public.clinic_billing (clinic_id, trial_ends_at) values (v_clinic, now() + interval '14 days');
 
   return v_clinic;
 end;
@@ -304,13 +302,7 @@ $$;
 revoke execute on function public.clinic_week_stats(uuid, date, integer) from public, anon;
 grant execute on function public.clinic_week_stats(uuid, date, integer) to authenticated, service_role;
 
--- 11. Data minimization (RA 10173): staff read no payment history, only the owner (teams spec 4, 5).
-drop policy "members read their payments" on public.payments;
-create policy "owner reads payments" on public.payments
-  for select to authenticated
-  using (public.is_clinic_owner(clinic_id));
-
--- 12. A removed member's push subscriptions always go with the membership, however the membership ends. Production
+-- 11. A removed member's push subscriptions always go with the membership, however the membership ends. Production
 -- has no push_subscriptions rows yet, so adding this now is safe: nothing can already violate it.
 alter table public.push_subscriptions
   add constraint push_subscriptions_member_fk

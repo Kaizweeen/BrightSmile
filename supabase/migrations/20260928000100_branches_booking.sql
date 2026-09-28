@@ -181,8 +181,6 @@ begin
   select v_clinic, x->>'name', (x->>'minutes')::int
   from jsonb_array_elements(p->'procedures') x;
 
-  insert into public.clinic_billing (clinic_id, trial_ends_at) values (v_clinic, now() + interval '14 days');
-
   return v_clinic;
 end;
 $$;

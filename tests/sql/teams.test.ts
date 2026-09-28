@@ -39,18 +39,18 @@ describe("create_clinic", () => {
     ]);
   });
 
-  it("is the billing migration's version with only the membership insert changed", async () => {
+  it("is the version before it with only the membership insert changed", async () => {
     const before = await freshDb(MIGRATIONS.indexOf(TEAMS));
     // Line endings follow each file's checkout (CRLF on Windows), so compare the text line by line.
     const definition = async (d: PGlite) =>
       (await d.query<{ def: string }>("select pg_get_functiondef('public.create_clinic(jsonb)'::regprocedure) as def")).rows[0].def.replace(/\r\n/g, "\n");
-    const billing = await definition(before);
+    const original = await definition(before);
     await before.close();
-    const expected = billing.replace(
+    const expected = original.replace(
       "insert into public.clinic_members (clinic_id, user_id) values (v_clinic, v_user);",
       () => "insert into public.clinic_members (clinic_id, user_id, email)\n  values (v_clinic, v_user, (select u.email from auth.users u where u.id = v_user));",
     );
-    expect(expected).not.toBe(billing);
+    expect(expected).not.toBe(original);
     // Right after the teams migration: later migrations replace create_clinic again.
     const after = await freshDb(MIGRATIONS.indexOf(TEAMS) + 1);
     expect(await definition(after)).toBe(expected);
@@ -73,10 +73,10 @@ describe("the migration on an existing database", () => {
     await expect(db.query("update public.clinics set slug = 'join' where id = $1", [a.clinicId])).rejects.toThrow(/clinics_slug_not_reserved/);
   });
 
-  it("refuses to run before the billing migration, so pasting it out of order fails fast", async () => {
-    const beforeBilling = await freshDb(MIGRATIONS.indexOf("20260925000200_billing.sql"));
-    await expect(migrate(beforeBilling, TEAMS)).rejects.toThrow(/clinic_billing/);
-    await beforeBilling.close();
+  it("refuses to run before the OTP locking migration, so pasting it out of order fails fast", async () => {
+    const early = await freshDb(MIGRATIONS.indexOf("20260925000100_otp_issue_lock.sql"));
+    await expect(migrate(early, TEAMS)).rejects.toThrow(/issue_otp/);
+    await early.close();
   });
 });
 
@@ -315,19 +315,6 @@ describe("remove_member", () => {
     await db.query("delete from public.clinic_members where clinic_id = $1 and user_id = $2", [c.clinicId, staff]);
     const { rows } = await db.query("select user_id from public.push_subscriptions where clinic_id = $1", [c.clinicId]);
     expect(rows).toEqual([]);
-  });
-});
-
-describe("payments", () => {
-  it("are read by the owner alone, never by staff (RA 10173 data minimization)", async () => {
-    const c = await newClinic(db);
-    const staff = await addStaff(db, c);
-    await db.query(
-      "insert into public.payments (clinic_id, method, amount_centavos, months, reference, paid_through_after) values ($1, 'gcash', 39900, 1, 'REF-0001', now() + interval '1 month')",
-      [c.clinicId],
-    );
-    expect(await asUser(db, c.userId, "select reference from public.payments where clinic_id = $1", [c.clinicId])).toEqual([{ reference: "REF-0001" }]);
-    expect(await asUser(db, staff, "select reference from public.payments where clinic_id = $1", [c.clinicId])).toEqual([]);
   });
 });
 
