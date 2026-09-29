@@ -22,8 +22,20 @@ const EMPTY = { firstName: "", lastName: "", mobile: "", note: "", consent: fals
 const focusHeading = (heading: HTMLHeadingElement | null) => heading?.focus();
 
 /** Online booking spec 3: branch, service, day and time, then the patient's details, on one page. */
-export function BookForm({ practiceName, branches, services, today }: { practiceName: string; branches: Option[]; services: ServiceOption[]; today: string }) {
-  const [branch, setBranch] = useState(branches.length === 1 ? branches[0].value : "");
+export function BookForm({
+  practiceName,
+  branches,
+  services,
+  today,
+  initialBranch,
+}: {
+  practiceName: string;
+  branches: Option[];
+  services: ServiceOption[];
+  today: string;
+  initialBranch?: string;
+}) {
+  const [branch, setBranch] = useState(initialBranch ?? (branches.length === 1 ? branches[0].value : ""));
   const [service, setService] = useState("");
   const [date, setDate] = useState(today);
   const [start, setStart] = useState("");

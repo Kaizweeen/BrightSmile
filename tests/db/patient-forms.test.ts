@@ -9,6 +9,7 @@ import { db } from "@/db";
 import { auditLog, branches, patientForms, patients, practice } from "@/db/schema";
 import { normalizeMobile } from "@/lib/validation";
 import { clientKey } from "@/server/api";
+import { welcomeInfo } from "@/server/patient-forms";
 import { call, makeBranch, makeUser, request, signIn } from "../helpers";
 
 async function build() {
@@ -305,5 +306,22 @@ describe("the front desk", () => {
     const forms = (await (await list(s.manager)).json()) as { lastName: string }[];
     expect(forms.map((f) => f.lastName)).not.toContain("Expired");
     expect(await db.select().from(patientForms).where(eq(patientForms.lastName, "Expired"))).toEqual([]);
+  });
+});
+
+describe("the welcome page", () => {
+  it("names the practice and the branch, and says what patients can do there", async () => {
+    await world();
+    await db.update(practice).set({ onlineBooking: false, patientForms: true });
+    expect(await welcomeInfo("downtown")).toEqual({ practiceName: "Smile Dental", branch: { code: "downtown", name: "Downtown" }, booking: false, forms: true });
+    await db.update(practice).set({ onlineBooking: true, patientForms: false });
+    expect(await welcomeInfo("downtown")).toMatchObject({ booking: true, forms: false });
+    await db.update(practice).set({ onlineBooking: false, patientForms: true });
+  });
+
+  it("knows no unknown or closed branch", async () => {
+    await world();
+    expect(await welcomeInfo("nowhere")).toBeNull();
+    expect(await welcomeInfo("shut")).toBeNull();
   });
 });

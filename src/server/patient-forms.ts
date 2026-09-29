@@ -145,3 +145,13 @@ export async function discardPatientForm(actor: Staff, id: string): Promise<void
     await audit({ userId: actor.id, action: "patient.form_discarded", entity: "patient_form", entityId: id, branchId }, tx);
   });
 }
+
+export type WelcomeInfo = { practiceName: string; branch: { code: string; name: string }; booking: boolean; forms: boolean };
+
+/** What /welcome/{code} shows (patient forms spec 4): null for an unknown or closed branch. */
+export async function welcomeInfo(code: string): Promise<WelcomeInfo | null> {
+  const settings = await practiceSettings();
+  const [branch] = await db.select({ code: branches.code, name: branches.name, active: branches.active }).from(branches).where(eq(branches.code, code));
+  if (!branch?.active) return null;
+  return { practiceName: settings.name, branch: { code: branch.code, name: branch.name }, booking: settings.onlineBooking, forms: settings.patientForms };
+}
