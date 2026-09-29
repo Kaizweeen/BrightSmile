@@ -85,7 +85,7 @@ The bot trap is checked first; the rest in the booking's transaction, after an a
 - **Per connection:** at most 5 online bookings per client address per hour, counted from the access log as the join requests are (part 1 section 6.3); the sixth gets 429 "Too many bookings from this connection. Please call the clinic."
 - **Per patient:** at most 2 Requested online visits starting from now on for the matched patient; the third gets 429 "You already have 2 requests waiting. The clinic will call you."
 
-## 9. Data changes (one migration)
+## 9. Data changes (two migrations: additions, then drops, so drizzle-kit never has to ask whether a column was renamed)
 
 - `practice`: add `visit_minutes` (integer, 60, check 15 to 240 in steps of 15), `cleaning_minutes` (integer, 10, check 0 to 60 in steps of 5), `online_booking` (boolean, false), `privacy_notice` (text, empty, up to 5000 characters).
 - `procedures`: drop `duration_minutes` and `buffer_minutes` (and their checks); add `online` (boolean, true).
@@ -107,12 +107,12 @@ Staff routes keep part 1's rules (sessions, permissions, `{ error }` bodies); th
 | `PATCH /api/v1/appointments/[id]` | Adds `minutes` (optional; the visit's own length when missing). |
 | `GET /api/v1/availability` | Takes `minutes` (optional, the standard length when missing) instead of `procedures`; the rest as now. |
 | `GET /api/v1/online-requests?branch=` | New, staff: the branch's Requested `portal` visits starting from now on, oldest request first (section 4). |
-| `GET /api/v1/portal` | New, public: `{ open, practiceName }`, and when open also the active branches (`code`, `name`) and online services (`id`, `name`). |
-| `GET /api/v1/portal/privacy` | New, public: the notice text while online booking is on; 404 otherwise. |
 | `GET /api/v1/portal/times?branch=&service=&date=` | New, public: `{ times: string[] }`, the open starts as instants (section 6.3); 404 when closed as in section 8. Dates outside today to 30 days ahead give an empty list. |
 | `POST /api/v1/portal/bookings` | New, public: `{ branch, service, start, firstName, lastName, mobile, note?, consent: true, website? }`. 201 `{ branch, service, start }` (names, not ids). Refusals as in sections 6.4 and 8; field errors as `fields`. |
 
-Every online booking writes one access log row: action `appointment.requested_online`, the appointment as entity, no user, and details `{ ip, privacyNoticeAccepted: true }`.
+`/book` and `/book/privacy` read the practice's settings, branches, and services on the server, so they need no route of their own.
+
+Every online booking writes one access log row: action `appointment.requested_online`, the appointment as entity, no user, and details `{ ip, privacyNoticeAccepted: true, online: true }`. A patient created by a booking gets a `patient.created` row with no user and `{ online: true }`. The access log and the visit's history name both "Online booking".
 
 ## 11. Screens
 
