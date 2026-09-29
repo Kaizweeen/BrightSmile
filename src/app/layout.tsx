@@ -1,0 +1,25 @@
+import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import { connection } from "next/server";
+import { Providers } from "@/components/providers";
+import "./globals.css";
+
+const sans = Geist({ variable: "--font-sans", subsets: ["latin"] });
+const mono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+
+export const metadata: Metadata = {
+  title: { default: "DentaSync", template: "%s | DentaSync" },
+  description: "Appointments, chairs, and dental charts for a practice with several branches.",
+  robots: { index: false, follow: false },
+};
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  await connection();
+  return (
+    <html lang="en" className={`${sans.variable} ${mono.variable} h-full antialiased`}>
+      <body className="min-h-full">
+        <Providers>{children}</Providers>
+      </body>
+    </html>
+  );
+}

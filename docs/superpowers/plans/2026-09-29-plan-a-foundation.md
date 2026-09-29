@@ -1133,6 +1133,9 @@ export default defineConfig({
         test: {
           name: "db",
           include: ["tests/db/**/*.test.ts", "tests/api/**/*.test.ts"],
+          // Each file runs its own in-memory Postgres; more than two at once can crash the workers on Windows.
+          maxWorkers: 2,
+          sequence: { groupOrder: 1 },
           setupFiles: ["tests/setup-db.ts"],
           testTimeout: 20_000,
           hookTimeout: 60_000,
@@ -1960,11 +1963,14 @@ describe("covers", () => {
 });
 
 describe("calendar and visits", () => {
-  it("shows a branch's calendar to the people who cover it", () => {
+  it("shows a branch's calendar to the people who cover it, and a dentist their own visits anywhere", () => {
     expect(can(owner, "calendar.view", { branchId: MN })).toBe(true);
     expect(can(manager, "calendar.view", { branchId: DT })).toBe(true);
     expect(can(manager, "calendar.view", { branchId: WS })).toBe(false);
     expect(can(dentist, "calendar.view", { branchId: WS })).toBe(true);
+    expect(can(dentist, "calendar.view", { branchId: MN })).toBe(false);
+    expect(can(dentist, "calendar.view", { branchId: MN, dentistId: "dr" })).toBe(true);
+    expect(can(dentist, "calendar.view", { branchId: MN, dentistId: "someone-else" })).toBe(false);
   });
 
   it("lets the owner and the branch's managers book and manage visits", () => {
@@ -1977,6 +1983,7 @@ describe("calendar and visits", () => {
   });
 
   it("lets dentists start and complete only their own visits", () => {
+    expect(can(owner, "appointment.treat", { branchId: MN, dentistId: "someone-else" })).toBe(true);
     expect(can(dentist, "appointment.treat", { branchId: DT, dentistId: "dr" })).toBe(true);
     expect(can(dentist, "appointment.treat", { branchId: DT, dentistId: "someone-else" })).toBe(false);
     expect(can(manager, "appointment.treat", { branchId: DT, dentistId: "someone-else" })).toBe(true);
@@ -2131,7 +2138,7 @@ export function can(s: Subject, action: Action, t: Target = {}): boolean {
 
   switch (action) {
     case "calendar.view":
-      return inBranch;
+      return inBranch || (dentist && own);
     case "appointment.book":
     case "appointment.manage":
       return owner || (manager && inBranch);
@@ -2312,7 +2319,7 @@ export async function userRow(id: string) {
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { db } from "@/db";
-import { appointments, chairs, patients } from "@/db/schema";
+import { appointments, auditLog, chairs, patients } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import { endSessions } from "@/server/accounts";
 import { json, readJson, staffRoute } from "@/server/api";
@@ -2333,6 +2340,15 @@ describe("signing in", () => {
   it("refuses a wrong password", async () => {
     const ana = await makeUser({ role: "manager" });
     await expect(signIn(ana.username, "not the password")).rejects.toThrow();
+  });
+
+  it("audits every sign-in, a failed one with the username only", async () => {
+    const ben = await makeUser({ role: "manager" });
+    await signIn(ben.username);
+    await expect(signIn(ben.username, "a wrong password")).rejects.toThrow();
+    const rows = (await db.select().from(auditLog)).filter((r) => r.entityId === ben.id || r.details.username === ben.username);
+    expect(rows.map((r) => r.action)).toEqual(["auth.signed_in", "auth.sign_in_failed"]);
+    expect(JSON.stringify(rows)).not.toContain("a wrong password");
   });
 
   it("keeps Better Auth's own sign-up closed", async () => {
@@ -2440,9 +2456,10 @@ Expected: FAIL, `@/lib/auth` cannot be found.
 ```ts
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { createAuthMiddleware, getIP } from "better-auth/api";
 import { username } from "better-auth/plugins/username";
 import { db } from "@/db";
-import { accounts, rateLimits, sessions, users, verifications } from "@/db/schema";
+import { accounts, auditLog, rateLimits, sessions, users, verifications } from "@/db/schema";
 import { appUrl } from "@/lib/env";
 
 /** One working day (spec 6.7). Sessions are never extended by activity. */
@@ -2460,7 +2477,26 @@ export const auth = betterAuth({
   // Accounts are created only by /setup and the join QR (src/server/setup.ts, src/server/staff.ts).
   emailAndPassword: { enabled: true, disableSignUp: true, minPasswordLength: 10, maxPasswordLength: 128 },
   plugins: [username()],
+  // Better Auth refuses a user table with required columns it does not know. These two are DentaSync's, and only our
+  // own code (src/server/accounts.ts) writes them.
+  user: { additionalFields: { role: { type: "string", input: false }, status: { type: "string", input: false } } },
   session: { expiresIn: SESSION_SECONDS, disableSessionRefresh: true },
+  hooks: {
+    // Spec 13: every sign-in is audited, a failed one with the username tried (never the password).
+    after: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== "/sign-in/username") return;
+      const user = ctx.context.newSession?.user;
+      const from = ctx.request ?? ctx.headers;
+      const ip = from ? getIP(from, ctx.context.options) : null;
+      await db.insert(auditLog).values({
+        userId: user?.id ?? null,
+        action: user ? "auth.signed_in" : "auth.sign_in_failed",
+        entity: "user",
+        entityId: user?.id ?? null,
+        details: user ? { ip } : { ip, username: String(ctx.body?.username ?? "").trim().toLowerCase().slice(0, 30) },
+      });
+    }),
+  },
   rateLimit: { storage: "database", customRules: { "/sign-in/username": { window: 15 * 60, max: 10 } } },
   disabledPaths: ["/sign-up/email", "/sign-in/email", "/update-user", "/is-username-available"],
   advanced: { database: { generateId: "uuid" } },
@@ -2800,7 +2836,7 @@ export function clientIp(req: NextRequest): string {
 npx vitest run tests/api/auth.test.ts
 ```
 
-Expected: PASS, 8 tests (the 500 case prints one "Request ... failed" line; that is expected).
+Expected: PASS, 10 tests (the 500 case prints one "Request ... failed" line; that is expected).
 
 - [ ] **Step 12: Typecheck and commit**
 
@@ -3042,7 +3078,6 @@ export type ErrorBody = {
   code: string;
   message: string;
   fields?: Record<string, string>;
-  blocks?: { index: number; message: string }[];
   conflicts?: unknown[];
   warnings?: { code: string; message: string }[];
   requestId?: string;
@@ -3220,12 +3255,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 ```tsx
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { homePath } from "@/server/home";
 import { staffFromHeaders } from "@/server/session";
 import { ownerExists } from "@/server/setup";
 
 /** Sends each visitor where they belong: setup, sign-in, the waiting page, or their home. */
 export default async function Home() {
+  // Request time only: `next build` must never open the database.
+  await connection();
   if (!(await ownerExists())) redirect("/setup");
   const staff = await staffFromHeaders(await headers());
   if (!staff || staff.status === "disabled") redirect("/login");
@@ -3313,7 +3351,8 @@ export function LoginForm() {
 
 ```tsx
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { notFound } from "next/navigation";
+import { connection } from "next/server";
 import { AuthCard } from "@/components/auth-card";
 import { ownerExists } from "@/server/setup";
 import { SetupForm } from "./setup-form";
@@ -3321,7 +3360,10 @@ import { SetupForm } from "./setup-form";
 export const metadata: Metadata = { title: "Set up" };
 
 export default async function SetupPage() {
-  if (await ownerExists()) redirect("/login");
+  // Request time only: `next build` must never open the database.
+  await connection();
+  // Spec 6.1: once an owner exists, /setup answers 404; the owner's own reset lives at /setup/recover.
+  if (await ownerExists()) notFound();
   return (
     <AuthCard
       title="Set up DentaSync"
@@ -3458,7 +3500,8 @@ export function RecoverForm() {
         method: "POST",
         body: { setupCode: value("setupCode"), password: value("password") },
       });
-      await authClient.signIn.username({ username, password: value("password") });
+      const { error } = await authClient.signIn.username({ username, password: value("password") });
+      if (error) throw new Error("The password is changed, but signing in failed. Sign in with the new password.");
       router.replace("/");
       router.refresh();
     } catch (error) {
@@ -3487,7 +3530,7 @@ export function RecoverForm() {
 
 Create `.env.local` from `.env.example` with `BETTER_AUTH_SECRET` and `SETUP_TOKEN` set to two different values from `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`. Run `npm run dev` and open http://localhost:3700.
 
-Expected: `/` redirects to `/setup`. Submitting with a wrong code shows "That setup code is not right." under the code field. The right code creates the owner and lands on `/all/settings` (a 404 until Task 10; that is expected here). `/setup` now redirects to `/login`, and signing in with the new username works.
+Expected: `/` redirects to `/setup`. Submitting with a wrong code shows "That setup code is not right." under the code field. The right code creates the owner and lands on `/all/settings` (a 404 until Task 10; that is expected here). `/setup` now answers 404, and signing in at `/login` with the new username works.
 
 - [ ] **Step 16: Run everything and commit**
 
@@ -3608,9 +3651,6 @@ describe("branches", () => {
     const off = await call(chairRoute.PATCH, request("/api/v1/branches/downtown/chairs/1", { method: "PATCH", cookie, body: { active: false } }), { code: "downtown", number: "1" });
     expect(off.status).toBe(422);
     expect((await off.json()).error.message).toBe("Chair 1 has 1 upcoming visit. Move it first.");
-
-    const branchOff = await call(branchRoute.PATCH, request("/api/v1/branches/downtown", { method: "PATCH", cookie, body: { active: false } }), { code: "downtown" });
-    expect(branchOff.status).toBe(422);
   });
 
   it("keeps at least one branch open", async () => {
@@ -3650,6 +3690,24 @@ describe("procedures", () => {
     expect(off.status).toBe(200);
     const active = await (await call(proceduresRoute.GET, request("/api/v1/procedures?active=1", { cookie }))).json();
     expect(active).toEqual([]);
+  });
+
+  it("keeps a branch with visits not over yet open, counting one in the chair now", async () => {
+    const { cookie } = await ownerCookie();
+    const on = await call(branchRoute.PATCH, request("/api/v1/branches/westside", { method: "PATCH", cookie, body: { active: true } }), { code: "westside" });
+    expect(on.status).toBe(200);
+    const [b] = await db.select().from(branches).where(eq(branches.code, "downtown"));
+    const dentist = await makeUser({ role: "dentist", branchIds: [b.id] });
+    const [p] = await db.insert(patients).values({ lastName: "Cruz", firstName: "Ben" }).returning();
+    const start = new Date(Date.now() - 600_000);
+    await db.insert(appointments).values({
+      patientId: p.id, dentistId: dentist.id, branchId: b.id, chairNumber: 2,
+      startTime: start, endTime: new Date(start.getTime() + 3_600_000), chairFreeAt: new Date(start.getTime() + 3_600_000),
+      status: "confirmed", source: "staff",
+    });
+    const off = await call(branchRoute.PATCH, request("/api/v1/branches/downtown", { method: "PATCH", cookie, body: { active: false } }), { code: "downtown" });
+    expect(off.status).toBe(422);
+    expect((await off.json()).error).toMatchObject({ code: "has_visits", message: "This branch has 1 upcoming visit. Move or cancel it first." });
   });
 });
 ```
@@ -3816,9 +3874,10 @@ export async function updateBranch(
       const [visits] = await tx
         .select({ n: count() })
         .from(appointments)
-        .where(and(eq(appointments.branchId, branch.id), inArray(appointments.status, [...ACTIVE_STATUSES]), gt(appointments.startTime, new Date())));
+        // Visits not over yet count, including one in the chair right now.
+        .where(and(eq(appointments.branchId, branch.id), inArray(appointments.status, [...ACTIVE_STATUSES]), gt(appointments.endTime, new Date())));
       if (visits.n > 0) {
-        throw new ApiError(422, "has_visits", `This branch has ${plural(visits.n, "upcoming visit")}. Move or cancel them first.`);
+        throw new ApiError(422, "has_visits", `This branch has ${plural(visits.n, "upcoming visit")}. Move or cancel ${visits.n === 1 ? "it" : "them"} first.`);
       }
     }
     const [row] = await tx.update(branches).set(patch).where(eq(branches.id, branch.id)).returning({ id: branches.id, code: branches.code });
@@ -3867,7 +3926,7 @@ export async function updateChair(actor: Staff, branchId: string, number: number
             eq(appointments.branchId, branchId),
             eq(appointments.chairNumber, number),
             inArray(appointments.status, [...ACTIVE_STATUSES]),
-            gt(appointments.startTime, new Date()),
+            gt(appointments.endTime, new Date()),
           ),
         );
       if (visits.n > 0) {
@@ -4048,7 +4107,7 @@ export const PATCH = staffRoute<{ id: string }>(async (req, staff, { id }) =>
 npx vitest run tests/db/settings.test.ts
 ```
 
-Expected: PASS, 8 tests.
+Expected: PASS, 9 tests.
 
 - [ ] **Step 8: Commit**
 
@@ -4158,6 +4217,16 @@ describe("joining by QR", () => {
     expect((await join(branch.joinCode, newcomer("fresh.one"), "10.0.0.11")).status).toBe(201);
     expect(await userRow(old.id)).toBeUndefined();
   });
+
+  it("deletes expired requests when the approval screen loads, and refuses their sign-in", async () => {
+    const branch = await makeBranch();
+    const old = await makeUser({ role: "dentist", status: "pending", requestedBranchId: branch.id });
+    await db.update(users).set({ createdAt: new Date(Date.now() - 8 * 86_400_000) }).where(eq(users.id, old.id));
+    await expect(signIn(old.username)).rejects.toThrow();
+    const { cookie } = await ownerCookie();
+    expect((await call(requestsRoute.GET, request("/api/v1/join-requests", { cookie }))).status).toBe(200);
+    expect(await userRow(old.id)).toBeUndefined();
+  });
 });
 
 describe("approving", () => {
@@ -4264,6 +4333,16 @@ describe("changing staff", () => {
     const none = await patch(cookie, dentist.id, { branchIds: [] });
     expect(none.status).toBe(400);
     expect((await none.json()).error.fields).toEqual({ branchIds: "Keep at least one branch." });
+  });
+
+  it("refuses a branch the manager does not cover", async () => {
+    const a = await makeBranch();
+    const b = await makeBranch();
+    const manager = await makeUser({ role: "manager", branchIds: [a.id] });
+    const dentist = await makeUser({ role: "dentist", branchIds: [a.id] });
+    const res = await patch(await signIn(manager.username), dentist.id, { branchIds: [a.id, b.id] });
+    expect(res.status).toBe(403);
+    expect(await branchesOf(dentist.id)).toEqual([a.id]);
   });
 
   it("lists the staff each person may see", async () => {
@@ -4377,10 +4456,12 @@ Add `import { eq } from "drizzle-orm";` at the top, and add this option to the `
   databaseHooks: {
     session: {
       create: {
-        // A disabled account cannot sign in (spec 6.5). A pending one can, to see the waiting page.
+        // A disabled account cannot sign in (spec 6.5), nor a join request older than 7 days (spec 6.3). A pending one
+        // can, to see the waiting page.
         before: async (session) => {
-          const [user] = await db.select({ status: users.status }).from(users).where(eq(users.id, session.userId));
-          return user?.status === "disabled" ? false : undefined;
+          const [user] = await db.select({ status: users.status, createdAt: users.createdAt }).from(users).where(eq(users.id, session.userId));
+          const expired = user?.status === "pending" && user.createdAt.getTime() < Date.now() - 7 * 86_400_000;
+          return user?.status === "disabled" || expired ? false : undefined;
         },
       },
     },
@@ -4422,6 +4503,11 @@ const OPEN_REQUESTS_PER_BRANCH = 20;
 const RESET_MINUTES = 15;
 const RESET_PREFIX = "staff-reset:";
 const SEVEN_DAYS_AGO = sql`now() - interval '7 days'`;
+
+/** Spec 6.3: an expired request is deleted the next time a join or approval screen loads. */
+function deleteExpiredRequests(tx: Db = db) {
+  return tx.delete(users).where(and(eq(users.status, "pending"), lt(users.createdAt, SEVEN_DAYS_AGO)));
+}
 
 export const joinSchema = z.object({
   name: personNameSchema,
@@ -4468,7 +4554,9 @@ export async function requestToJoin(code: string, input: z.infer<typeof joinSche
   if (!branch) throw new ApiError(404, "qr_replaced", "This QR code no longer works. Ask the owner for the current one.");
   const passwordHash = await hashPassword(input.password);
   return db.transaction(async (tx) => {
-    await tx.delete(users).where(and(eq(users.status, "pending"), lt(users.createdAt, SEVEN_DAYS_AGO)));
+    // One join at a time, so two requests cannot both pass the per-connection and per-branch counts below. Joins are rare.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('dentasync.join'))`);
+    await deleteExpiredRequests(tx);
     const [fromIp] = await tx
       .select({ n: count() })
       .from(auditLog)
@@ -4518,6 +4606,7 @@ export type JoinRequestView = {
 
 export async function listJoinRequests(actor: Staff): Promise<JoinRequestView[]> {
   requireCan(actor, "staff.view");
+  await deleteExpiredRequests();
   const rows = await db
     .select({ id: users.id, name: users.name, username: users.username, role: users.role, branchId: branches.id, branchName: branches.name, createdAt: users.createdAt })
     .from(users)
@@ -4641,13 +4730,15 @@ export async function updateStaff(actor: Staff, userId: string, patch: z.infer<t
     const current = (await tx.select({ id: userBranches.branchId }).from(userBranches).where(eq(userBranches.userId, userId))).map((row) => row.id);
     const targetRole = target.role as Role;
     if (target.id === actor.id) {
-      // The owner may change their own title and whether they see patients, and nothing else about themselves.
-      if (actor.role !== "owner" || patch.role || patch.branchIds || patch.status) throw forbidden("Ask the owner to change your own access.");
+      // Only the owner (settings.edit) edits themselves: their title and whether they see patients, nothing else.
+      if (!can(actor, "settings.edit") || patch.role || patch.branchIds || patch.status) throw forbidden("Ask the owner to change your own access.");
     } else {
       requireCan(actor, "staff.manage", { userId, userRole: targetRole, branchIds: current });
     }
     if (patch.seesPatients !== undefined && targetRole !== "owner") {
-      throw new ApiError(400, "invalid", "Only the owner's own access to patients can be switched.");
+      throw new ApiError(400, "invalid", "Only the owner's own access to patients can be switched.", {
+        fields: { seesPatients: "Only the owner's own access to patients can be switched." },
+      });
     }
 
     const set: Partial<typeof users.$inferInsert> = { updatedAt: new Date() };
@@ -4661,6 +4752,9 @@ export async function updateStaff(actor: Staff, userId: string, patch: z.infer<t
     }
     if (patch.branchIds) {
       const wanted = [...new Set(patch.branchIds)];
+      if (actor.role !== "owner" && wanted.some((branchId) => !current.includes(branchId) && !covers(actor, branchId))) {
+        throw forbidden("You can only give branches you work at.");
+      }
       // A manager changes only the branches they cover; the person keeps their other branches.
       const next = [
         ...new Set(
@@ -4819,7 +4913,7 @@ export const POST = staffRoute<{ id: string }>(async (_req, staff, { id }) => js
 npx vitest run tests/db/staff.test.ts tests/api/auth.test.ts
 ```
 
-Expected: PASS, 17 and 8 tests.
+Expected: PASS, 19 and 10 tests.
 
 - [ ] **Step 9: Commit**
 
@@ -5033,13 +5127,13 @@ describe("weekly schedules", () => {
       { branchId: b.id, dayOfWeek: 2, startTime: "11:00", endTime: "14:00" },
     ]);
     expect(res.status).toBe(400);
-    expect((await res.json()).error.blocks).toEqual([
-      { index: 0, message: "The branch is open 09:00 to 18:00 on Monday." },
-      { index: 1, message: "The branch is open 12:00 to 20:00 on Monday." },
-      { index: 2, message: "The branch is closed on Sunday." },
-      { index: 3, message: "Overlaps another block on Tuesday." },
-      { index: 4, message: "Overlaps another block on Tuesday." },
-    ]);
+    expect((await res.json()).error.fields).toEqual({
+      "blocks.0": "The branch is open 09:00 to 18:00 on Monday.",
+      "blocks.1": "The branch is open 12:00 to 20:00 on Monday.",
+      "blocks.2": "The branch is closed on Sunday.",
+      "blocks.3": "Overlaps another block on Tuesday.",
+      "blocks.4": "Overlaps another block on Tuesday.",
+    });
   });
 
   it("refuses a branch the dentist does not work at", async () => {
@@ -5047,7 +5141,7 @@ describe("weekly schedules", () => {
     const other = await makeBranch();
     const { cookie } = await ownerCookie();
     const res = await put(cookie, dentist.id, [{ branchId: other.id, dayOfWeek: 1, startTime: "09:00", endTime: "12:00" }]);
-    expect((await res.json()).error.blocks).toEqual([{ index: 0, message: "This dentist does not work at that branch." }]);
+    expect((await res.json()).error.fields).toEqual({ "blocks.0": "This dentist does not work at that branch." });
   });
 
   it("lets a manager change only the blocks at their branches", async () => {
@@ -5137,6 +5231,22 @@ describe("time off", () => {
     );
     expect(res.status).toBe(400);
     expect((await res.json()).error.fields).toEqual({ endsAt: "The end must be after the start" });
+  });
+
+  it("refuses times without an offset, which would be read in the server's time zone", async () => {
+    const { dentist } = await setting();
+    const { cookie } = await ownerCookie();
+    const res = await call(
+      timeOffListRoute.POST,
+      request(`/api/v1/dentists/${dentist.id}/time-off`, {
+        method: "POST",
+        cookie,
+        body: { startsAt: "2026-10-05T09:00:00", endsAt: "2026-10-05T12:00:00", reason: "" },
+      }),
+      { id: dentist.id },
+    );
+    expect(res.status).toBe(400);
+    expect(Object.keys((await res.json()).error.fields).sort()).toEqual(["endsAt", "startsAt"]);
   });
 });
 ```
@@ -5261,7 +5371,12 @@ export async function replaceWeek(actor: Staff, dentistId: string, input: z.infe
     const problems = blockProblems([...submitted.map((s) => s.block), ...kept], { allowedBranchIds: allowed, hours })
       .filter((problem) => problem.index < submitted.length)
       .map((problem) => ({ index: submitted[problem.index].index, message: problem.message }));
-    if (problems.length > 0) throw new ApiError(400, "invalid", "Check the highlighted blocks.", { blocks: problems });
+    if (problems.length > 0) {
+      // Spec 12: each broken block is a field error keyed "blocks.<index sent>", like any array field.
+      throw new ApiError(400, "invalid", "Check the highlighted blocks.", {
+        fields: Object.fromEntries(problems.map((problem) => [`blocks.${problem.index}`, problem.message])),
+      });
+    }
 
     const replaced = current.filter(mine).map((row) => row.id);
     if (replaced.length > 0) await tx.delete(dentistSchedules).where(inArray(dentistSchedules.id, replaced));
@@ -6062,7 +6177,7 @@ git commit -m "feat: add the app shell with the branch switcher, and strict secu
 ### Task 11: Joining, password reset, and the Staff screen
 
 **Files:**
-- Create: `src/lib/queries.ts`, `src/components/staff-fields.tsx`, `src/app/join/[code]/page.tsx`, `src/app/join/[code]/join-form.tsx`, `src/app/reset/[token]/page.tsx`, `src/app/reset/[token]/reset-form.tsx`, `src/app/[branch]/staff/page.tsx`, `src/app/[branch]/staff/staff-screen.tsx`
+- Create: `src/lib/queries.ts`, `src/components/staff-fields.tsx`, `src/components/state-badge.tsx`, `src/app/join/[code]/page.tsx`, `src/app/join/[code]/join-form.tsx`, `src/app/reset/[token]/page.tsx`, `src/app/reset/[token]/reset-form.tsx`, `src/app/[branch]/staff/page.tsx`, `src/app/[branch]/staff/staff-screen.tsx`
 
 **Interfaces:**
 - Consumes: routes from Tasks 7 and 8; `ConfirmDialog`, `TextField`, `FormAlert`, `AuthCard`; `api`, `RequestError`, `errorMessage`, `fieldErrors`.
@@ -6162,6 +6277,27 @@ export function BranchChoice({
 }
 ```
 
+`src/components/state-badge.tsx`, the on or off badge the Staff page and the Settings panels show (a word and an icon):
+
+```tsx
+import { CircleCheck, CircleMinus } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+
+/**
+ * On or off (a person active or disabled, a branch open or closed, a procedure offered or retired) as a word and an
+ * icon: spec 10 never shows a state by colour alone.
+ */
+export function StateBadge({ on, yes, no, warn = false }: { on: boolean; yes: string; no: string; warn?: boolean }) {
+  const Icon = on ? CircleCheck : CircleMinus;
+  return (
+    <Badge variant={on ? "secondary" : warn ? "destructive" : "outline"}>
+      <Icon data-icon="inline-start" aria-hidden />
+      {on ? yes : no}
+    </Badge>
+  );
+}
+```
+
 - [ ] **Step 3: Write the join page**
 
 `src/app/join/[code]/page.tsx`:
@@ -6227,7 +6363,8 @@ export function JoinForm({ code }: { code: string }) {
         method: "POST",
         body: { name: value("name"), username: value("username"), password: value("password"), role },
       });
-      await authClient.signIn.username({ username, password: value("password") });
+      const { error } = await authClient.signIn.username({ username, password: value("password") });
+      if (error) throw new Error("Your request is sent, but signing in failed. Sign in to see whether it is approved.");
       router.replace("/waiting");
       router.refresh();
     } catch (error) {
@@ -6307,7 +6444,8 @@ export function ResetForm({ token }: { token: string }) {
     setAlert(null);
     try {
       const { username } = await api<{ username: string }>(`/reset/${token}`, { method: "POST", body: { password: value("password") } });
-      await authClient.signIn.username({ username, password: value("password") });
+      const { error } = await authClient.signIn.username({ username, password: value("password") });
+      if (error) throw new Error("The password is changed, but signing in failed. Sign in with the new password.");
       router.replace("/");
       router.refresh();
     } catch (error) {
@@ -6363,9 +6501,9 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { FormAlert } from "@/components/form-alert";
+import { StateBadge } from "@/components/state-badge";
 import { BranchChoice, RoleChoice } from "@/components/staff-fields";
 import { TextField } from "@/components/text-field";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -6490,7 +6628,7 @@ export function StaffScreen({ me, branches }: { me: Me; branches: BranchOption[]
                     <TableCell>{roleLabel(s.role, s.title)}</TableCell>
                     <TableCell>{s.role === "owner" ? "All branches" : s.branchIds.map(branchName).join(", ") || "None"}</TableCell>
                     <TableCell>
-                      {s.status === "active" ? <Badge variant="secondary">Active</Badge> : <Badge variant="destructive">Disabled</Badge>}
+                      <StateBadge on={s.status === "active"} yes="Active" no="Disabled" warn />
                     </TableCell>
                     <TableCell>
                       {s.canManage && (
@@ -6565,7 +6703,7 @@ function ApproveDialog({
   const [title, setTitle] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const approve = useMutation({
-    mutationFn: () => api(`/join-requests/${request.id}/approve`, { method: "POST", body: { role, branchIds, title: title.trim() || null } }),
+    mutationFn: () => api(`/join-requests/${request.id}/approve`, { method: "POST", body: { role, branchIds, title: role === "dentist" ? title.trim() || null : null } }),
     onSuccess: async () => {
       toast.success(`${request.name} can now use DentaSync.`);
       onClose();
@@ -6764,8 +6902,19 @@ import { WEEKDAYS } from "@/lib/hours";
 
 const MONDAY_FIRST = [1, 2, 3, 4, 5, 6, 0];
 
-/** One row per weekday: open or closed, and the opening and closing times on the 15-minute grid. */
-export function HoursEditor({ value, onChange, error }: { value: OperatingHours; onChange: (hours: OperatingHours) => void; error?: string }) {
+/**
+ * One row per weekday: open or closed, and the opening and closing times on the 15-minute grid. `errors` is keyed by
+ * day ("0" Sunday to "6" Saturday), each shown under its own day; "" holds an error about the week as a whole.
+ */
+export function HoursEditor({
+  value,
+  onChange,
+  errors = {},
+}: {
+  value: OperatingHours;
+  onChange: (hours: OperatingHours) => void;
+  errors?: Record<string, string>;
+}) {
   return (
     <fieldset className="grid gap-2">
       <legend className="mb-1 text-sm font-medium">Opening hours</legend>
@@ -6782,20 +6931,21 @@ export function HoursEditor({ value, onChange, error }: { value: OperatingHours;
               <>
                 <label className="grid gap-1 text-sm">
                   Opens
-                  <Input type="time" step={900} value={today.open} onChange={(event) => set({ ...today, open: event.target.value })} />
+                  <Input type="time" step={900} aria-label={`${WEEKDAYS[day]} opens`} value={today.open} onChange={(event) => set({ ...today, open: event.target.value })} />
                 </label>
                 <label className="grid gap-1 text-sm">
                   Closes
-                  <Input type="time" step={900} value={today.close} onChange={(event) => set({ ...today, close: event.target.value })} />
+                  <Input type="time" step={900} aria-label={`${WEEKDAYS[day]} closes`} value={today.close} onChange={(event) => set({ ...today, close: event.target.value })} />
                 </label>
               </>
             ) : (
               <span className="text-sm text-muted-foreground">Closed</span>
             )}
+            {errors[String(day)] && <p className="w-full text-sm text-destructive">{`${WEEKDAYS[day]}: ${errors[String(day)]}`}</p>}
           </div>
         );
       })}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {errors[""] && <p className="text-sm text-destructive">{errors[""]}</p>}
     </fieldset>
   );
 }
@@ -6959,11 +7109,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
+import { StateBadge } from "@/components/state-badge";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { FormAlert } from "@/components/form-alert";
 import { HoursEditor } from "@/components/hours-editor";
 import { TextField } from "@/components/text-field";
-import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -7023,14 +7173,14 @@ export function BranchesPanel() {
                   </TableCell>
                   <TableCell className="whitespace-normal">{hoursSummary(b.operatingHours)}</TableCell>
                   <TableCell>{b.chairCount}</TableCell>
-                  <TableCell>{b.active ? <Badge variant="secondary">Open</Badge> : <Badge variant="outline">Closed</Badge>}</TableCell>
+                  <TableCell><StateBadge on={b.active} yes="Open" no="Closed" /></TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1">
                       <Button variant="ghost" onClick={() => setEditing(b)}>
                         Edit
                       </Button>
                       <Link href={`/poster/${b.code}`} target="_blank" className={buttonVariants({ variant: "ghost" })}>
-                        QR poster
+                        Print QR poster
                       </Link>
                       <Button variant="ghost" onClick={() => setReplacing(b)}>
                         Replace QR
@@ -7082,7 +7232,12 @@ function BranchDialog({ branch, onClose, onSaved }: { branch: Branch | null; onC
       if (Object.keys(fieldErrors(error)).length === 0) toast.error(errorMessage(error));
     },
   });
-  const hoursError = Object.entries(errors).find(([key]) => key.startsWith("operatingHours"))?.[1];
+  // Hours errors come back keyed operatingHours.<day>.<field>; the editor shows each under its day.
+  const hoursErrors = Object.fromEntries(
+    Object.entries(errors)
+      .filter(([key]) => key.startsWith("operatingHours"))
+      .map(([key, message]) => [key.split(".")[1] ?? "", message]),
+  );
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
@@ -7101,7 +7256,7 @@ function BranchDialog({ branch, onClose, onSaved }: { branch: Branch | null; onC
           <TextField label="Code" value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} maxLength={24} autoCapitalize="none" error={errors.code} hint="2 to 24 lowercase letters, numbers, or hyphens." />
           <TextField label="Address" value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} maxLength={200} error={errors.address} />
           <TextField label="Phone" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} maxLength={20} error={errors.phone} />
-          <HoursEditor value={form.operatingHours} onChange={(operatingHours) => setForm({ ...form, operatingHours })} error={hoursError} />
+          <HoursEditor value={form.operatingHours} onChange={(operatingHours) => setForm({ ...form, operatingHours })} errors={hoursErrors} />
           {branch && (
             <label className="flex min-h-11 items-center gap-3">
               <input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} className="size-4 accent-primary" />
@@ -7238,9 +7393,9 @@ function ChairRow({ code, chair, onChanged }: { code: string; chair: Chair; onCh
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
+import { StateBadge } from "@/components/state-badge";
 import { FormAlert } from "@/components/form-alert";
 import { TextField } from "@/components/text-field";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -7285,7 +7440,7 @@ export function ProceduresPanel() {
                 <TableCell className="font-medium">{p.name}</TableCell>
                 <TableCell>{`${p.durationMinutes} min`}</TableCell>
                 <TableCell>{`${p.bufferMinutes} min`}</TableCell>
-                <TableCell>{p.active ? <Badge variant="secondary">Offered</Badge> : <Badge variant="outline">Retired</Badge>}</TableCell>
+                <TableCell><StateBadge on={p.active} yes="Offered" no="Retired" /></TableCell>
                 <TableCell className="text-right">
                   <Button variant="ghost" onClick={() => setEditing(p)}>
                     Edit
@@ -7398,7 +7553,7 @@ import { FormAlert } from "@/components/form-alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
-import { api, errorMessage, RequestError } from "@/lib/fetcher";
+import { api, errorMessage, fieldErrors } from "@/lib/fetcher";
 import { WEEKDAYS } from "@/lib/hours";
 import { useBranches, useDentists, type Branch, type Dentist } from "@/lib/queries";
 import type { Block } from "@/lib/schedule";
@@ -7456,8 +7611,10 @@ function WeekEditor({ dentist, blocks, branches, editable }: { dentist: Dentist;
       await client.invalidateQueries({ queryKey: ["schedule", dentist.id] });
     },
     onError: (error) => {
-      if (error instanceof RequestError && error.body.blocks) {
-        setProblems(Object.fromEntries(error.body.blocks.map((p) => [p.index, p.message])));
+      // Each broken block comes back as a field error keyed "blocks.<row>".
+      const rows = Object.entries(fieldErrors(error)).filter(([key]) => key.startsWith("blocks."));
+      if (rows.length > 0) {
+        setProblems(Object.fromEntries(rows.map(([key, message]) => [Number(key.slice("blocks.".length)), message])));
         toast.error("Check the highlighted hours.");
       } else toast.error(errorMessage(error));
     },
@@ -7664,6 +7821,18 @@ export function TimeOffPanel({ canEdit }: { canEdit: boolean }) {
 
 - [ ] **Step 9: Write the printable QR poster**
 
+In `src/app/globals.css`, add this rule after the `@custom-variant dark` line, so the poster prints on A4 (spec 6.2):
+
+```css
+/* The staff QR poster (src/app/poster) prints on A4 (spec 6.2). */
+@page {
+  size: A4;
+  margin: 12mm;
+}
+```
+
+Then the poster itself:
+
 `src/app/poster/[code]/print-button.tsx`:
 
 ```tsx
@@ -7756,3 +7925,22 @@ git commit -m "feat: add the settings screens, weekly schedule editor, time off,
 - Spec 8.1 time and the weekly schedules: Tasks 3 and 9. Booking rules (8.2 to 8.8): plan B.
 - Spec 10 shell, branch URL, switcher, Staff, Settings, poster: Tasks 10 to 12. Calendar, patients, charts: plans B and C.
 - Spec 12 errors: Task 5 (`toResponse`); Spec 13 headers, CSP, noindex, audit: Tasks 5 and 10.
+
+## Final review fixes
+
+The whole-branch review of plan A found no critical problems. Its fixes, made after Task 12 and before plan B, change the code above as follows (commit `fix: settle plan A's final review`):
+
+- **Logs** (spec 12 and 13). `toResponse` logs `loggable(error)` (`src/server/errors.ts`): the error's name, the Postgres code, constraint, and table, the SQL text, and the stack frames. Never the message, the query's values, or the row Postgres quotes back, which can hold patient details or password hashes. A test fails a patient insert on purpose and checks its values never reach `console.error`.
+- **A malformed id answers 404**: `toResponse` maps Postgres `22P02` to `not_found` (this was plan C Task 2's step).
+- **Sign-in** (`src/lib/auth.ts`). A disabled account, or a join request older than 7 days, is refused with Better Auth's own "Invalid username or password" (401), so the answer never confirms the password. No session outlives 12 hours, even with `rememberMe: false` (which asked Better Auth for 24). A failed sign-in keeps the username only when it names an account, with that account as the entity, so a password typed into the username field is never stored. A password change is audited as `auth.password_changed`. The sign-in audit goes through `audit()`.
+- **Rate limits by the right address.** Better Auth reads the visitor's address from one header the host sets and never takes from the visitor: `x-real-ip` on Vercel, else Netlify's `x-nf-client-connection-ip`, or `CLIENT_IP_HEADER`. The join limit reads the same address through Better Auth's `getIP` (`clientIp` in `src/server/api.ts`). Sign-in allows 30 tries per address in 15 minutes, since a branch's staff often share one address.
+- **Slow hashing after cheap refusals.** `requestToJoin` hashes the password after the join limits and the username check; `resetWithToken` refuses a dead link before hashing.
+- **Closed branches.** Everyone covers only open branches (`staffById`; the owner already did). `homePath` lands on the main branch only while it is open. `updateStaff` gives open branches only ("Pick open branches only.", as approval does) and keeps a person's closed branches and, for a manager's colleague, the branches that manager does not cover. `updateChair` locks the chair before counting its visits; plan B's bookings read the branch and the chair `for share`.
+- **Everyone keeps an open branch.** Staff cover open branches only, so closing a branch is refused (422 `has_staff`, naming them) while it is the only open branch of an active staff member other than the owner, and a staff change that would leave a person who stays or becomes active without an open branch is refused with "Keep at least one open branch." Disabling is never blocked, even together with a branch change. Without this, such a person could not sign in (found by the review of these fixes).
+- **Titles.** A role change clears the title unless a new one comes with it; the Edit dialog empties the title when the role changes and restores it when the role goes back.
+- **The Edit dialog** sends `branchIds` only when they changed, so saving a title never touches memberships the dialog does not list.
+- **HSTS** is keyed off `APP_URL` (https in production), not the request, which may arrive over plain http behind the host's proxy.
+- **Accessibility.** Tab triggers, menu items, and the dialog's close button are 44 pixels tall on phones. The branch switcher is a menu of links, so arrowing through branches never leaves the page (WCAG 3.2.2). Hours errors (joined when a day has two) and schedule errors are tied to their time fields with `aria-invalid` and `aria-describedby`; `BranchChoice` uses a generated id.
+- **The weekly schedule editor** is keyed by the dentist only and resets from the saved week, so a background refresh never throws away hours being edited.
+- **A renamed branch code** moves the Settings page to the new address instead of refreshing the old one into a 404.
+- Tests pin the closed Better Auth endpoints (404 even to someone signed in), the disabled account's refusal, the 12-hour cap, the failed sign-in's username, the password change audit, titles, closed branches, and the malformed id.
