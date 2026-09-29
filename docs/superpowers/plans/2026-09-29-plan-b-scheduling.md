@@ -5736,3 +5736,16 @@ npm test; npm run lint; npm run typecheck; npm run build
 git add -A
 git commit -m "feat: add My day, the All branches overview, and a disabled dentist's upcoming visits" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
+
+## Final review fixes
+
+The whole-branch review of plan B found no critical problems. Its fixes landed on the `plan-c-clinical` branch, after plan C's Task 4 (which edits some of the same files), in the commit `fix: settle plan B's final review`:
+
+- **The patient editor starts from the record as it is now.** Edit resets the draft and its errors, so an abandoned draft can no longer undo an allergy another person saved in the meantime.
+- **A move made from a stale view is refused.** The visit detail carries `updatedAt`, the booking panel sends it back as `expectedUpdatedAt`, and `moveAppointment` answers 409 `changed` when the visit changed since the screen read it; `lockUnchanged` also compares `updatedAt`. Every move stamps it, and the lifecycle trigger stamps it on every status change.
+- **A failed save refreshes the booking panel.** It invalidates open times, the live check, and the visit lists, and a save's error and warnings show only while the inputs are the ones that were saved.
+- **Visit queries have a lower bound on start time** (`LONGEST_VISIT_MS`, 26 hours: a visit never crosses midnight), so the start-time indexes skip the history.
+- **Cancel reasons stay out of the audit log**, which is never edited; the visit panel shows the visit's own reason.
+- **Opening a visit is audited as a view of its patient** (`patient.view`, part `visit`), since the panel shows allergies and alerts.
+- **A closed branch's old schedule blocks no longer place a dentist elsewhere.**
+- **My day refreshes after a refused change**; the overview's patient buttons and a disabled dentist's visit links are 44 pixels tall on phones; a disabled dentist reads "is disabled" in a refused booking.
