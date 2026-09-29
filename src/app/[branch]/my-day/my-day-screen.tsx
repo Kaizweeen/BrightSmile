@@ -82,8 +82,8 @@ export function MyDayScreen({ branch, date, today, staffId }: { branch: string; 
                       {actionLabel(v.status, next)}
                     </Button>
                   )}
-                  <Link href={`/${branch}/patients/${v.patientId}`} className={buttonVariants({ variant: "outline" })}>
-                    Open patient
+                  <Link href={`/${branch}/patients/${v.patientId}?tab=chart`} className={buttonVariants({ variant: "outline" })}>
+                    Open chart
                   </Link>
                 </CardFooter>
               </Card>

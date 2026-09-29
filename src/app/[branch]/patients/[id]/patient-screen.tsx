@@ -12,9 +12,11 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, errorMessage, fieldErrors } from "@/lib/fetcher";
-import type { Status } from "@/lib/lifecycle";
 import { ageOn, ALLERGY_LABELS, alertLines, fullName, type Allergy } from "@/lib/patients";
 import { formatDateTime, manilaDate } from "@/lib/time";
+import type { PatientVisitJson } from "@/lib/visits";
+import type { Subject } from "@/lib/permissions";
+import { ChartTab } from "./chart-tab";
 
 export type PatientJson = {
   id: string;
@@ -42,18 +44,7 @@ export type PatientJson = {
   homeBranchName: string | null;
 };
 
-type PatientVisitJson = {
-  id: string;
-  start: string;
-  status: Status;
-  branchName: string;
-  chairNumber: number;
-  chairLabel: string;
-  dentistName: string;
-  procedures: string[];
-};
-
-export function PatientScreen({ patient, canEdit }: { patient: PatientJson; canEdit: boolean }) {
+export function PatientScreen({ patient, canEdit, staff, initialTab }: { patient: PatientJson; canEdit: boolean; staff: Subject; initialTab: string }) {
   const age = patient.birthday ? ageOn(patient.birthday, manilaDate(new Date())) : null;
   return (
     <div className="grid gap-4">
@@ -66,16 +57,20 @@ export function PatientScreen({ patient, canEdit }: { patient: PatientJson; canE
         </p>
       </div>
       <AlertBanner lines={alertLines(patient)} />
-      <Tabs defaultValue="details">
+      <Tabs defaultValue={initialTab}>
         <TabsList>
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="visits">Visits</TabsTrigger>
+          <TabsTrigger value="chart">Chart</TabsTrigger>
         </TabsList>
         <TabsContent value="details" className="pt-4">
           <DetailsPanel patient={patient} canEdit={canEdit} />
         </TabsContent>
         <TabsContent value="visits" className="pt-4">
           <VisitsPanel patientId={patient.id} />
+        </TabsContent>
+        <TabsContent value="chart" className="pt-4">
+          <ChartTab patientId={patient.id} staff={staff} />
         </TabsContent>
       </Tabs>
     </div>

@@ -35,6 +35,22 @@ export type VisitDetailJson = VisitJson & {
   history: { at: string; by: string; text: string }[];
 };
 
+/** GET /patients/{id}/visits: one of a patient's visits at any branch (`PatientVisit` in src/server/patients.ts). */
+export type PatientVisitJson = {
+  id: string;
+  start: string;
+  end: string;
+  status: Status;
+  branchCode: string;
+  branchName: string;
+  chairNumber: number;
+  chairLabel: string;
+  dentistId: string;
+  dentistName: string;
+  procedures: string[];
+  teeth: number[];
+};
+
 /** "Chair 2 · Ortho", or "Chair 2" without a label. */
 export function chairName(number: number, label: string): string {
   return label ? `Chair ${number} · ${label}` : `Chair ${number}`;
