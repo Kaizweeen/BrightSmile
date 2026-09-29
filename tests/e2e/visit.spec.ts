@@ -103,4 +103,42 @@ test("a visit from setup to completion", async ({ page, browser }) => {
   await dentist.goto("/downtown/my-day");
   await dentist.getByRole("button", { name: "Complete" }).click();
   await expect(dentist.getByText("Completed", { exact: true })).toBeVisible();
+
+  // Online booking: the owner turns it on and gives the dentist a week at the branch; a patient books tomorrow's first
+  // open time at /book; the front desk confirms it from Online requests.
+  const send = (method: "PATCH" | "PUT", path: string, data: object) => page.request.fetch(`/api/v1${path}`, { method, data, headers: { origin } });
+  expect((await send("PATCH", "/practice", { onlineBooking: true, privacyNotice: "E2E privacy notice." })).ok()).toBe(true);
+  const dana = ((await (await page.request.get("/api/v1/dentists")).json()) as { id: string; name: string }[]).find((d) => d.name === "Dr. Dana Dentist");
+  const downtown = ((await (await page.request.get("/api/v1/branches")).json()) as { id: string; code: string }[]).find((b) => b.code === "downtown");
+  const week = [0, 1, 2, 3, 4, 5, 6].map((dayOfWeek) => ({ branchId: downtown?.id, dayOfWeek, startTime: "09:00", endTime: "17:00" }));
+  expect((await send("PUT", `/dentists/${dana?.id}/schedule`, { blocks: week })).ok()).toBe(true);
+
+  const tomorrow = new Date(Date.now() + 8 * 3_600_000 + 86_400_000).toISOString().slice(0, 10);
+  const patient = await (await browser.newContext({ baseURL: origin })).newPage();
+  await patient.goto("/book");
+  await patient.getByLabel("Branch").selectOption({ label: "Downtown" });
+  await patient.getByLabel("Service").selectOption({ label: "Consultation" });
+  await patient.getByLabel("Day").selectOption(tomorrow);
+  await patient.getByRole("group", { name: "Open times" }).getByRole("button").first().click();
+  await patient.getByLabel("First name").fill("Ben");
+  await patient.getByLabel("Last name").fill("Cruz");
+  await patient.getByLabel("Mobile number").fill("0917 555 0101");
+  await patient.getByRole("checkbox", { name: /privacy notice/ }).check();
+
+  // The time is taken in between (the booking route answers 409 once): the patient sees why, then picks a time again and books for real.
+  const bookings = "**/api/v1/portal/bookings";
+  await patient.route(bookings, (route) => route.fulfill({ status: 409, json: { error: { code: "taken", message: "That time was just taken. Please pick another." } } }), { times: 1 });
+  await patient.getByRole("button", { name: "Request this time" }).click();
+  await expect(patient.getByText("That time was just taken. Please pick another.")).toBeVisible();
+  await patient.unroute(bookings);
+  await patient.getByRole("group", { name: "Open times" }).getByRole("button").first().click();
+  await patient.getByRole("button", { name: "Request this time" }).click();
+  await expect(patient.getByText("Your request is in.")).toBeVisible();
+
+  await page.goto("/downtown/calendar");
+  await page.getByRole("button", { name: "Online requests (1)" }).click();
+  await page.getByRole("dialog", { name: "Online requests" }).getByRole("button", { name: /Cruz, Ben/ }).click();
+  const online = page.getByRole("dialog", { name: "Cruz, Ben" });
+  await online.getByRole("button", { name: "Confirm" }).click();
+  await expect(online.getByText("Confirmed", { exact: true })).toBeVisible();
 });

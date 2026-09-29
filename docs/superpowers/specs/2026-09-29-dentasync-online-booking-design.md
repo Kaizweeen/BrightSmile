@@ -139,7 +139,7 @@ Every online booking writes one access log row: action `appointment.requested_on
 
 1. Run `npm run db:migrate` against Supabase, then merge (section 9).
 2. In Settings: the standard length and cleaning time; the 13 services with Offer online and their dentists (for example Braces and Retainers limited to the orthodontist); the privacy notice; then switch online booking on.
-3. Share `https://dentasync-ph.vercel.app/book`, for example on the clinic's Facebook page.
+3. Share `APP_URL/book` (https://www.brightsmile.pro/book since 2026-09-29), for example on the clinic's Facebook page.
 
 ## 15. Changes to part 1
 
