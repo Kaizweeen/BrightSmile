@@ -2494,3 +2494,16 @@ npm test; npm run lint; npm run typecheck; npm run build
 git add -A
 git commit -m "test: add the end-to-end visit run, and document going live" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
+
+## Final review fixes
+
+The whole-branch review of plan C found no critical problems. Its fixes (commit `fix: settle plan C's final review`) change the code above as follows:
+
+- **A note correction goes on the corrected note's own visit** (`addNote`): any other visit is refused ("Correct a note on its own visit."), so only that visit's dentist, or the owner who sees patients, can correct it; and a correction skips the "patient was seen" check, since the note was valid when written (a visit checked in, noted, then cancelled can still have its note corrected).
+- **The Chart tab lists every visit for the exam**, cancelled and no-show ones included (named as such), so an exam saved before a visit was cancelled stays readable; the default choice still skips them.
+- **The access log's patient filter also finds the patient's visit rows** (booked, moved, status changes, which are logged against the visit) and names the patient on them.
+- **The Postgres pool listens for dropped connections** (Neon closes idle ones), logging them through `loggable` instead of crashing the server.
+- **`npm run dev` refuses a remote `DATABASE_URL`**, and the README's migrate command unsets it afterwards in PowerShell, so a window used for a migration cannot point the dev server at the practice's data.
+- **The README's backups encrypt to the owner's public key** on a scheduled trusted computer, with pg_dump 17 and Neon's direct connection string; its first run reminds the owner to tick "I see patients" before charting.
+- **Focus follows the work:** the correction and void forms take focus when they open, Code takes it back after charting, and charting refreshes the Visits tab's teeth. The Legend summary is 44 pixels tall on phones; a row by a removed account says so in the access log.
+- **The seed test checks** that every chart entry, exam, and note belongs to a completed visit, by that visit's dentist, dated when it ended.
