@@ -1762,6 +1762,9 @@ export function NotesTab({ patientId, staff }: { patientId: string; staff: Subje
 
   return (
     <div className="grid max-w-3xl gap-6">
+      {/* The note form needs the visits: say so while they load, or if they fail, to anyone who may write notes. */}
+      {can(staff, "clinical.write") && visits.isError && <FormAlert message={errorMessage(visits.error)} />}
+      {can(staff, "clinical.write") && visits.isPending && <p className="text-muted-foreground">Loading visits...</p>}
       {chosen && (
         <section aria-labelledby="new-note-title" className="grid gap-3 rounded-lg border p-3">
           <h2 id="new-note-title" className="font-semibold">
