@@ -8,6 +8,7 @@ import { migrate } from "drizzle-orm/pglite/migrator";
 import { Pool } from "pg";
 import { loggable } from "@/server/errors";
 import * as schema from "./schema";
+import { databaseSsl } from "./ssl";
 
 export type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
 type Connection = { db: Db; ready: Promise<void> };
@@ -19,8 +20,8 @@ type Connection = { db: Db; ready: Promise<void> };
  */
 function connect(url = process.env.DATABASE_URL || "pglite:.data/dev"): Connection {
   if (!url.startsWith("pglite:")) {
-    const pool = new Pool({ connectionString: url, max: 5 });
-    // Neon closes idle connections; unheard, the pool's error event would crash the server.
+    const pool = new Pool({ connectionString: url, max: 5, ssl: databaseSsl(url) });
+    // The pooler closes idle connections; unheard, the pool's error event would crash the server.
     pool.on("error", (error) => console.error("A database connection dropped:", loggable(error)));
     const db = drizzlePostgres(pool, { schema });
     return { db: db as unknown as Db, ready: Promise.resolve() };
