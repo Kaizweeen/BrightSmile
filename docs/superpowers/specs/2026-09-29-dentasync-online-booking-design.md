@@ -6,7 +6,7 @@ Date: 2026-09-29. Status: design approved by Kai in chat on 2026-09-29. This is 
 
 | Question | Kai's answer |
 |---|---|
-| How do patients identify themselves? | No account: name and mobile number. |
+| How do patients identify themselves? | No account: first name, last name, and mobile number. A booking reuses a record only when all three match (ignoring case and surrounding spaces), because families share phones (section 7). |
 | Does an online booking wait for the clinic? | Yes: it enters as Requested, shows on the calendar at once, and the front desk confirms it. |
 | Who chooses the dentist? | DentaSync assigns one; patients never see dentist names. |
 | How long does a visit hold the dentist and chair? | A standard length the owner sets, changeable per visit by staff. Services have no length ("do not put length"). |
@@ -25,7 +25,7 @@ Kai also asked for the practice's 13 services (from its "Services offered" sign)
 The page is `/book`, public, made for phones, titled with the practice name. It works in four steps on one page, each able to go back:
 
 1. **Branch:** every active branch, by name.
-2. **Service:** every active service with Offer online on. No lengths are shown.
+2. **Service:** every active service with Offer online on, and, once a branch is chosen, only those offered at it: a service limited to dentists is offered only at the branches where one of them works (section 5), and is not listed at all when that is nowhere. Changing the branch clears a service it does not offer. No lengths are shown.
 3. **Day and time:** days from today to 30 days ahead (Manila dates), then the open start times that day (section 6.3), shown as times such as "10:30 AM". A day with no open times says "No open times this day. Try another day."
 4. **Details:** first name, last name, and mobile number, all required; a note, optional ("What would you like the dentist to know?", up to 500 characters); and a required box, "I agree to the privacy notice", whose words "privacy notice" open `/book/privacy` in a new tab. A hidden field, `website`, is the bot trap (section 8).
 
@@ -43,9 +43,9 @@ Mobile numbers are accepted as `09XXXXXXXXX` or `+639XXXXXXXXX` (spaces and dash
 
 ## 5. Services
 
-A service (the `procedures` table; the screens say "Services") has a name, an active switch, **Offer online** (on by default), and **Dentists** (the dentists who may be assigned it online). No dentists chosen means every dentist who sees patients may be. It has no length and no turnover.
+A service (the `procedures` table; the screens say "Services") has a name, an active switch, **Offer online** (on by default), and **Dentists** (the dentists who may be assigned it online). No dentists chosen means every dentist who sees patients may be; only active dentists who see patients can be chosen (a pending join request cannot, since a link to it would block declining it). It has no length and no turnover.
 
-The dentist limit applies only when DentaSync assigns a dentist online. Staff booking a visit may choose any dentist, as now.
+The dentist limit applies only when DentaSync assigns a dentist online. Staff booking a visit may choose any dentist, as now. Online, a limited service is offered only at the branches where at least one of its dentists works (the dentist is active, sees patients, and is linked to the branch, or is the owner, who works at every branch).
 
 ## 6. Length, turnover, and open times
 
@@ -74,16 +74,17 @@ At the chosen start, among the candidates free then, DentaSync picks the dentist
 
 ## 7. The patient record
 
-Before booking, DentaSync looks for patients whose mobile number equals the normalized number and whose last name equals the typed one, ignoring case and surrounding spaces. If there are any, the visit goes to the one with the lowest chart number. Otherwise it creates a patient with the first name, last name, and mobile number, the booking's branch as home branch, and no creator; staff complete the record and record the signed privacy consent at the visit, as for any patient. The person booking is never told whether a record matched.
+Before booking, DentaSync looks for patients whose mobile number equals the normalized number and whose first name and last name equal the typed ones, ignoring case and surrounding spaces. Families share phones, so a child booked from a parent's number gets a record of their own instead of landing on the parent's chart. If there are any matches, the visit goes to the one with the lowest chart number. Otherwise it creates a patient with the first name, last name, and mobile number, the booking's branch as home branch, and no creator; staff complete the record and record the signed privacy consent at the visit, as for any patient. The person booking is never told whether a record matched: the record is looked up only after the start has passed every check that does not need it (section 8), so a refused start is the same answer whoever asks.
 
 ## 8. Limits and the bot trap
 
-The bot trap is checked first; the rest in the booking's transaction, after an advisory lock (`dentasync.portal`) so that two bookings cannot both pass a count:
+The bot trap is checked first. Then come the refusals that need no lock, so a flood of them never queues behind real bookings: a start that is not from today to 30 days ahead (Manila dates), is off the 15-minute grid, or is less than 2 hours away gets 409 "That time was just taken. Please pick another.", and a client already at the per-connection limit gets its 429. The rest runs in the booking's transaction, after an advisory lock (`dentasync.portal`) so that two bookings cannot both pass a count. The transaction waits for the lock 5 seconds at most; then the booking is refused with 503 "Online booking is busy right now. Please try again in a moment."
 
 - **Bot trap:** a request whose `website` field is not empty gets the same 201 answer as a real booking, and nothing is saved.
 - **Online booking must be on**, the branch active, and the service active with Offer online on; otherwise 404 with a plain message ("Online booking isn't available right now.", "That branch doesn't take online bookings.", "That service isn't offered online.").
-- **Per connection:** at most 5 online bookings per client address per hour, counted from the access log as the join requests are (part 1 section 6.3); the sixth gets 429 "Too many bookings from this connection. Please call the clinic."
-- **Per patient:** at most 2 Requested online visits starting from now on for the matched patient; the third gets 429 "You already have 2 requests waiting. The clinic will call you."
+- **Per connection:** at most 5 online bookings per client per hour, counted from the access log as the join requests are (part 1 section 6.3), by a keyed hash of the client address (`details.client`, section 12); the sixth gets 429 "Too many bookings from this connection. Please call the clinic." It is counted before the lock, and again inside it.
+- **The start** must be among the public open starts (section 6.3, with no patient), then a dentist and chair are picked (section 6.4); otherwise 409 as above.
+- **Per patient,** once the record is looked up (section 7): at most 2 Requested online visits starting from now on for the matched patient, so the third gets 429 "You already have 2 requests waiting. The clinic will call you."; and no other active visit of the patient may overlap the booking's time, otherwise 409 as above. A new patient is created last.
 
 ## 9. Data changes (two migrations: additions, then drops, so drizzle-kit never has to ask whether a column was renamed)
 
@@ -93,7 +94,7 @@ The bot trap is checked first; the rest in the booking's transaction, after an a
 - New `procedure_dentists`: `procedure_id` (to `procedures`), `dentist_id` (to `users`), primary key on both, row level security on like every table.
 - `appointments.source` already allows `portal`, and `created_by` may be empty.
 
-The migration drops columns the running release reads, so the release goes out right after it: run `npm run db:migrate`, then merge. The site errors on service pages for the minute in between. That is acceptable while the practice is not yet taking patients; later releases must add before they drop.
+The second migration (0004) drops columns the running release still reads, and it cannot be undone. From the moment `npm run db:migrate` finishes until the new release is live, the calendar, My day, the visit panel, patient visit lists, bookings, and moves all fail, not only the Services pages. So the release goes out in this order: the branch's Vercel preview build has passed; a fresh backup is taken just before (the README's step 4, pg_dump); `npm run db:migrate` runs outside clinic hours; and the merge follows right after. Later releases must add before they drop.
 
 ## 10. API
 
@@ -102,7 +103,7 @@ Staff routes keep part 1's rules (sessions, permissions, `{ error }` bodies); th
 | Route | Change |
 |---|---|
 | `GET /api/v1/practice`, `PATCH /api/v1/practice` | Also `visitMinutes`, `cleaningMinutes`, `onlineBooking`, `privacyNotice` (owner only to change). Turning online booking on with an empty notice is refused (422, "Add the privacy notice first."). |
-| `GET/POST /api/v1/procedures`, `PATCH /api/v1/procedures/[id]` | Fields are `name`, `active`, `online`, `dentistIds` (empty means all); no lengths. A dentist id that is not a dentist who sees patients is refused (400). |
+| `GET/POST /api/v1/procedures`, `PATCH /api/v1/procedures/[id]` | Fields are `name`, `active`, `online`, `dentistIds` (empty means all); no lengths. A dentist id that is not an active dentist who sees patients is refused (400). |
 | `POST /api/v1/appointments` | Adds `minutes` (optional, the standard length when missing). Procedures no longer set the length. |
 | `PATCH /api/v1/appointments/[id]` | Adds `minutes` (optional; the visit's own length when missing). |
 | `GET /api/v1/availability` | Takes `minutes` (optional, the standard length when missing) instead of `procedures`; the rest as now. |
@@ -112,7 +113,7 @@ Staff routes keep part 1's rules (sessions, permissions, `{ error }` bodies); th
 
 `/book` and `/book/privacy` read the practice's settings, branches, and services on the server, so they need no route of their own.
 
-Every online booking writes one access log row: action `appointment.requested_online`, the appointment as entity, no user, and details `{ ip, privacyNoticeAccepted: true, online: true }`. A patient created by a booking gets a `patient.created` row with no user and `{ online: true }`. The access log and the visit's history name both "Online booking".
+Every online booking writes one access log row: action `appointment.requested_online`, the appointment as entity, no user, and details `{ client, privacyNoticeAccepted: true, online: true, start }`. `client` is a keyed hash of the client address, never the address (section 12), and `start` is the visit's start time as an instant. A patient created by a booking gets a `patient.created` row with no user and `{ online: true }`. The access log and the visit's history name both "Online booking".
 
 ## 11. Screens
 
@@ -124,22 +125,29 @@ Every online booking writes one access log row: action `appointment.requested_on
 
 ## 12. Security and privacy (RA 10173)
 
-- The public routes reveal only what section 10 lists: branch names and codes, online service names, open start times, and the notice. Nothing about patients, visits, or dentists leaves through them.
-- A booking can attach a Requested visit to an existing patient only by knowing both their mobile number and last name, and it shows the booker nothing; the clinic's confirming call reaches the number on file.
-- The client address is kept in the access log for the per-connection limit, as for join requests; the privacy notice should say so.
+- The public routes reveal only what section 10 lists: branch names and codes, online service names (with the branches that offer each), open start times, and the notice. Nothing about patients, visits, or dentists leaves through them.
+- A booking can attach a Requested visit to an existing patient only by knowing their mobile number, first name, and last name, and it shows the booker nothing; the clinic's confirming call reaches the number on file.
+- The client address is never stored. A booking, like a join request, keeps only a keyed hash of it in the access log (`details.client`: HMAC-SHA256 of the address with the app's secret, as 22 base64url characters; "unknown" when the host gives no address), and counts those hashes for the per-connection limit. Staff sign-in rows are different: they still hold the address, and only the owner reads the access log. The privacy notice should say that the booking page stores a scrambled code (a keyed hash) of the internet address each booking request comes from, never the address itself, and uses it to limit bookings from one connection to five an hour.
+- Consent evidence: every booking records `privacyNoticeAccepted`, and every change to the notice is logged in full (`practice.updated`, `privacyNotice`, at most 5000 characters and no personal data), so the clinic can show which notice was in force when a patient agreed.
+- The form has no guardian field, so it does not say who may agree for a child; the lawyer who reviews the notice should say who may.
 - Online booking stays off until the owner turns it on with a notice, which a lawyer should review (part 1 section 16).
 
 ## 13. Testing
 
 - **Unit:** mobile number normalization; the assignment choice (fewest visits, ties by name then id); open times with a length and cleaning time; the portal input schemas.
-- **Database:** an online booking creates a Requested `portal` visit with the assigned dentist and chair and the standard length; the service's dentist limit; matching an existing patient (and creating one when none matches); each refusal in section 8, the bot trap saving nothing, and a start taken in between; the access log row; staff booking and moving with a length; turning online booking on without a notice; row level security on `procedure_dentists` (the existing check covers it).
-- **End to end:** the existing run, updated for lengths, and a new run where a patient books at `/book` and the front desk confirms it from Online requests.
+- **Database:** an online booking creates a Requested `portal` visit with the assigned dentist and chair and the standard length; the service's dentist limit; matching an existing patient by mobile number, first name, and last name (and creating one when any differs); each refusal in section 8, the refusals that need no lock opening no transaction, the bot trap saving nothing, and a start taken in between; the access log row holding a keyed hash and no address; the services and branches `/book` offers; staff booking and moving with a length; turning online booking on without a notice; row level security on `procedure_dentists` (the existing check covers it).
+- **End to end:** the existing run, updated for lengths, and a new run where a patient books at `/book` (the Service list follows the branch) and the front desk confirms it from Online requests.
 
 ## 14. Going live
 
-1. Run `npm run db:migrate` against Supabase, then merge (section 9).
-2. In Settings: the standard length and cleaning time; the 13 services with Offer online and their dentists (for example Braces and Retainers limited to the orthodontist); the privacy notice; then switch online booking on.
-3. Share `APP_URL/book` (https://www.brightsmile.pro/book since 2026-09-29), for example on the clinic's Facebook page.
+1. The migration (section 9). First check that the branch's Vercel preview build passed. Take a fresh backup (the README's step 4, pg_dump) just before. Run `npm run db:migrate` against Supabase outside clinic hours, and merge right after: until the new release is live, the calendar, My day, the visit panel, patient visit lists, bookings, and moves all fail, and 0004 cannot be undone.
+2. Checks before online booking goes on:
+   - No branch is coded `all`, `api`, `book`, `join`, `login`, `poster`, `reset`, `setup`, or `waiting`: `select code from branches where code in ('all', 'api', 'book', 'join', 'login', 'poster', 'reset', 'setup', 'waiting');` returns nothing (such a branch's pages would be hidden behind the app's own).
+   - Every other address the site answers at (the bare domain, any old `.vercel.app` address) redirects to APP_URL, because bookings are refused from any other origin (part 1 section 11).
+3. In Settings: the standard length and cleaning time; the 13 services with Offer online and their dentists (for example Braces and Retainers limited to the orthodontist); the privacy notice (section 12: the keyed hash of the address, and, for the lawyer, who may agree for a child); then switch online booking on.
+4. Share `APP_URL/book` (https://www.brightsmile.pro/book since 2026-09-29), for example on the clinic's Facebook page.
+5. After the first real booking, check its access log row: in Supabase's SQL editor, `select details->>'client' from audit_log where action = 'appointment.requested_online' order by id desc limit 1;` shows a 22-character code, not `unknown` ("unknown" means the host gave no address, so every visitor would share one limit of five bookings an hour; the README's step 2 names the header).
+6. If spam arrives: switch online booking off in Settings, then cancel the fake requests from Online requests. Optionally add a Vercel Firewall rate-limit rule on `/api/v1/portal/*`.
 
 ## 15. Changes to part 1
 
