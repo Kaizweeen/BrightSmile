@@ -1,7 +1,7 @@
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { branchCodeSchema } from "@/server/branches";
+import { branchCodeSchema } from "@/lib/validation";
 
 // A branch lives at /{code}, so no code may be the name of one of the app's own top-level pages: every folder directly
 // under src/app that is a fixed name (not a dynamic "[branch]" or a route group "(name)").

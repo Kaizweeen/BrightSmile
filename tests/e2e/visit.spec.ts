@@ -132,6 +132,7 @@ test("a visit from setup to completion", async ({ page, browser }) => {
   await expect(patient.getByText("That time was just taken. Please pick another.")).toBeVisible();
   await patient.unroute(bookings);
   await patient.getByRole("group", { name: "Open times" }).getByRole("button").first().click();
+  await expect(patient.getByText("That time was just taken. Please pick another.")).toBeHidden();
   await patient.getByRole("button", { name: "Request this time" }).click();
   await expect(patient.getByText("Your request is in.")).toBeVisible();
 

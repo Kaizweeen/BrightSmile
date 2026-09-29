@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { appointments, branches, chairs, userBranches, users, type OperatingHours } from "@/db/schema";
 import { operatingHoursSchema } from "@/lib/hours";
 import { randomToken } from "@/lib/tokens";
+import { branchCodeSchema } from "@/lib/validation";
 import { audit } from "./audit";
 import { ApiError, notFound } from "./errors";
 import { requireCan } from "./guard";
@@ -13,16 +14,6 @@ import type { Staff } from "./session";
 export const ACTIVE_STATUSES = ["requested", "confirmed", "checked_in", "in_treatment"] as const;
 
 const somethingToChange = (patch: Record<string, unknown>) => Object.values(patch).some((value) => value !== undefined);
-
-/** A branch lives at /{code}, so its code may not be "all" (every branch at once) or one of the app's own top-level pages. */
-const RESERVED_CODES = new Set(["all", "api", "book", "join", "login", "poster", "reset", "setup", "waiting"]);
-
-export const branchCodeSchema = z
-  .string()
-  .trim()
-  .toLowerCase()
-  .regex(/^[a-z0-9][a-z0-9-]{0,22}[a-z0-9]$/, "Use 2 to 24 lowercase letters, numbers, or hyphens")
-  .refine((code) => !RESERVED_CODES.has(code), "That code is reserved");
 
 export const branchSchema = z.object({
   code: branchCodeSchema,

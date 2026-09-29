@@ -3,6 +3,7 @@
 Appointments, chairs, and dental charts for a dental practice with three branches in the Philippines.
 
 - Spec: `docs/superpowers/specs/2026-09-29-dentasync-part-1-scheduling-design.md`
+- Online booking spec, which overrides part 1 on visit lengths: `docs/superpowers/specs/2026-09-29-dentasync-online-booking-design.md`
 - Plans: `docs/superpowers/plans/`
 
 ## Run it
@@ -27,7 +28,7 @@ Appointments, chairs, and dental charts for a dental practice with three branche
 
 ## The end-to-end run
 
-`npm run test:e2e` starts its own dev server on port 3701 with a fresh database in `.data/e2e` and walks one visit through setup, a QR join, approval, booking, check-in, start of treatment, charting a tooth, the exam, a note, and completion.
+`npm run test:e2e` starts its own dev server on port 3701 with a fresh database in `.data/e2e` and walks one visit through setup, a QR join, approval, booking, check-in, start of treatment, charting a tooth, the exam, a note, and completion. After the visit, the owner turns online booking on, a patient books at `/book` (including a "just taken" refusal), and the front desk confirms the request from Online requests.
 
 - Stop `npm run dev` first; both would share `.next`.
 - Playwright needs a browser once: `npx playwright install chromium`. Or use an installed Chrome or Edge: `$env:PLAYWRIGHT_CHANNEL = "chrome"` in PowerShell, `PLAYWRIGHT_CHANNEL=chrome` elsewhere.
@@ -44,7 +45,7 @@ Spec section 16 holds the decisions. The steps:
 
    From a trusted computer, apply the migrations: run `npm run db:migrate` and paste the session pooler address when it asks (asked for, the password never lands in a command line or the shell's history). It prints "The database is up to date." or the database's reason for refusing. Run it again after any release that adds a file under `drizzle/`, before that release goes out.
 
-   A release that adds files under `drizzle/` needs them applied first; this one also drops the old procedure length columns, so merge right after migrating (the Services pages error for that minute).
+   A release that drops columns, like online booking's (the old procedure lengths), is merged right after its migration, and the Services pages error for that minute; later releases add before they drop.
 
    Supabase Free holds 500 MB (years of a 3-branch practice's records), keeps no backups of its own (step 4 makes them), and pauses a project after a week without use. Daily use keeps it awake; after a longer closure, the owner clicks Resume project in the dashboard and the data is all there.
 2. **App: Vercel.** Vercel's free Hobby plan is for personal, non-commercial use only, so a practice's app belongs on Pro ($20 a month per member). Import the GitHub repository as a new project and add no variables yet: that first deployment builds but will not start. `vercel.json` runs the server in Singapore, next to the database. Then open Settings, Environment Variables, and add four, each for Production only (untick Preview and Development, so preview builds of unmerged branches never reach the practice's data):
@@ -53,7 +54,7 @@ Spec section 16 holds the decisions. The steps:
    - `APP_URL`: the site's https origin with no trailing slash, the project's `.vercel.app` address or the practice's own domain. Settle it before printing the QR posters, which carry it.
 
    Then redeploy. The server refuses to start if any is missing or if `DATABASE_URL` points at PGlite. The sign-in and join limits count per visitor, by the address in a header the host sets and never takes from the visitor: `x-real-ip` on Vercel (found on its own there). On any other host, set `CLIENT_IP_HEADER` to that host's header (Netlify's `x-nf-client-connection-ip` is also found on its own).
-3. **First run.** Open `/setup` with the setup code to create the practice and the owner. If the owner sees patients, open Staff, edit their own row, and tick "I see patients" before booking or charting their visits. In Settings, set the standard visit length and chair cleaning time (Practice), add the real branches, hours, and chairs, and the services, each offered online or not and limited to certain dentists if needed (for example Braces and Retainers to the orthodontist); then each dentist's weekly schedule; and print each branch's QR poster for its staff room. To take online bookings, paste the privacy notice (reviewed by a lawyer; it should say the booking page keeps the visitor's internet address for an hour to limit repeat bookings) and switch online booking on. Patients book at `APP_URL/book`; their requests come in as Requested, marked Online, and the front desk confirms them from Online requests on the branch calendar.
+3. **First run.** Open `/setup` with the setup code to create the practice and the owner. If the owner sees patients, open Staff, edit their own row, and tick "I see patients" before booking or charting their visits. In Settings, set the standard visit length and chair cleaning time (Practice), add the real branches, hours, and chairs, and the services, each offered online or not and limited to certain dentists if needed (for example Braces and Retainers to the orthodontist); then each dentist's weekly schedule; and print each branch's QR poster for its staff room. To take online bookings, paste the privacy notice (reviewed by a lawyer; it should say that the booking page records each visitor's internet address in the access log and uses it to limit repeat bookings to five an hour) and switch online booking on. Patients book at `APP_URL/book`; their requests come in as Requested, marked Online, and the front desk confirms them from Online requests on the branch calendar.
 4. **Backups.** Supabase Free keeps no backups (its paid plans keep daily ones), so these nightly files are the practice's real backups. Each dump is encrypted to the owner's public key: the computer that runs the job holds no decryption key, only the database address (give it a read-only database role for the dumps), and only the owner can decrypt.
    - Once, on the owner's computer: make a key pair (`gpg --full-generate-key`), keep the private key there and on an offline copy, and export the public key (`gpg --export --armor OWNER_KEY_ID > owner.pub`).
    - On a trusted computer that stays on at night: install the pg_dump of the server's Postgres major version (`select version();` in Supabase's SQL editor shows it) and import the public key (`gpg --import owner.pub`). Download Supabase's certificate (Database settings, SSL Configuration), and set `BACKUP_DATABASE_URL` to the session pooler address with `?sslmode=verify-full&sslrootcert=` and the downloaded file's full path added (for example `C:/backups/prod-ca-2021.crt`), so pg_dump checks that it is talking to Supabase.
@@ -64,5 +65,5 @@ Spec section 16 holds the decisions. The steps:
    ```
 
    Before going live, restore one backup into a scratch database on the owner's computer (`gpg --decrypt dentasync-DATE.dump.gpg | pg_restore --dbname "$SCRATCH_DATABASE_URL"`) and note how long it took.
-5. **Before go-live.** The practice's real branch names, addresses, phones, hours, and chair labels; the procedure list with durations and turnover; the dentists' check of the PDA legend, surfaces, and exam items; the privacy notice and consent form, reviewed by a lawyer, saying the data is kept in Singapore (RA 10173); and the printed QR posters.
+5. **Before go-live.** The practice's real branch names, addresses, phones, hours, and chair labels; the service list (which are offered online, and to which dentists) and the standard visit length and chair cleaning time; the dentists' check of the PDA legend, surfaces, and exam items; the privacy notice and consent form, reviewed by a lawyer, saying the data is kept in Singapore (RA 10173) and what step 3 asks of the notice for online booking; and the printed QR posters.
 6. **After go-live.** The owner reads the access log in Settings. When someone leaves, disable them on the Staff page: it signs them out at once and lists their upcoming visits to move.
