@@ -53,8 +53,8 @@ While patient forms are off, the form page says "Patient forms aren't available 
 
 ## 5. What the front desk sees
 
-- A branch's Patients page gains a **Patient forms** button for the owner and the branch's managers (those who may add patients, `patient.edit`, and whose branches include this one; dentists cannot add patients, so they do not see it), reading "Patient forms (N)" once the count of waiting forms has loaded. `/all/patients` has none, as the calendar's Online requests has none there.
-- It opens the branch's waiting forms, the newest first: name, birthday, mobile number, and when it was sent.
+- A branch's Patients page gains a **Patient forms** button for the owner and the branch's managers (those who may add patients, `patient.edit`, and whose branches include this one; dentists cannot add patients, so they do not see it), reading "Patient forms (N)" once the count of waiting forms has loaded, or "Patient forms (100+)" when the list is full (the next point). `/all/patients` has none, as the calendar's Online requests has none there.
+- It opens the branch's newest 100 waiting forms, the newest first: name, birthday, mobile number, and when it was sent. Any others wait behind them and expire as in section 6. The cap keeps a flood of forms from making every listing, polled every 30 seconds, run thousands of queries, and keeps the real forms on top.
 - Choosing one shows all its details, and the existing patients it may be: those with the same last name, first name, and birthday, or the same mobile number and first name (the rule `createPatient` already uses for its duplicate warning). Three actions:
   - **New chart:** the Add patient dialog opens, filled in from the form, with the form's branch as home branch. Staff check it with the patient, complete what they like, and save. The duplicate warning works as it does now. Saving makes the chart and removes the form in one transaction.
   - **Existing patient:** staff pick one of the listed patients (or search for another). The form is removed and the patient's record opens, where staff change any detail that differs, as they would now.
@@ -88,7 +88,7 @@ In order, for `POST /api/v1/portal/forms`, as for bookings:
 1. The fields (section 4): 400 with a message per field; the privacy box: "Agree to the privacy notice to send the form."
 2. Patient forms off: 404 "Patient forms aren't available right now." An unknown or closed branch: 404 "That branch doesn't take patient forms."
 3. The bot trap: a filled `website` gets the normal answer, and nothing is saved or logged.
-4. Five forms an hour per connection: 429 "Too many forms from this connection. Please ask at the front desk." The connection is the keyed hash of its address (`clientKey`, as for bookings), counted from the `patient.form_received` rows of the last hour. Forms from one connection wait for each other (a lock on its keyed hash, held for the transaction), so the count holds even when many arrive at once.
+4. Five forms an hour per connection: 429 "Too many forms from this connection. Please ask at the front desk." The connection is the keyed hash of its address (`clientKey`, as for bookings), counted from the `patient.form_received` rows of the last hour. Forms from one connection wait for each other (a lock on its keyed hash, held for the transaction), so the count holds even when many arrive at once. The transaction waits for the lock 5 seconds at most; then the form is refused with 503 "Patient forms are busy right now. Please try again in a moment."
 
 Staff can switch forms off at once in Settings, and the Vercel Firewall rule on `/api/v1/portal/` already covers this address.
 
@@ -97,7 +97,7 @@ Staff can switch forms off at once in Settings, and the Vercel Firewall rule on 
 | Method and path | Who | Does |
 |---|---|---|
 | `POST /api/v1/portal/forms` | anyone | Saves a form (sections 4 and 7). 201 `{ firstName }`. |
-| `GET /api/v1/patient-forms?branch={code}` | the owner, or a manager of that branch | The branch's waiting forms, newest first, each with its possible patients. |
+| `GET /api/v1/patient-forms?branch={code}` | the owner, or a manager of that branch | The branch's newest 100 waiting forms, newest first, each with its possible patients. |
 | `POST /api/v1/patients` | patient.edit (as now) | Also takes `formId`: the chart is made and the form deleted in one transaction; a form already gone answers 404 "That form was already handled." and makes no chart. The form's branch must be one of the manager's (any branch for the owner). |
 | `POST /api/v1/patient-forms/{id}/attach` | the owner, or a manager of the form's branch | `{ patientId }`: deletes the form. 404 when the form or the patient is gone. |
 | `DELETE /api/v1/patient-forms/{id}` | the owner, or a manager of the form's branch | Deletes the form. 404 when it is gone. |
