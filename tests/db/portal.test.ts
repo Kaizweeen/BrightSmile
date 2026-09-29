@@ -216,27 +216,47 @@ describe("booking online", () => {
   it("is closed when online booking is off", async () => {
     const w = await world();
     await db.update(practice).set({ onlineBooking: false });
-    const res = await times(w.cleaning.id);
-    expect(res.status).toBe(404);
-    expect((await res.json()).error.message).toBe("Online booking isn't available right now.");
-    const booked = await bookOnline({ branch: "downtown", service: w.cleaning.id, start: at("16:00", TUESDAY).toISOString(), ...details("Fe", "Lim", "09190000007") }, 6);
-    expect(booked.status).toBe(404);
-    await db.update(practice).set({ onlineBooking: true });
+    try {
+      const res = await times(w.cleaning.id);
+      expect(res.status).toBe(404);
+      expect((await res.json()).error.message).toBe("Online booking isn't available right now.");
+      // Refused before the lock: every request while online booking is off would otherwise queue behind real bookings.
+      const booked = await bookCountingTransactions({ branch: "downtown", service: w.cleaning.id, start: at("16:00", TUESDAY).toISOString(), ...details("Fe", "Lim", "09190000007") }, 6);
+      expect(booked.res.status).toBe(404);
+      expect((await booked.res.json()).error.message).toBe("Online booking isn't available right now.");
+      expect(booked.transactions).toBe(0);
+    } finally {
+      await db.update(practice).set({ onlineBooking: true });
+    }
   });
 
   it("refuses a branch that is closed", async () => {
     const w = await world();
     await db.update(branches).set({ active: false }).where(eq(branches.id, w.dt.id));
     try {
-      const booked = await bookOnline({ branch: "downtown", service: w.cleaning.id, start: at("16:00", TUESDAY).toISOString(), ...details("Fe", "Lim", "09190000007") }, 6);
-      expect(booked.status).toBe(404);
-      expect((await booked.json()).error.message).toBe("That branch doesn't take online bookings.");
+      const booked = await bookCountingTransactions({ branch: "downtown", service: w.cleaning.id, start: at("16:00", TUESDAY).toISOString(), ...details("Fe", "Lim", "09190000007") }, 6);
+      expect(booked.res.status).toBe(404);
+      expect((await booked.res.json()).error.message).toBe("That branch doesn't take online bookings.");
+      expect(booked.transactions).toBe(0);
       const open = await times(w.cleaning.id);
       expect(open.status).toBe(404);
       expect((await open.json()).error.message).toBe("That branch doesn't take online bookings.");
     } finally {
       await db.update(branches).set({ active: true }).where(eq(branches.id, w.dt.id));
     }
+  });
+
+  it("refuses an unknown branch, or a service that is not offered online, without the lock", async () => {
+    const w = await world();
+    const start = at("16:00", TUESDAY).toISOString();
+    const nowhere = await bookCountingTransactions({ branch: "nowhere", service: w.cleaning.id, start, ...details("Fe", "Lim", "09190000007") }, 6);
+    expect(nowhere.res.status).toBe(404);
+    expect((await nowhere.res.json()).error.message).toBe("That branch doesn't take online bookings.");
+    expect(nowhere.transactions).toBe(0);
+    const hidden = await bookCountingTransactions({ branch: "downtown", service: w.hidden.id, start, ...details("Fe", "Lim", "09190000007") }, 6);
+    expect(hidden.res.status).toBe(404);
+    expect((await hidden.res.json()).error.message).toBe("That service isn't offered online.");
+    expect(hidden.transactions).toBe(0);
   });
 });
 
@@ -275,6 +295,12 @@ describe("refusals on the booking route", () => {
     await expectTaken(at("10:00", "2026-11-09"), "Vera", "Faraway", "09190000105", 7);
   });
 
+  it("refuses a well-formed start that is not open, such as 03:00 outside every schedule", async () => {
+    // On the grid, inside the 30 days, and more than two hours away, yet no dentist is there: at night, and on a Wednesday.
+    await expectTaken(at("03:00", TUESDAY), "Nina", "Night", "09190000107", 7);
+    await expectTaken(at("10:00", WEDNESDAY), "Wes", "Weekday", "09190000108", 7);
+  });
+
   it("gives a patient no second visit at the same time, though another dentist is free", async () => {
     const w = await world();
     const rosa = { branch: "downtown", service: w.cleaning.id, ...details("Rosa", "Nolasco", "09190000103") };
@@ -298,6 +324,7 @@ describe("refusals on the booking route", () => {
   it("answers busy when the database gives up waiting for the global lock", async () => {
     const w = await world();
     // A real wait needs two connections and PGlite has one, so the database's answer (55P03, lock_not_available) is injected.
+    // The start must be an open one (both dentists are free at 15:00 that Monday), or the lock-free checks would refuse it first.
     const real = (globalThis as unknown as { __dentasync: { db: typeof db } }).__dentasync.db;
     const spy = vi.spyOn(real, "transaction").mockRejectedValueOnce(Object.assign(new Error("canceling statement due to lock timeout"), { code: "55P03" }));
     try {

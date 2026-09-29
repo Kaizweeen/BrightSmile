@@ -23,7 +23,8 @@ test("a visit from setup to completion", async ({ page, browser }) => {
   await page.getByLabel("Password", { exact: true }).fill("owner password 1");
   await page.getByLabel("Password again").fill("owner password 1");
   await page.getByRole("button", { name: "Set up DentaSync" }).click();
-  await expect(page.getByRole("heading", { name: "All branches" })).toBeVisible();
+  // The first sign-in after a build can take over 30 seconds while the dev server compiles.
+  await expect(page.getByRole("heading", { name: "All branches" })).toBeVisible({ timeout: 60_000 });
 
   // A branch, a chair, and a procedure through the API, as the owner (the Settings screens have their own checks).
   const hours = Object.fromEntries(["0", "1", "2", "3", "4", "5", "6"].map((day) => [day, { open: "09:00", close: "18:00" }]));

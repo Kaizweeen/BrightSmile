@@ -69,8 +69,8 @@ export async function portalInfo(): Promise<PortalInfo> {
 /**
  * The branch and service a patient picked, refused as in online booking spec 8, with the service's dentists (null: all).
  * With `lock`, in a booking's transaction, the branch is read with the shared lock staff bookings take (src/server/booking.ts):
- * closing the branch waits for the booking, and a closing that committed first is seen here. The public open times and the
- * bot trap only read, so they pass false.
+ * closing the branch waits for the booking, and a closing that committed first is seen here. The public open times, the bot
+ * trap, and a booking's lock-free checks before its transaction only read, so they pass false.
  */
 async function target(tx: Db, branchCode: string, serviceId: string, lock: boolean) {
   const settings = await practiceSettings(tx);
@@ -182,29 +182,35 @@ async function bookingsFrom(tx: Db, client: string): Promise<number> {
 
 /** POST /portal/bookings (online booking spec 3 to 8). Answers with names only, never anything about existing records. */
 export async function bookOnline(input: z.infer<typeof onlineBookingSchema>, client: string): Promise<{ branch: string; service: string; start: string }> {
+  // The practice, branch, and service as they are now, read without the lock: a closed practice, or an unknown branch or
+  // service, answers 404 before anything else, and the refusals below never ask for the global lock. This read can be a
+  // moment out of date. `t` inside the transaction is the same read with the locks, and it is the one that decides.
+  const early = await target(db, input.branch, input.service, false);
   // The bot trap: the same answer as a real booking, and nothing saved.
   if (input.website !== "") {
-    const t = await target(db, input.branch, input.service, false);
-    return { branch: t.branch.name, service: t.service.name, start: new Date(input.start).toISOString() };
+    return { branch: early.branch.name, service: early.service.name, start: new Date(input.start).toISOString() };
   }
   const now = new Date();
   const start = new Date(input.start);
-  // Refusals that need no lock, so a flood of them never queues behind real bookings: a start no list of open times could
-  // hold (out of range, off the grid, or too soon), and a client that is already at its limit.
+  const date = manilaDate(start);
+  // More refusals that need no lock, so a flood of them never queues behind real bookings: a start no list of open times
+  // could hold (out of range, off the grid, or too soon), a client that is already at its limit, and a start that is not
+  // among the open starts right now.
   const offGrid = start.getTime() % 60_000 !== 0 || manilaMinutes(start) % STEP !== 0;
-  if (!bookable(manilaDate(start), now) || offGrid || start.getTime() < now.getTime() + NOTICE_MS) throw taken();
+  if (!bookable(date, now) || offGrid || start.getTime() < now.getTime() + NOTICE_MS) throw taken();
   if ((await bookingsFrom(db, client)) >= BOOKINGS_PER_CLIENT_PER_HOUR) throw tooMany();
+  if (!(await openStarts(db, early, date, now)).some((o) => o.start.getTime() === start.getTime())) throw taken();
   try {
     return await db.transaction(async (tx) => {
       // A busy lock is waited for a few seconds at most, so one stuck booking cannot hold every other one until the request times out.
       await tx.execute(sql`set local lock_timeout = '5s'`);
       // One online booking at a time, so two cannot both pass the counts below.
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('dentasync.portal'))`);
+      // The reads that decide: what `early` read without the lock is read again with it, and with the shared row locks.
       const t = await target(tx, input.branch, input.service, true);
       if ((await bookingsFrom(tx, client)) >= BOOKINGS_PER_CLIENT_PER_HOUR) throw tooMany();
-      // The start comes first, against the public open starts, and the patient only after it: a refused start is the same
-      // answer whoever asks, so it never shows whether a record matched (spec 7).
-      const date = manilaDate(start);
+      // The start comes first, against the public open starts again, and the patient only after it: a refused start is the
+      // same answer whoever asks (spec 7).
       const slot = (await openStarts(tx, t, date, now)).find((o) => o.start.getTime() === start.getTime());
       if (!slot) throw taken();
       const dentist = chooseDentist(slot.dentists, await visitsOn(tx, date, slot.dentists.map((d) => d.id)));
