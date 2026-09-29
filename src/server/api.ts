@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { getIP } from "better-auth/api";
 import { NextResponse, type NextRequest } from "next/server";
 import { ZodError, z } from "zod";
@@ -100,7 +101,13 @@ export async function readJson<S extends z.ZodType>(req: NextRequest, schema: S)
   return schema.parse(raw);
 }
 
-/** The caller's IP address for the join limit, read from the same header as the sign-in limit (src/lib/auth.ts). */
-export function clientIp(req: NextRequest): string {
-  return getIP(req, auth.options) ?? "unknown";
+/**
+ * Who is calling, for the join and booking limits: a keyed hash of the caller's address, read from the same header as the
+ * sign-in limit (src/lib/auth.ts), or "unknown" when there is none. The address itself is never stored (RA 10173).
+ */
+export function clientKey(req: NextRequest): string {
+  const address = getIP(req, auth.options);
+  if (!address) return "unknown";
+  const secret = process.env.BETTER_AUTH_SECRET || "development-only-secret-do-not-use-in-production";
+  return createHmac("sha256", secret).update(address).digest("base64url").slice(0, 22);
 }

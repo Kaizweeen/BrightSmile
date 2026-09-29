@@ -3,7 +3,8 @@ import { mergeRanges, overlaps, type Visit, type WeeklyBlock } from "./booking-r
 import { hoursOn } from "./hours";
 import { manilaInstant, toMinutes, weekday } from "./time";
 
-const STEP = 15;
+/** The grid of start times, in minutes. */
+export const STEP = 15;
 
 export type SlotFacts = {
   date: string;

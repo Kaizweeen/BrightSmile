@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { and, eq, max } from "drizzle-orm";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import * as appointmentRoute from "@/app/api/v1/appointments/[id]/route";
@@ -7,6 +8,7 @@ import * as timesRoute from "@/app/api/v1/portal/times/route";
 import { db } from "@/db";
 import { appointmentProcedures, appointments, auditLog, branches, chairs, dentistSchedules, patients, practice, procedureDentists, procedures } from "@/db/schema";
 import { normalizeMobile } from "@/lib/validation";
+import { clientKey } from "@/server/api";
 import { call, makeBranch, makeUser, request, signIn } from "../helpers";
 
 const MONDAY = "2026-10-05";
@@ -14,6 +16,8 @@ const TUESDAY = "2026-10-06";
 const WEDNESDAY = "2026-10-07";
 // The next Monday: nothing is booked then, and both dentists work.
 const NEXT_MONDAY = "2026-10-12";
+// The Monday after that, for bookings no other test looks at.
+const LATER_MONDAY = "2026-10-19";
 const at = (clock: string, date = MONDAY) => new Date(`${date}T${clock}:00+08:00`);
 // 08:00 on Monday in Manila: with two hours' notice, the first online start is 10:00.
 vi.useFakeTimers({ toFake: ["Date"], now: at("08:00") });
@@ -49,6 +53,23 @@ const times = async (service: string, date = MONDAY) =>
 const bookOnline = (body: Record<string, unknown>, from = 1) =>
   call(bookingsRoute.POST, request("/api/v1/portal/bookings", { method: "POST", body, headers: ip(from) }));
 const details = (firstName: string, lastName: string, mobile: string) => ({ firstName, lastName, mobile, consent: true });
+/** What the access log holds for the address `ip(n)` sends: a keyed hash of it (src/server/api.ts). */
+const clientOf = (n: number) => clientKey(request("/api/v1/portal/bookings", { headers: ip(n) }));
+
+/**
+ * A booking, and how many transactions it opened. A booking takes the global lock inside its transaction, so a refusal
+ * that opens none never asked for the lock, and a busy lock cannot delay it.
+ */
+async function bookCountingTransactions(body: Record<string, unknown>, from: number) {
+  const real = (globalThis as unknown as { __dentasync: { db: typeof db } }).__dentasync.db;
+  const spy = vi.spyOn(real, "transaction");
+  try {
+    const res = await bookOnline(body, from);
+    return { res, transactions: spy.mock.calls.length };
+  } finally {
+    spy.mockRestore();
+  }
+}
 
 describe("open times online", () => {
   it("offers the open starts two hours away at the earliest, and nothing more", async () => {
@@ -93,7 +114,11 @@ describe("booking online", () => {
     const services = await db.select().from(appointmentProcedures).where(eq(appointmentProcedures.appointmentId, visit.id));
     expect(services).toMatchObject([{ position: 0, procedureId: w.cleaning.id, name: "Oral Prophylaxis (Cleaning)" }]);
     const [log] = await db.select().from(auditLog).where(and(eq(auditLog.entityId, visit.id), eq(auditLog.action, "appointment.requested_online")));
-    expect(log).toMatchObject({ userId: null, details: { ip: "203.0.113.1", privacyNoticeAccepted: true, online: true } });
+    expect(log).toMatchObject({ userId: null, details: { client: clientOf(1), privacyNoticeAccepted: true, online: true, start: at("10:00").toISOString() } });
+    // The address itself is never stored (RA 10173): the row holds a keyed hash of it.
+    expect(clientOf(1)).toBe(createHmac("sha256", process.env.BETTER_AUTH_SECRET as string).update("203.0.113.1").digest("base64url").slice(0, 22));
+    expect(log.details).not.toHaveProperty("ip");
+    expect(JSON.stringify(log.details)).not.toContain("203.0.113.1");
     // The new patient's own row names no one and holds nothing about them.
     const [created] = await db.select().from(auditLog).where(and(eq(auditLog.entityId, patient.id), eq(auditLog.action, "patient.created")));
     expect(created).toMatchObject({ userId: null, entity: "patient", branchId: w.dt.id });
@@ -120,11 +145,24 @@ describe("booking online", () => {
   it("puts a returning patient's booking on their record", async () => {
     const w = await world();
     const [dee] = await db.insert(patients).values({ lastName: "Reyes", firstName: "Dee", mobile: "+639181112222" }).returning();
-    const res = await bookOnline({ branch: "downtown", service: w.cleaning.id, start: at("15:00").toISOString(), ...details("Dee", " reyes ", "09181112222") }, 2);
+    const res = await bookOnline({ branch: "downtown", service: w.cleaning.id, start: at("15:00").toISOString(), ...details(" DEE ", " reyes ", "09181112222") }, 2);
     expect(res.status).toBe(201);
     expect(await db.select().from(patients).where(eq(patients.mobile, "+639181112222"))).toHaveLength(1);
     const [visit] = await db.select().from(appointments).where(eq(appointments.patientId, dee.id));
     expect(visit.startTime.toISOString()).toBe(at("15:00").toISOString());
+  });
+
+  it("gives another first name on the same mobile number and last name a record of its own", async () => {
+    const w = await world();
+    // A parent's phone: a child booked from it must not land on the parent's chart.
+    const [lorna] = await db.insert(patients).values({ lastName: "Dizon", firstName: "Lorna", mobile: "+639182223333" }).returning();
+    const res = await bookOnline({ branch: "downtown", service: w.cleaning.id, start: at("13:00", LATER_MONDAY).toISOString(), ...details("Mika", "Dizon", "0918 222 3333") }, 9);
+    expect(res.status).toBe(201);
+    const onThatNumber = await db.select().from(patients).where(eq(patients.mobile, "+639182223333"));
+    expect(onThatNumber.map((p) => p.firstName).sort()).toEqual(["Lorna", "Mika"]);
+    const mika = onThatNumber.find((p) => p.firstName === "Mika");
+    expect(await db.select().from(appointments).where(eq(appointments.patientId, mika?.id ?? ""))).toHaveLength(1);
+    expect(await db.select().from(appointments).where(eq(appointments.patientId, lorna.id))).toEqual([]);
   });
 
   it("refuses a time that was just taken", async () => {
@@ -140,6 +178,9 @@ describe("booking online", () => {
     const third = await bookOnline({ branch: "downtown", service: w.cleaning.id, start: at("09:00", TUESDAY).toISOString(), ...details("Ana", "Santos", "09171234567") }, 3);
     expect(third.status).toBe(429);
     expect((await third.json()).error.message).toBe("You already have 2 requests waiting. The clinic will call you.");
+    // A time that is taken is refused as taken, whoever asks: the answer never depends on the patient (spec 7).
+    const gone = await bookOnline({ branch: "downtown", service: w.cleaning.id, start: at("10:00").toISOString(), ...details("Ana", "Santos", "09171234567") }, 3);
+    expect(gone.status).toBe(409);
   });
 
   it("allows five bookings an hour from one connection", async () => {
@@ -148,9 +189,11 @@ describe("booking online", () => {
       const res = await bookOnline({ branch: "downtown", service: w.cleaning.id, start: at(`${10 + i}:00`, TUESDAY).toISOString(), ...details("Guest", `Five${i}`, `0919000000${i}`) }, 4);
       expect(res.status).toBe(201);
     }
-    const sixth = await bookOnline({ branch: "downtown", service: w.cleaning.id, start: at("15:00", TUESDAY).toISOString(), ...details("Guest", "Six", "09190000009") }, 4);
-    expect(sixth.status).toBe(429);
-    expect((await sixth.json()).error.message).toBe("Too many bookings from this connection. Please call the clinic.");
+    const sixth = await bookCountingTransactions({ branch: "downtown", service: w.cleaning.id, start: at("15:00", TUESDAY).toISOString(), ...details("Guest", "Six", "09190000009") }, 4);
+    expect(sixth.res.status).toBe(429);
+    expect((await sixth.res.json()).error.message).toBe("Too many bookings from this connection. Please call the clinic.");
+    // A connection at its limit is refused before the lock, so it never queues behind other bookings.
+    expect(sixth.transactions).toBe(0);
   });
 
   it("answers a bot as if it booked, and saves nothing", async () => {
@@ -204,13 +247,15 @@ describe("refusals on the booking route", () => {
     chartNoBefore = (await db.select({ n: max(patients.chartNo) }).from(patients))[0].n ?? 0;
   });
 
-  /** A booking the route refuses as taken: it says so, saves no visit, and leaves no patient for the new mobile number. */
+  /** A start no list offers, refused as taken before the lock: nothing is saved, and no patient is left for the new mobile number. */
   async function expectTaken(start: Date, firstName: string, lastName: string, mobile: string, from: number) {
     const w = await world();
     const visits = (await db.select().from(appointments)).length;
-    const res = await bookOnline({ branch: "downtown", service: w.cleaning.id, start: start.toISOString(), ...details(firstName, lastName, mobile) }, from);
+    const { res, transactions } = await bookCountingTransactions({ branch: "downtown", service: w.cleaning.id, start: start.toISOString(), ...details(firstName, lastName, mobile) }, from);
     expect(res.status).toBe(409);
     expect((await res.json()).error.message).toBe("That time was just taken. Please pick another.");
+    // No transaction, so no global lock.
+    expect(transactions).toBe(0);
     expect((await db.select().from(appointments)).length).toBe(visits);
     expect(await db.select().from(patients).where(eq(patients.mobile, normalizeMobile(mobile) ?? ""))).toEqual([]);
   }
@@ -221,6 +266,12 @@ describe("refusals on the booking route", () => {
 
   it("refuses a start off the 15-minute grid", async () => {
     await expectTaken(at("10:07"), "Ollie", "Grid", "09190000102", 7);
+    await expectTaken(new Date(at("10:15").getTime() + 30_000), "Ollie", "Seconds", "09190000102", 7);
+  });
+
+  it("refuses a start more than 30 days ahead", async () => {
+    // 35 days after Monday 2026-10-05, at a time the branch is open.
+    await expectTaken(at("10:00", "2026-11-09"), "Vera", "Faraway", "09190000105", 7);
   });
 
   it("gives a patient no second visit at the same time, though another dentist is free", async () => {
@@ -241,6 +292,20 @@ describe("refusals on the booking route", () => {
     // The two refusals of new patients before this test used no chart number: Rosa's is the one after the highest.
     const [patient] = await db.select().from(patients).where(eq(patients.mobile, "+639190000103"));
     expect(patient.chartNo).toBe(chartNoBefore + 1);
+  });
+
+  it("answers busy when the database gives up waiting for the global lock", async () => {
+    const w = await world();
+    // A real wait needs two connections and PGlite has one, so the database's answer (55P03, lock_not_available) is injected.
+    const real = (globalThis as unknown as { __dentasync: { db: typeof db } }).__dentasync.db;
+    const spy = vi.spyOn(real, "transaction").mockRejectedValueOnce(Object.assign(new Error("canceling statement due to lock timeout"), { code: "55P03" }));
+    try {
+      const res = await bookOnline({ branch: "downtown", service: w.cleaning.id, start: at("15:00", LATER_MONDAY).toISOString(), ...details("Lock", "Busy", "09190000106") }, 11);
+      expect(res.status).toBe(503);
+      expect((await res.json()).error).toMatchObject({ code: "busy", message: "Online booking is busy right now. Please try again in a moment." });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
@@ -282,5 +347,13 @@ describe("online requests", () => {
     const w = await world();
     const res = await call(onlineRequestsRoute.GET, request("/api/v1/online-requests?branch=downtown", { cookie: w.reyesCookie }));
     expect(res.status).toBe(403);
+  });
+});
+
+describe("the access log", () => {
+  it("holds no client address from any booking above", async () => {
+    const rows = await db.select().from(auditLog);
+    expect(rows.filter((r) => r.action === "appointment.requested_online").length).toBeGreaterThan(5);
+    expect(JSON.stringify(rows.map((r) => r.details))).not.toContain("203.0.113.");
   });
 });

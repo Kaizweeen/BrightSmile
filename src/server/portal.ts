@@ -2,8 +2,10 @@ import { and, asc, count, eq, gt, gte, inArray, lt, notInArray, sql } from "driz
 import { z } from "zod";
 import { db, type Db } from "@/db";
 import { appointmentProcedures, appointments, auditLog, branches, chairs, patients, procedureDentists, procedures, users } from "@/db/schema";
+import { ACTIVE } from "@/lib/lifecycle";
 import { bookable, chooseDentist, NOTICE_MS } from "@/lib/portal";
-import { addDays, manilaDate, manilaInstant } from "@/lib/time";
+import { STEP } from "@/lib/slots";
+import { addDays, manilaDate, manilaInstant, manilaMinutes } from "@/lib/time";
 import { mobileSchema } from "@/lib/validation";
 import { audit } from "./audit";
 import { findOpenTimes } from "./availability";
@@ -14,11 +16,13 @@ import { practiceSettings } from "./practice";
 import type { Staff } from "./session";
 
 /** Online booking spec 8. */
-const BOOKINGS_PER_IP_PER_HOUR = 5;
+const BOOKINGS_PER_CLIENT_PER_HOUR = 5;
 const WAITING_PER_PATIENT = 2;
 
 const closed = () => new ApiError(404, "closed", "Online booking isn't available right now.");
 const taken = () => new ApiError(409, "taken", "That time was just taken. Please pick another.");
+const tooMany = () => new ApiError(429, "too_many_requests", "Too many bookings from this connection. Please call the clinic.");
+const busy = () => new ApiError(503, "busy", "Online booking is busy right now. Please try again in a moment.");
 
 export type PortalInfo =
   | { open: false; practiceName: string }
@@ -62,7 +66,7 @@ async function target(tx: Db, branchCode: string, serviceId: string, lock: boole
 type Target = Awaited<ReturnType<typeof target>>;
 
 /** Online booking spec 6.3: the open starts at the standard length, two hours away at the earliest. */
-function openStarts(tx: Db, t: Target, date: string, now: Date, patientId?: string) {
+function openStarts(tx: Db, t: Target, date: string, now: Date) {
   return findOpenTimes(
     {
       branch: t.branch,
@@ -71,7 +75,6 @@ function openStarts(tx: Db, t: Target, date: string, now: Date, patientId?: stri
       turnover: t.settings.cleaningMinutes,
       notBefore: new Date(now.getTime() + NOTICE_MS),
       dentistIds: t.dentistIds,
-      patientId,
     },
     tx,
   );
@@ -100,12 +103,21 @@ export const onlineBookingSchema = z.object({
   website: z.string().max(200).optional().default(""),
 });
 
-/** Online booking spec 7: the existing patient with this mobile number and last name (lowest chart number), if there is one. */
-async function findPatient(tx: Db, input: { lastName: string; mobile: string }): Promise<string | null> {
+/**
+ * Online booking spec 7: the existing patient with this mobile number, first name, and last name (lowest chart number), if there
+ * is one. Families share phones, so a child booked from a parent's number never lands on the parent's chart.
+ */
+async function findPatient(tx: Db, input: { firstName: string; lastName: string; mobile: string }): Promise<string | null> {
   const [found] = await tx
     .select({ id: patients.id })
     .from(patients)
-    .where(and(eq(patients.mobile, input.mobile), sql`lower(trim(${patients.lastName})) = lower(${input.lastName})`))
+    .where(
+      and(
+        eq(patients.mobile, input.mobile),
+        sql`lower(trim(${patients.firstName})) = lower(${input.firstName})`,
+        sql`lower(trim(${patients.lastName})) = lower(${input.lastName})`,
+      ),
+    )
     .orderBy(asc(patients.chartNo))
     .limit(1);
   return found?.id ?? null;
@@ -138,8 +150,17 @@ async function visitsOn(tx: Db, date: string, dentistIds: string[]): Promise<Map
   return new Map(rows.map((r) => [r.dentistId, r.n]));
 }
 
+/** This client's online bookings in the last hour, counted from the access log (online booking spec 8). */
+async function bookingsFrom(tx: Db, client: string): Promise<number> {
+  const [row] = await tx
+    .select({ n: count() })
+    .from(auditLog)
+    .where(and(eq(auditLog.action, "appointment.requested_online"), sql`${auditLog.details}->>'client' = ${client}`, gt(auditLog.at, sql`now() - interval '1 hour'`)));
+  return row.n;
+}
+
 /** POST /portal/bookings (online booking spec 3 to 8). Answers with names only, never anything about existing records. */
-export async function bookOnline(input: z.infer<typeof onlineBookingSchema>, ip: string): Promise<{ branch: string; service: string; start: string }> {
+export async function bookOnline(input: z.infer<typeof onlineBookingSchema>, client: string): Promise<{ branch: string; service: string; start: string }> {
   // The bot trap: the same answer as a real booking, and nothing saved.
   if (input.website !== "") {
     const t = await target(db, input.branch, input.service, false);
@@ -147,32 +168,23 @@ export async function bookOnline(input: z.infer<typeof onlineBookingSchema>, ip:
   }
   const now = new Date();
   const start = new Date(input.start);
+  // Refusals that need no lock, so a flood of them never queues behind real bookings: a start no list of open times could
+  // hold (out of range, off the grid, or too soon), and a client that is already at its limit.
+  const offGrid = start.getTime() % 60_000 !== 0 || manilaMinutes(start) % STEP !== 0;
+  if (!bookable(manilaDate(start), now) || offGrid || start.getTime() < now.getTime() + NOTICE_MS) throw taken();
+  if ((await bookingsFrom(db, client)) >= BOOKINGS_PER_CLIENT_PER_HOUR) throw tooMany();
   try {
     return await db.transaction(async (tx) => {
+      // A busy lock is waited for a few seconds at most, so one stuck booking cannot hold every other one until the request times out.
+      await tx.execute(sql`set local lock_timeout = '5s'`);
       // One online booking at a time, so two cannot both pass the counts below.
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('dentasync.portal'))`);
       const t = await target(tx, input.branch, input.service, true);
-      const [fromIp] = await tx
-        .select({ n: count() })
-        .from(auditLog)
-        .where(and(eq(auditLog.action, "appointment.requested_online"), sql`${auditLog.details}->>'ip' = ${ip}`, gt(auditLog.at, sql`now() - interval '1 hour'`)));
-      if (fromIp.n >= BOOKINGS_PER_IP_PER_HOUR) {
-        throw new ApiError(429, "too_many_requests", "Too many bookings from this connection. Please call the clinic.");
-      }
-      const existing = await findPatient(tx, input);
-      if (existing) {
-        const [waiting] = await tx
-          .select({ n: count() })
-          .from(appointments)
-          .where(and(eq(appointments.patientId, existing), eq(appointments.source, "portal"), eq(appointments.status, "requested"), gt(appointments.startTime, now)));
-        if (waiting.n >= WAITING_PER_PATIENT) {
-          throw new ApiError(429, "too_many_waiting", "You already have 2 requests waiting. The clinic will call you.");
-        }
-      }
+      if ((await bookingsFrom(tx, client)) >= BOOKINGS_PER_CLIENT_PER_HOUR) throw tooMany();
+      // The start comes first, against the public open starts, and the patient only after it: a refused start is the same
+      // answer whoever asks, so it never shows whether a record matched (spec 7).
       const date = manilaDate(start);
-      if (!bookable(date, now)) throw taken();
-      const open = await openStarts(tx, t, date, now, existing ?? undefined);
-      const slot = open.find((o) => o.start.getTime() === start.getTime());
+      const slot = (await openStarts(tx, t, date, now)).find((o) => o.start.getTime() === start.getTime());
       if (!slot) throw taken();
       const dentist = chooseDentist(slot.dentists, await visitsOn(tx, date, slot.dentists.map((d) => d.id)));
       if (!dentist) throw taken();
@@ -185,6 +197,23 @@ export async function bookOnline(input: z.infer<typeof onlineBookingSchema>, ip:
         .for("share");
       if (!chair?.active) throw taken();
       const end = new Date(start.getTime() + t.settings.visitMinutes * 60_000);
+      const existing = await findPatient(tx, input);
+      if (existing) {
+        const [waiting] = await tx
+          .select({ n: count() })
+          .from(appointments)
+          .where(and(eq(appointments.patientId, existing), eq(appointments.source, "portal"), eq(appointments.status, "requested"), gt(appointments.startTime, now)));
+        if (waiting.n >= WAITING_PER_PATIENT) {
+          throw new ApiError(429, "too_many_waiting", "You already have 2 requests waiting. The clinic will call you.");
+        }
+        // One place at a time: the patient has no other active visit that overlaps this one.
+        const [clash] = await tx
+          .select({ id: appointments.id })
+          .from(appointments)
+          .where(and(eq(appointments.patientId, existing), inArray(appointments.status, [...ACTIVE]), lt(appointments.startTime, end), gt(appointments.endTime, start)))
+          .limit(1);
+        if (clash) throw taken();
+      }
       // A new patient is made last, so a refused booking never uses up a chart number.
       const patientId = existing ?? (await createPatient(tx, input, t.branch.id));
       const [row] = await tx
@@ -210,15 +239,17 @@ export async function bookOnline(input: z.infer<typeof onlineBookingSchema>, ip:
           entity: "appointment",
           entityId: row.id,
           branchId: t.branch.id,
-          details: { ip, privacyNoticeAccepted: true, online: true, start: start.toISOString() },
+          // The client is a keyed hash of the address, never the address (src/server/api.ts).
+          details: { client, privacyNoticeAccepted: true, online: true, start: start.toISOString() },
         },
         tx,
       );
       return { branch: t.branch.name, service: t.service.name, start: start.toISOString() };
     });
   } catch (error) {
-    // The database refused a clash with a booking saved in between (spec 8.8).
+    // The database refused a clash with a booking saved in between (spec 8.8), or the global lock stayed busy.
     if (pgCode(error) === "23P01") throw taken();
+    if (pgCode(error) === "55P03") throw busy();
     throw error;
   }
 }
