@@ -191,6 +191,9 @@ test("a visit from setup to completion", async ({ page, browser }) => {
   const chart = page.getByRole("dialog", { name: "Add a patient" });
   await expect(chart.getByLabel("First name")).toHaveValue("Carla");
   await expect(chart.getByLabel("Home address")).toHaveValue("12 Mabini St, Makati");
+  await expect(chart.getByLabel("Birthday")).toHaveValue("1988-07-14");
+  await expect(chart.getByLabel("Sex")).toHaveValue("female");
+  await expect(chart.getByLabel("Mobile", { exact: true })).toHaveValue("+639182223333");
   await chart.getByRole("button", { name: "Add patient" }).click();
   await expect(page).toHaveURL(/\/downtown\/patients\/[0-9a-f-]{36}$/);
   await page.goto("/downtown/patients");

@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import { AddPatientDialog } from "@/components/add-patient-dialog";
+import { AddPatientDialog, formAttachedMessage } from "@/components/add-patient-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { FormAlert } from "@/components/form-alert";
 import { PatientSearch, type PatientHit } from "@/components/patient-search";
@@ -60,10 +60,10 @@ export function PatientForms({ branchCode, onOpenPatient }: { branchCode: string
   const attach = useMutation({
     mutationFn: ({ form, person }: { form: PatientForm; person: Person }) =>
       api(`/patient-forms/${form.id}/attach`, { method: "POST", body: { patientId: person.id } }),
-    onSuccess: async (_done, { person }) => {
-      toast.success(`The form is on ${person.lastName}, ${person.firstName}'s record. Change anything that differs there.`);
+    onSuccess: (_done, { person }) => {
+      toast.success(formAttachedMessage(person));
       choose(null);
-      await reload();
+      void reload();
       onOpenPatient(person.id);
     },
     onError: failed,
@@ -148,7 +148,12 @@ export function PatientForms({ branchCode, onOpenPatient }: { branchCode: string
                 <dd className="wrap-anywhere">{chosen.address}</dd>
               </dl>
               {searching ? (
-                <PatientSearch onPick={(p) => attach.mutate({ form: chosen, person: p })} autoFocus />
+                <PatientSearch
+                  onPick={(p) => {
+                    if (!attach.isPending) attach.mutate({ form: chosen, person: p });
+                  }}
+                  autoFocus
+                />
               ) : (
                 chosen.matches.length > 0 && (
                   <div className="grid gap-2">
@@ -204,6 +209,10 @@ export function PatientForms({ branchCode, onOpenPatient }: { branchCode: string
             setMaking(null);
             void reload();
             onOpenPatient(p.id);
+          }}
+          onFormGone={() => {
+            setMaking(null);
+            void reload();
           }}
           homeBranch={branchCode}
           initial={{
