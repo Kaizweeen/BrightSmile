@@ -88,7 +88,7 @@ In order, for `POST /api/v1/portal/forms`, as for bookings:
 1. The fields (section 4): 400 with a message per field; the privacy box: "Agree to the privacy notice to send the form."
 2. Patient forms off: 404 "Patient forms aren't available right now." An unknown or closed branch: 404 "That branch doesn't take patient forms."
 3. The bot trap: a filled `website` gets the normal answer, and nothing is saved or logged.
-4. Five forms an hour per connection: 429 "Too many forms from this connection. Please ask at the front desk." The connection is the keyed hash of its address (`clientKey`, as for bookings), counted from the `patient.form_received` rows of the last hour. There is no lock: two forms at once can both pass the count, letting a sixth through, which does no harm.
+4. Five forms an hour per connection: 429 "Too many forms from this connection. Please ask at the front desk." The connection is the keyed hash of its address (`clientKey`, as for bookings), counted from the `patient.form_received` rows of the last hour. Forms from one connection wait for each other (a lock on its keyed hash, held for the transaction), so the count holds even when many arrive at once.
 
 Staff can switch forms off at once in Settings, and the Vercel Firewall rule on `/api/v1/portal/` already covers this address.
 
@@ -122,7 +122,7 @@ Access log rows, none holding a form's details:
 
 ## 10. Security and privacy (RA 10173)
 
-- A form holds personal information, and the birthday (age) is sensitive personal information under RA 10173. It is taken only with the patient's agreement to the practice's notice, kept only until the front desk handles it or 30 days pass, and seen only by the owner and the managers of its branch.
+- A form holds personal information, and the birthday (age) is sensitive personal information under RA 10173. It is taken only with the patient's agreement to the practice's notice, kept only until the front desk handles it or, once 30 days have passed, until the branch's forms are next listed or a new form arrives, and seen only by the owner and the managers of its branch.
 - The privacy notice must cover the form: what it asks, why, that it waits for the front desk and is deleted when handled or after 30 days. Owners update the notice before switching forms on; the README's go-live steps say so.
 - As for bookings, the connection is stored only as a keyed hash, never the address, and no row of the access log holds a form's details. Vercel's own request logs see addresses, as they do for every page.
 - The form has no guardian field, as the booking page has none: the lawyer says who may agree for a child, and the front desk fills in the guardian at the visit.

@@ -72,17 +72,22 @@ describe("sending a patient form", () => {
   it("answers 404 while forms are off, and for an unknown or closed branch, saving nothing", async () => {
     await world();
     const before = await formCount();
-    await db.update(practice).set({ patientForms: false });
-    const off = await send(form({ lastName: "Off" }), 3);
-    expect(off.status).toBe(404);
-    expect((await off.json()).error.message).toBe("Patient forms aren't available right now.");
-    await db.update(practice).set({ patientForms: true });
-    for (const branch of ["nowhere", "shut"]) {
-      const res = await send(form({ branch, lastName: "Nowhere" }), 3);
-      expect(res.status).toBe(404);
-      expect((await res.json()).error.message).toBe("That branch doesn't take patient forms.");
+    try {
+      await db.update(practice).set({ patientForms: false });
+      const off = await send(form({ lastName: "Off" }), 3);
+      expect(off.status).toBe(404);
+      expect((await off.json()).error).toMatchObject({ code: "closed", message: "Patient forms aren't available right now." });
+      await db.update(practice).set({ patientForms: true });
+      for (const branch of ["nowhere", "shut"]) {
+        const res = await send(form({ branch, lastName: "Nowhere" }), 3);
+        expect(res.status).toBe(404);
+        expect((await res.json()).error).toMatchObject({ code: "branch", message: "That branch doesn't take patient forms." });
+      }
+      expect(await formCount()).toBe(before);
+    } finally {
+      // A failed assertion above must not leave forms off for the tests that follow.
+      await db.update(practice).set({ patientForms: true });
     }
-    expect(await formCount()).toBe(before);
   });
 
   it("gives a bot the usual answer and keeps nothing", async () => {
@@ -101,6 +106,25 @@ describe("sending a patient form", () => {
     expect(sixth.status).toBe(429);
     expect((await sixth.json()).error.message).toBe("Too many forms from this connection. Please ask at the front desk.");
     expect((await send(form({ lastName: "Other" }), 6)).status).toBe(201);
+  });
+
+  it("counts only the last hour toward the limit", async () => {
+    await world();
+    const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000);
+    const client = clientOf(8);
+    await db.insert(auditLog).values(
+      Array.from({ length: 5 }, () => ({ userId: null, action: "patient.form_received", entity: "patient_form", details: { client, privacyNoticeAccepted: true }, at: twoHoursAgo })),
+    );
+    expect((await send(form({ lastName: "Later" }), 8)).status).toBe(201);
+  });
+
+  it("holds the limit when many forms arrive at once from one connection", async () => {
+    await world();
+    const before = await formCount();
+    // PGlite has one connection, so this shows the count runs inside the transaction; on real Postgres the advisory lock is what holds it.
+    const answers = await Promise.all(Array.from({ length: 8 }, (_, i) => send(form({ lastName: `Rush${i}` }), 9)));
+    expect(answers.map((res) => res.status).sort((a, b) => a - b)).toEqual([201, 201, 201, 201, 201, 429, 429, 429]);
+    expect((await formCount()) - before).toBe(5);
   });
 
   it("deletes forms waiting more than 30 days when a new one arrives", async () => {

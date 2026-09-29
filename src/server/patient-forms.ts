@@ -36,9 +36,9 @@ export async function expireForms(tx: Db = db): Promise<void> {
   await tx.delete(patientForms).where(lt(patientForms.createdAt, sql`now() - interval '30 days'`));
 }
 
-/** This connection's forms in the last hour, counted from the access log (spec 7). */
-async function formsFrom(client: string): Promise<number> {
-  const [row] = await db
+/** This connection's forms in the last hour, counted from the access log (spec 7), read inside `tx` when given. */
+async function formsFrom(client: string, tx: Db = db): Promise<number> {
+  const [row] = await tx
     .select({ n: count() })
     .from(auditLog)
     .where(and(eq(auditLog.action, "patient.form_received"), sql`${auditLog.details}->>'client' = ${client}`, gt(auditLog.at, sql`now() - interval '1 hour'`)));
@@ -53,10 +53,11 @@ export async function sendPatientForm(input: z.infer<typeof patientFormSchema>, 
   if (!branch?.active) throw noBranch();
   // The bot trap: the same answer as a real form, and nothing saved or logged.
   if (input.website !== "") return { firstName: input.firstName };
-  // ponytail: no lock, so two forms sent at once can both pass the count and let a sixth through, which does no harm.
-  if ((await formsFrom(client)) >= FORMS_PER_CLIENT_PER_HOUR) throw tooMany();
-  await expireForms();
   await db.transaction(async (tx) => {
+    // Forms from one connection wait for each other, so the count holds even when many arrive at once.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`dentasync.forms:${client}`}))`);
+    if ((await formsFrom(client, tx)) >= FORMS_PER_CLIENT_PER_HOUR) throw tooMany();
+    await expireForms(tx);
     const [form] = await tx
       .insert(patientForms)
       .values({
