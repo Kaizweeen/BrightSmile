@@ -13,8 +13,9 @@ if (!url) {
   url = (await prompt.question("Paste the database address (postgresql://...): ")).trim();
   prompt.close();
 }
-if (!url.startsWith("postgres")) {
-  console.error("That is not a Postgres address: it starts with postgresql://");
+// Checked before use: parsing a bad address throws an error that prints it whole, password included.
+if (!url.startsWith("postgres") || !URL.canParse(url)) {
+  console.error("That is not a valid Postgres address. It looks like postgresql://user:password@host:port/postgres");
   process.exit(1);
 }
 const pool = new Pool({ connectionString: url, ssl: databaseSsl(url), max: 1 });
