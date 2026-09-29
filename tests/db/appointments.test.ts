@@ -6,7 +6,7 @@ import * as appointmentsRoute from "@/app/api/v1/appointments/route";
 import * as validateRoute from "@/app/api/v1/appointments/validate/route";
 import * as conflictsRoute from "@/app/api/v1/chairs/conflicts/route";
 import { db } from "@/db";
-import { appointmentProcedures, appointments, auditLog, chairs, dentistSchedules, patients, procedures } from "@/db/schema";
+import { appointmentProcedures, appointments, auditLog, chairs, dentistSchedules, patients, practice, procedures } from "@/db/schema";
 import { call, makeBranch, makeUser, request, signIn } from "../helpers";
 
 const MONDAY = "2026-10-05";
@@ -17,6 +17,7 @@ const at = (clock: string, date = MONDAY) => new Date(`${date}T${clock}:00+08:00
 vi.useFakeTimers({ toFake: ["Date"], now: at("08:00") });
 
 async function build() {
+  await db.insert(practice).values({ name: "Test Dental", cleaningMinutes: 15 });
   const dt = await makeBranch({ code: "downtown", name: "Downtown" });
   const ws = await makeBranch({ code: "westside", name: "Westside" });
   await db.insert(chairs).values([
@@ -32,8 +33,8 @@ async function build() {
     { dentistId: lim.id, branchId: dt.id, dayOfWeek: 1, startTime: "09:00", endTime: "17:00" },
     { dentistId: lim.id, branchId: dt.id, dayOfWeek: 2, startTime: "09:00", endTime: "17:00" },
   ]);
-  const [cleaning] = await db.insert(procedures).values({ name: "Oral prophylaxis", durationMinutes: 45, bufferMinutes: 15 }).returning();
-  const [filling] = await db.insert(procedures).values({ name: "Tooth filling", durationMinutes: 60, bufferMinutes: 15 }).returning();
+  const [cleaning] = await db.insert(procedures).values({ name: "Oral prophylaxis" }).returning();
+  const [filling] = await db.insert(procedures).values({ name: "Tooth filling" }).returning();
   const [ana] = await db.insert(patients).values({ lastName: "Santos", firstName: "Ana", allergies: ["latex"] }).returning();
   const [ben] = await db.insert(patients).values({ lastName: "Cruz", firstName: "Ben" }).returning();
   const [cyd] = await db.insert(patients).values({ lastName: "Uy", firstName: "Cyd" }).returning();
@@ -76,7 +77,7 @@ let evening = "";
 describe("booking", () => {
   it("books a visit and holds its chair through turnover", async () => {
     const w = await world();
-    const res = await book(w.deskDt, { branch: "downtown", chairNumber: 1, dentistId: w.reyes.id, patientId: w.ana.id, start: at("10:00").toISOString(), procedureIds: [w.cleaning.id] });
+    const res = await book(w.deskDt, { branch: "downtown", chairNumber: 1, dentistId: w.reyes.id, patientId: w.ana.id, start: at("10:00").toISOString(), procedureIds: [w.cleaning.id], minutes: 45 });
     expect(res.status).toBe(201);
     first = (await res.json()).id;
     const row = await visitRow(first);
@@ -84,7 +85,7 @@ describe("booking", () => {
     expect(row.endTime.toISOString()).toBe(at("10:45").toISOString());
     expect(row.chairFreeAt.toISOString()).toBe(at("11:00").toISOString());
     const snapshot = await db.select().from(appointmentProcedures).where(eq(appointmentProcedures.appointmentId, first));
-    expect(snapshot).toMatchObject([{ position: 0, name: "Oral prophylaxis", durationMinutes: 45, bufferMinutes: 15 }]);
+    expect(snapshot).toMatchObject([{ position: 0, name: "Oral prophylaxis" }]);
     const log = await db.select().from(auditLog).where(and(eq(auditLog.entityId, first), eq(auditLog.action, "appointment.created")));
     expect(log).toHaveLength(1);
   });
@@ -93,7 +94,7 @@ describe("booking", () => {
     const w = await world();
     const res = await call(
       validateRoute.POST,
-      request("/api/v1/appointments/validate", { method: "POST", cookie: w.deskDt, body: { branch: "downtown", chairNumber: 1, dentistId: w.lim.id, patientId: w.ben.id, start: at("10:30").toISOString(), procedureIds: [w.cleaning.id] } }),
+      request("/api/v1/appointments/validate", { method: "POST", cookie: w.deskDt, body: { branch: "downtown", chairNumber: 1, dentistId: w.lim.id, patientId: w.ben.id, start: at("10:30").toISOString(), procedureIds: [w.cleaning.id], minutes: 45 } }),
     );
     expect(res.status).toBe(200);
     const check = await res.json();
@@ -105,7 +106,7 @@ describe("booking", () => {
 
   it("refuses a dentist where the schedule puts them at another branch", async () => {
     const w = await world();
-    const res = await book(w.deskWs, { branch: "westside", chairNumber: 1, dentistId: w.reyes.id, patientId: w.ben.id, start: at("11:00").toISOString(), procedureIds: [w.cleaning.id] });
+    const res = await book(w.deskWs, { branch: "westside", chairNumber: 1, dentistId: w.reyes.id, patientId: w.ben.id, start: at("11:00").toISOString(), procedureIds: [w.cleaning.id], minutes: 45 });
     expect(res.status).toBe(422);
     const error = (await res.json()).error;
     expect(error.code).toBe("refused");
@@ -116,7 +117,7 @@ describe("booking", () => {
   it("refuses one dentist at two branches at once with 409, naming the visit", async () => {
     const w = await world();
     await db.insert(appointments).values({ patientId: w.cyd.id, dentistId: w.reyes.id, branchId: w.dt.id, chairNumber: 2, startTime: at("13:00"), endTime: at("13:30"), chairFreeAt: at("13:30"), status: "confirmed", source: "staff" });
-    const res = await book(w.deskWs, { branch: "westside", chairNumber: 1, dentistId: w.reyes.id, patientId: w.ben.id, start: at("13:00").toISOString(), procedureIds: [w.cleaning.id] });
+    const res = await book(w.deskWs, { branch: "westside", chairNumber: 1, dentistId: w.reyes.id, patientId: w.ben.id, start: at("13:00").toISOString(), procedureIds: [w.cleaning.id], minutes: 45 });
     expect(res.status).toBe(409);
     const error = (await res.json()).error;
     expect(error.code).toBe("conflict");
@@ -125,7 +126,7 @@ describe("booking", () => {
 
   it("asks for a second look outside hours, then books it", async () => {
     const w = await world();
-    const body = { branch: "downtown", chairNumber: 2, dentistId: w.lim.id, patientId: w.ben.id, start: at("17:30").toISOString(), procedureIds: [w.filling.id] };
+    const body = { branch: "downtown", chairNumber: 2, dentistId: w.lim.id, patientId: w.ben.id, start: at("17:30").toISOString(), procedureIds: [w.filling.id], minutes: 60 };
     const first = await book(w.deskDt, body);
     expect(first.status).toBe(422);
     const error = (await first.json()).error;
@@ -138,7 +139,7 @@ describe("booking", () => {
 
   it("books a walk-in now, as checked in", async () => {
     const w = await world();
-    const res = await book(w.deskDt, { branch: "downtown", chairNumber: 2, dentistId: w.lim.id, patientId: w.cyd.id, walkIn: true, procedureIds: [w.cleaning.id], acknowledgeWarnings: true });
+    const res = await book(w.deskDt, { branch: "downtown", chairNumber: 2, dentistId: w.lim.id, patientId: w.cyd.id, walkIn: true, procedureIds: [w.cleaning.id], minutes: 45, acknowledgeWarnings: true });
     expect(res.status).toBe(201);
     walkIn = (await res.json()).id;
     const row = await visitRow(walkIn);
@@ -149,7 +150,7 @@ describe("booking", () => {
 
   it("books a visit as requested while the patient still has to confirm", async () => {
     const w = await world();
-    const res = await book(w.deskDt, { branch: "downtown", chairNumber: 1, dentistId: w.lim.id, patientId: w.cyd.id, start: at("11:00").toISOString(), procedureIds: [w.cleaning.id], requested: true });
+    const res = await book(w.deskDt, { branch: "downtown", chairNumber: 1, dentistId: w.lim.id, patientId: w.cyd.id, start: at("11:00").toISOString(), procedureIds: [w.cleaning.id], minutes: 45, requested: true });
     expect(res.status).toBe(201);
     requested = (await res.json()).id;
     expect(await visitRow(requested)).toMatchObject({ status: "requested", confirmedAt: null });
@@ -157,7 +158,7 @@ describe("booking", () => {
 
   it("refuses another branch's front desk and starts off the grid", async () => {
     const w = await world();
-    const body = { branch: "downtown", chairNumber: 1, dentistId: w.lim.id, patientId: w.ben.id, start: at("14:00").toISOString(), procedureIds: [w.cleaning.id] };
+    const body = { branch: "downtown", chairNumber: 1, dentistId: w.lim.id, patientId: w.ben.id, start: at("14:00").toISOString(), procedureIds: [w.cleaning.id], minutes: 45 };
     expect((await book(w.deskWs, body)).status).toBe(403);
     const odd = await book(w.deskDt, { ...body, start: at("14:10").toISOString() });
     expect(odd.status).toBe(400);
@@ -187,7 +188,7 @@ describe("moving", () => {
 
   it("refuses a move that lost a race to another change of the same visit, and keeps dentists from moving visits", async () => {
     const w = await world();
-    const res = await book(w.deskDt, { branch: "downtown", chairNumber: 1, dentistId: w.lim.id, patientId: w.ben.id, start: at("15:00").toISOString(), procedureIds: [w.cleaning.id] });
+    const res = await book(w.deskDt, { branch: "downtown", chairNumber: 1, dentistId: w.lim.id, patientId: w.ben.id, start: at("15:00").toISOString(), procedureIds: [w.cleaning.id], minutes: 45 });
     expect(res.status).toBe(201);
     const { id } = await res.json();
     expect((await move(w.limCookie, id, { chairNumber: 2 })).status).toBe(403);
@@ -208,7 +209,7 @@ describe("moving", () => {
 describe("a stale view of a visit", () => {
   it("refuses a move made from a view of the visit older than its last change (spec 8.8)", async () => {
     const w = await world();
-    const res = await book(w.deskDt, { branch: "downtown", chairNumber: 1, dentistId: w.lim.id, patientId: w.cyd.id, start: at("16:00").toISOString(), procedureIds: [w.cleaning.id] });
+    const res = await book(w.deskDt, { branch: "downtown", chairNumber: 1, dentistId: w.lim.id, patientId: w.cyd.id, start: at("16:00").toISOString(), procedureIds: [w.cleaning.id], minutes: 45 });
     expect(res.status).toBe(201);
     const { id } = await res.json();
     const seen = (await (await call(appointmentRoute.GET, request(`/api/v1/appointments/${id}`, { cookie: w.deskDt }), { id })).json()).updatedAt;
@@ -256,7 +257,7 @@ describe("lifecycle", () => {
 
   it("checks in only on the visit's day and marks no-shows after the start", async () => {
     const w = await world();
-    const res = await book(w.deskDt, { branch: "downtown", chairNumber: 1, dentistId: w.lim.id, patientId: w.ben.id, start: at("10:00", TUESDAY).toISOString(), procedureIds: [w.cleaning.id] });
+    const res = await book(w.deskDt, { branch: "downtown", chairNumber: 1, dentistId: w.lim.id, patientId: w.ben.id, start: at("10:00", TUESDAY).toISOString(), procedureIds: [w.cleaning.id], minutes: 45 });
     const { id } = await res.json();
     const tooSoon = await change(w.deskDt, id, { to: "checked_in" });
     expect(tooSoon.status).toBe(422);
@@ -282,7 +283,7 @@ describe("reading visits", () => {
     const mine = day.find((v: { id: string }) => v.id === first);
     expect(mine).toMatchObject({ patientName: "Santos, Ana", dentistName: "Dr. Reyes", chairLabel: "Ortho", hasAlerts: true, procedures: ["Oral prophylaxis"], status: "completed", branchCode: "downtown" });
 
-    await book(w.deskWs, { branch: "westside", chairNumber: 1, dentistId: w.reyes.id, patientId: w.ben.id, start: at("14:00").toISOString(), procedureIds: [w.cleaning.id] });
+    await book(w.deskWs, { branch: "westside", chairNumber: 1, dentistId: w.reyes.id, patientId: w.ben.id, start: at("14:00").toISOString(), procedureIds: [w.cleaning.id], minutes: 45 });
     const own = await (await list(w.reyesCookie, `branch=all&dentist=${w.reyes.id}`)).json();
     expect(new Set(own.map((v: { branchName: string }) => v.branchName))).toEqual(new Set(["Downtown", "Westside"]));
     expect((await list(w.reyesCookie, "branch=all")).status).toBe(403);
@@ -324,5 +325,41 @@ describe("reading visits", () => {
       ).map((c: { appointmentId: string }) => c.appointmentId);
     expect(await ask("18:35", "18:40")).toEqual([evening]);
     expect(await ask("18:45", "19:00")).toEqual([]);
+  });
+});
+
+describe("lengths", () => {
+  it("takes the practice's standard length when none is given", async () => {
+    const w = await world();
+    const res = await book(w.deskDt, { branch: "downtown", chairNumber: 2, dentistId: w.lim.id, patientId: w.ana.id, start: at("09:00", TUESDAY).toISOString(), procedureIds: [w.cleaning.id] });
+    expect(res.status).toBe(201);
+    const row = await visitRow((await res.json()).id);
+    expect(row.endTime.toISOString()).toBe(at("10:00", TUESDAY).toISOString());
+    expect(row.chairFreeAt.toISOString()).toBe(at("10:15", TUESDAY).toISOString());
+  });
+
+  it("changes a visit's length when moving, and keeps its cleaning time", async () => {
+    const w = await world();
+    const res = await book(w.deskDt, { branch: "downtown", chairNumber: 2, dentistId: w.lim.id, patientId: w.cyd.id, start: at("13:00", TUESDAY).toISOString(), procedureIds: [w.cleaning.id], minutes: 30 });
+    expect(res.status).toBe(201);
+    const id = (await res.json()).id;
+    expect((await move(w.deskDt, id, { minutes: 90 })).status).toBe(200);
+    let row = await visitRow(id);
+    expect(row.endTime.toISOString()).toBe(at("14:30", TUESDAY).toISOString());
+    expect(row.chairFreeAt.toISOString()).toBe(at("14:45", TUESDAY).toISOString());
+    // A new cleaning time is for new bookings; and changing the services does not change the length.
+    await db.update(practice).set({ cleaningMinutes: 5 });
+    expect((await move(w.deskDt, id, { start: at("15:00", TUESDAY).toISOString(), procedureIds: [w.filling.id] })).status).toBe(200);
+    row = await visitRow(id);
+    expect(row.endTime.toISOString()).toBe(at("16:30", TUESDAY).toISOString());
+    expect(row.chairFreeAt.toISOString()).toBe(at("16:45", TUESDAY).toISOString());
+    await db.update(practice).set({ cleaningMinutes: 15 });
+  });
+
+  it("refuses a length off the 15-minute steps", async () => {
+    const w = await world();
+    const res = await book(w.deskDt, { branch: "downtown", chairNumber: 2, dentistId: w.lim.id, patientId: w.ben.id, start: at("16:00", TUESDAY).toISOString(), procedureIds: [w.cleaning.id], minutes: 50 });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.fields.minutes).toBe("Use 15-minute steps");
   });
 });

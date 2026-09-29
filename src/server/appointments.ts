@@ -12,9 +12,12 @@ import { activeVisits, bookingFacts, LONGEST_VISIT_MS, type BookingRequest, type
 import { requireBranch } from "./branches";
 import { ApiError, forbidden, notFound, pgCode } from "./errors";
 import { requireCan } from "./guard";
+import { practiceSettings } from "./practice";
 import type { Staff } from "./session";
 
 const instant = z.iso.datetime({ offset: true });
+const minutesSchema = z.number().int().min(15, "At least 15 minutes").max(480, "At most 480 minutes").multipleOf(15, "Use 15-minute steps");
+const minutesBetween = (from: Date, to: Date) => Math.round((to.getTime() - from.getTime()) / 60_000);
 
 export const bookingSchema = z.object({
   branch: z.string().min(1),
@@ -22,7 +25,8 @@ export const bookingSchema = z.object({
   dentistId: z.uuid(),
   patientId: z.uuid(),
   start: instant.nullable().optional(),
-  procedureIds: z.array(z.uuid()).min(1, "Pick at least one procedure").max(10, "Pick at most 10 procedures"),
+  procedureIds: z.array(z.uuid()).min(1, "Pick at least one service").max(10, "Pick at most 10 services"),
+  minutes: minutesSchema.optional(),
   walkIn: z.boolean().optional().default(false),
   requested: z.boolean().optional().default(false),
   note: z.string().trim().max(500, "Use at most 500 characters").optional().default(""),
@@ -36,6 +40,7 @@ export const moveSchema = z.object({
   dentistId: z.uuid().optional(),
   start: instant.optional(),
   procedureIds: z.array(z.uuid()).min(1).max(10).optional(),
+  minutes: minutesSchema.optional(),
   acknowledgeWarnings: z.boolean().optional().default(false),
   // The visit's updatedAt as the screen last saw it: a move made from an older view is refused (spec 8.8).
   expectedUpdatedAt: instant.optional(),
@@ -97,9 +102,20 @@ async function explainClash(req: BookingRequest): Promise<never> {
 
 async function saveProcedures(tx: Db, appointmentId: string, list: ProcedureSnapshot[]): Promise<void> {
   await tx.delete(appointmentProcedures).where(eq(appointmentProcedures.appointmentId, appointmentId));
-  await tx.insert(appointmentProcedures).values(
-    list.map((p, position) => ({ appointmentId, position, procedureId: p.id, name: p.name, durationMinutes: p.durationMinutes, bufferMinutes: p.bufferMinutes })),
-  );
+  await tx.insert(appointmentProcedures).values(list.map((p, position) => ({ appointmentId, position, procedureId: p.id, name: p.name })));
+}
+
+/**
+ * Online booking spec 6.2: a new visit takes the practice's standard length unless given one, and today's cleaning time.
+ * A visit being moved keeps its own length and cleaning time unless given a new length.
+ */
+async function lengthsFor(minutes: number | undefined, visitId?: string | null): Promise<{ minutes: number; cleaningMinutes: number }> {
+  if (visitId) {
+    const [visit] = await db.select().from(appointments).where(eq(appointments.id, visitId));
+    if (visit) return { minutes: minutes ?? minutesBetween(visit.startTime, visit.endTime), cleaningMinutes: minutesBetween(visit.endTime, visit.chairFreeAt) };
+  }
+  const settings = await practiceSettings();
+  return { minutes: minutes ?? settings.visitMinutes, cleaningMinutes: settings.cleaningMinutes };
 }
 
 /** POST /appointments/validate (spec 11.1): the booking check, answered without saving. */
@@ -107,6 +123,7 @@ export async function validateBooking(actor: Staff, input: z.infer<typeof valida
   const branch = await requireBranch(input.branch);
   requireCan(actor, "appointment.book", { branchId: branch.id });
   const now = new Date();
+  const lengths = await lengthsFor(input.minutes, input.excludeAppointmentId);
   const { result } = await check(
     db,
     {
@@ -116,6 +133,7 @@ export async function validateBooking(actor: Staff, input: z.infer<typeof valida
       patientId: input.patientId,
       start: startOf(input, now),
       procedureIds: input.procedureIds,
+      ...lengths,
       walkIn: input.walkIn,
       excludeId: input.excludeAppointmentId,
     },
@@ -128,6 +146,7 @@ export async function createAppointment(actor: Staff, input: z.infer<typeof book
   const branch = await requireBranch(input.branch);
   requireCan(actor, "appointment.book", { branchId: branch.id });
   const now = new Date();
+  const lengths = await lengthsFor(input.minutes);
   const req: BookingRequest = {
     branchId: branch.id,
     chairNumber: input.chairNumber,
@@ -135,6 +154,7 @@ export async function createAppointment(actor: Staff, input: z.infer<typeof book
     patientId: input.patientId,
     start: startOf(input, now),
     procedureIds: input.procedureIds,
+    ...lengths,
     walkIn: input.walkIn,
   };
   try {
@@ -200,7 +220,7 @@ export async function moveAppointment(actor: Staff, id: string, input: z.infer<t
   const chairNumber = input.chairNumber ?? visit.chairNumber;
 
   if (status === "checked_in") {
-    if ((input.dentistId && input.dentistId !== visit.dentistId) || input.start || input.procedureIds) {
+    if ((input.dentistId && input.dentistId !== visit.dentistId) || input.start || input.procedureIds || input.minutes !== undefined) {
       throw new ApiError(422, "checked_in", "A checked-in visit can change only its chair.");
     }
     await db.transaction(async (tx) => {
@@ -243,6 +263,8 @@ export async function moveAppointment(actor: Staff, id: string, input: z.infer<t
     patientId: visit.patientId,
     start: input.start ? startOf({ start: input.start, walkIn: false }, now) : visit.startTime,
     procedureIds: input.procedureIds ?? current.map((p) => p.id),
+    minutes: input.minutes ?? minutesBetween(visit.startTime, visit.endTime),
+    cleaningMinutes: minutesBetween(visit.endTime, visit.chairFreeAt),
     walkIn: false,
     excludeId: id,
   };

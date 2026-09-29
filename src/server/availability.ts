@@ -1,77 +1,69 @@
 import { and, asc, eq, gt, inArray, lt, or } from "drizzle-orm";
 import { z } from "zod";
-import { db } from "@/db";
-import { appointments, chairs, dentistSchedules, dentistTimeOff, procedures, userBranches, users } from "@/db/schema";
+import { db, type Db } from "@/db";
+import { appointments, chairs, dentistSchedules, dentistTimeOff, type OperatingHours, userBranches, users } from "@/db/schema";
 import type { WeeklyBlock } from "@/lib/booking-rules";
 import { openTimes, type OpenTime } from "@/lib/slots";
 import { addDays, manilaInstant } from "@/lib/time";
 import { activeVisits } from "./booking";
 import { requireBranch } from "./branches";
-import { ApiError } from "./errors";
 import { requireCan } from "./guard";
+import { practiceSettings } from "./practice";
 import type { Staff } from "./session";
 
 export const availabilitySchema = z.object({
   branch: z.string().min(1),
   date: z.iso.date(),
-  procedures: z
-    .string()
-    .min(1)
-    .transform((value) => value.split(","))
-    .pipe(z.array(z.uuid()).min(1).max(10)),
+  minutes: z.coerce.number().int().min(15).max(480).multipleOf(15).optional(),
   dentist: z.uuid().optional(),
   patient: z.uuid().optional(),
 });
 
-/** Spec 8.5: the open times at a branch on a day, for a set of procedures (and optionally a dentist and a patient). */
-export async function availability(
-  actor: Staff,
-  q: z.infer<typeof availabilitySchema>,
-): Promise<{ date: string; minutes: number; turnover: number; times: OpenTime[] }> {
-  const branch = await requireBranch(q.branch);
-  requireCan(actor, "appointment.book", { branchId: branch.id });
-  const picked = await db
-    .select()
-    .from(procedures)
-    .where(and(inArray(procedures.id, q.procedures), eq(procedures.active, true)));
-  if (picked.length !== new Set(q.procedures).size) {
-    throw new ApiError(400, "invalid", "Pick procedures that are offered.", { fields: { procedures: "Pick procedures that are offered." } });
-  }
-  const minutes = picked.reduce((sum, p) => sum + p.durationMinutes, 0);
-  const turnover = Math.max(0, ...picked.map((p) => p.bufferMinutes));
-  const empty = { date: q.date, minutes, turnover, times: [] };
-  // A closed branch takes no bookings (spec 8.3), so it has no open times.
-  if (!branch.active) return empty;
+export type OpenTimesQuery = {
+  branch: { id: string; active: boolean; operatingHours: OperatingHours };
+  date: string;
+  minutes: number;
+  turnover: number;
+  /** Starts before this are left out: now for staff, two hours from now online. */
+  notBefore: Date;
+  /** Only these dentists; every dentist who works at the branch when missing. */
+  dentistIds?: readonly string[] | null;
+  patientId?: string;
+};
 
+/** Spec 8.5 with the online booking spec's 6.3: the open times for a visit of `minutes` plus `turnover` at a branch on a day. */
+export async function findOpenTimes(q: OpenTimesQuery, tx: Db = db): Promise<OpenTime[]> {
+  // A closed branch takes no bookings (spec 8.3), so it has no open times.
+  if (!q.branch.active) return [];
   const chairNumbers = (
-    await db
+    await tx
       .select({ number: chairs.number })
       .from(chairs)
-      .where(and(eq(chairs.branchId, branch.id), eq(chairs.active, true)))
+      .where(and(eq(chairs.branchId, q.branch.id), eq(chairs.active, true)))
       .orderBy(asc(chairs.number))
   ).map((c) => c.number);
-  const links = await db.select({ userId: userBranches.userId }).from(userBranches).where(eq(userBranches.branchId, branch.id));
+  const links = await tx.select({ userId: userBranches.userId }).from(userBranches).where(eq(userBranches.branchId, q.branch.id));
   const dentists = (
-    await db
+    await tx
       .select({ id: users.id, name: users.name, role: users.role })
       .from(users)
       .where(and(eq(users.status, "active"), eq(users.seesPatients, true)))
-  ).filter((d) => (d.role === "owner" || links.some((l) => l.userId === d.id)) && (!q.dentist || d.id === q.dentist));
-  if (chairNumbers.length === 0 || dentists.length === 0) return empty;
+  ).filter((d) => (d.role === "owner" || links.some((l) => l.userId === d.id)) && (!q.dentistIds || q.dentistIds.includes(d.id)));
+  if (chairNumbers.length === 0 || dentists.length === 0) return [];
 
   const ids = dentists.map((d) => d.id);
   const dayStart = manilaInstant(q.date, 0);
   const dayEnd = manilaInstant(addDays(q.date, 1), 0);
-  const blockRows = await db.select().from(dentistSchedules).where(inArray(dentistSchedules.dentistId, ids));
-  const offRows = await db
+  const blockRows = await tx.select().from(dentistSchedules).where(inArray(dentistSchedules.dentistId, ids));
+  const offRows = await tx
     .select()
     .from(dentistTimeOff)
     .where(and(inArray(dentistTimeOff.dentistId, ids), lt(dentistTimeOff.startsAt, dayEnd), gt(dentistTimeOff.endsAt, dayStart)));
   const visits = await activeVisits(
-    db,
+    tx,
     dayStart,
     dayEnd,
-    or(inArray(appointments.dentistId, ids), eq(appointments.branchId, branch.id), q.patient ? eq(appointments.patientId, q.patient) : undefined),
+    or(inArray(appointments.dentistId, ids), eq(appointments.branchId, q.branch.id), q.patientId ? eq(appointments.patientId, q.patientId) : undefined),
   );
 
   const blocks = new Map<string, WeeklyBlock[]>();
@@ -84,18 +76,31 @@ export async function availability(
   const timeOff = new Map<string, { startsAt: Date; endsAt: Date }[]>();
   for (const t of offRows) timeOff.set(t.dentistId, [...(timeOff.get(t.dentistId) ?? []), { startsAt: t.startsAt, endsAt: t.endsAt }]);
 
-  const times = openTimes({
+  return openTimes({
     date: q.date,
-    now: new Date(),
-    minutes,
-    turnover,
-    branch: { id: branch.id, hours: branch.operatingHours },
+    now: q.notBefore,
+    minutes: q.minutes,
+    turnover: q.turnover,
+    branch: { id: q.branch.id, hours: q.branch.operatingHours },
     chairs: chairNumbers,
     dentists: dentists.map(({ id, name }) => ({ id, name })),
     blocks,
     timeOff,
     visits,
-    patientId: q.patient,
+    patientId: q.patientId,
   });
-  return { ...empty, times };
+}
+
+/** GET /availability: open times for staff, for a visit of `minutes` (the practice's standard length when missing). */
+export async function availability(
+  actor: Staff,
+  q: z.infer<typeof availabilitySchema>,
+): Promise<{ date: string; minutes: number; turnover: number; times: OpenTime[] }> {
+  const branch = await requireBranch(q.branch);
+  requireCan(actor, "appointment.book", { branchId: branch.id });
+  const settings = await practiceSettings();
+  const minutes = q.minutes ?? settings.visitMinutes;
+  const turnover = settings.cleaningMinutes;
+  const times = await findOpenTimes({ branch, date: q.date, minutes, turnover, notBefore: new Date(), dentistIds: q.dentist ? [q.dentist] : null, patientId: q.patient });
+  return { date: q.date, minutes, turnover, times };
 }

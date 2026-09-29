@@ -30,7 +30,7 @@ const BRANCHES = [
   { code: "metro-north", name: "Metro North", chairs: ["General", "General", "Pedo"] },
 ];
 
-/** Spec 15's placeholders, for the dentists to correct: name, minutes, turnover minutes. */
+/** Services, each with the length and cleaning time the sample visits use (services themselves have no length). */
 const PROCEDURES: [string, number, number][] = [
   ["Consultation", 30, 10],
   ["Oral prophylaxis", 45, 15],
@@ -132,7 +132,7 @@ type Planned = {
   start: Date;
   end: Date;
   chairFreeAt: Date;
-  procedure: { id: string; name: string; durationMinutes: number; bufferMinutes: number };
+  procedure: { id: string; name: string; minutes: number; cleaning: number };
   status: "requested" | "confirmed";
   path: Status[];
 };
@@ -146,17 +146,26 @@ export async function seed(now = new Date()): Promise<{ password: string; accoun
   const random = randomFrom(20261005);
 
   await db.transaction(async (tx) => {
-    await tx.insert(practice).values({ name: "Sample Dental Group" });
+    await tx.insert(practice).values({
+      name: "Sample Dental Group",
+      onlineBooking: true,
+      privacyNotice: "Sample privacy notice for development. The practice's real notice, reviewed by a lawyer, replaces it before going live.",
+    });
     const branchRows = await tx
       .insert(branches)
       .values(BRANCHES.map((b, sort) => ({ code: b.code, name: b.name, operatingHours: DEFAULT_HOURS, joinCode: randomToken(16), sort })))
       .returning({ id: branches.id, code: branches.code });
     const branchId = (code: string) => branchRows.find((b) => b.code === code)!.id;
     await tx.insert(chairs).values(BRANCHES.flatMap((b) => b.chairs.map((label, i) => ({ branchId: branchId(b.code), number: i + 1, label }))));
-    const procedureRows = await tx
-      .insert(procedures)
-      .values(PROCEDURES.map(([name, durationMinutes, bufferMinutes], sort) => ({ name, durationMinutes, bufferMinutes, sort })))
-      .returning();
+    const procedureRows = (
+      await tx
+        .insert(procedures)
+        .values(PROCEDURES.map(([name], sort) => ({ name, sort })))
+        .returning({ id: procedures.id, name: procedures.name })
+    ).map((row) => {
+      const [, minutes, cleaning] = PROCEDURES.find(([name]) => name === row.name)!;
+      return { ...row, minutes, cleaning };
+    });
 
     let ownerId = "";
     const people: { id: string; person: Person }[] = [];
@@ -235,7 +244,7 @@ export async function seed(now = new Date()): Promise<{ password: string; accoun
               continue;
             }
             const procedure = procedureRows[Math.floor(random() * procedureRows.length)];
-            if (t + procedure.durationMinutes > toMinutes(block.endTime)) break;
+            if (t + procedure.minutes > toMinutes(block.endTime)) break;
             const chairNumber = chairNumbers.find((n) => (freeAt.get(n) ?? 0) <= t);
             if (chairNumber === undefined) {
               t += 15;
@@ -243,9 +252,9 @@ export async function seed(now = new Date()): Promise<{ password: string; accoun
             }
             const patientId = unused.pop();
             if (patientId === undefined) break;
-            freeAt.set(chairNumber, t + procedure.durationMinutes + procedure.bufferMinutes);
+            freeAt.set(chairNumber, t + procedure.minutes + procedure.cleaning);
             const start = manilaInstant(date, t);
-            const end = manilaInstant(date, t + procedure.durationMinutes);
+            const end = manilaInstant(date, t + procedure.minutes);
             const visit: Planned = {
               branchId: branch.id,
               chairNumber,
@@ -253,7 +262,7 @@ export async function seed(now = new Date()): Promise<{ password: string; accoun
               patientId,
               start,
               end,
-              chairFreeAt: manilaInstant(date, t + procedure.durationMinutes + procedure.bufferMinutes),
+              chairFreeAt: manilaInstant(date, t + procedure.minutes + procedure.cleaning),
               procedure,
               status: "confirmed",
               path: [],
@@ -267,7 +276,7 @@ export async function seed(now = new Date()): Promise<{ password: string; accoun
             else if (start <= now) visit.path = ["checked_in", "in_treatment"];
             else nextOf.push(visit);
             planned.push(visit);
-            t += procedure.durationMinutes;
+            t += procedure.minutes;
           }
           // The dentist's next patient today, if due within the hour, is already in the waiting room.
           const next = nextOf[0];
@@ -299,8 +308,6 @@ export async function seed(now = new Date()): Promise<{ password: string; accoun
         position: 0,
         procedureId: v.procedure.id,
         name: v.procedure.name,
-        durationMinutes: v.procedure.durationMinutes,
-        bufferMinutes: v.procedure.bufferMinutes,
       })),
     );
     // Real status changes, one step at a time, so the lifecycle trigger checks each one and stamps its time.

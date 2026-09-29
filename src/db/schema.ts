@@ -33,9 +33,19 @@ export const practice = pgTable(
   {
     id: boolean("id").primaryKey().default(true),
     name: text("name").notNull(),
+    visitMinutes: integer("visit_minutes").notNull().default(60),
+    cleaningMinutes: integer("cleaning_minutes").notNull().default(10),
+    onlineBooking: boolean("online_booking").notNull().default(false),
+    privacyNotice: text("privacy_notice").notNull().default(""),
     createdAt: createdAt(),
   },
-  (t) => [check("practice_one_row", sql`${t.id}`), check("practice_name", sql`char_length(${t.name}) between 1 and 80`)],
+  (t) => [
+    check("practice_one_row", sql`${t.id}`),
+    check("practice_name", sql`char_length(${t.name}) between 1 and 80`),
+    check("practice_visit_minutes", sql`${t.visitMinutes} between 15 and 240 and ${t.visitMinutes} % 15 = 0`),
+    check("practice_cleaning_minutes", sql`${t.cleaningMinutes} between 0 and 60 and ${t.cleaningMinutes} % 5 = 0`),
+    check("practice_privacy_notice", sql`char_length(${t.privacyNotice}) <= 5000`),
+  ],
 ).enableRLS();
 
 export const branches = pgTable(
@@ -237,17 +247,26 @@ export const procedures = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     name: text("name").notNull().unique(),
-    durationMinutes: integer("duration_minutes").notNull(),
-    bufferMinutes: integer("buffer_minutes").notNull().default(0),
+    online: boolean("online").notNull().default(true),
     active: boolean("active").notNull().default(true),
     sort: integer("sort").notNull().default(0),
     createdAt: createdAt(),
   },
-  (t) => [
-    check("procedures_name", sql`char_length(${t.name}) between 1 and 60`),
-    check("procedures_duration", sql`${t.durationMinutes} between 5 and 480 and ${t.durationMinutes} % 5 = 0`),
-    check("procedures_buffer", sql`${t.bufferMinutes} between 0 and 120`),
-  ],
+  (t) => [check("procedures_name", sql`char_length(${t.name}) between 1 and 60`)],
+).enableRLS();
+
+/** The dentists who may be assigned a service online (online booking spec, section 5). None means every dentist. */
+export const procedureDentists = pgTable(
+  "procedure_dentists",
+  {
+    procedureId: uuid("procedure_id")
+      .notNull()
+      .references(() => procedures.id, { onDelete: "cascade" }),
+    dentistId: uuid("dentist_id")
+      .notNull()
+      .references(() => users.id),
+  },
+  (t) => [primaryKey({ columns: [t.procedureId, t.dentistId] })],
 ).enableRLS();
 
 /** The allergies the PDA form lists; anything else goes in allergies_other. */
@@ -379,8 +398,6 @@ export const appointmentProcedures = pgTable(
       .notNull()
       .references(() => procedures.id),
     name: text("name").notNull(),
-    durationMinutes: integer("duration_minutes").notNull(),
-    bufferMinutes: integer("buffer_minutes").notNull(),
   },
   (t) => [primaryKey({ columns: [t.appointmentId, t.position] })],
 ).enableRLS();

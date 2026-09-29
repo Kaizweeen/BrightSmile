@@ -51,11 +51,15 @@ export type BookingRequest = {
   patientId: string;
   start: Date;
   procedureIds: string[];
+  /** The visit's length; online booking spec 6.2. */
+  minutes: number;
+  /** How long the chair stays blocked after the visit. */
+  cleaningMinutes: number;
   walkIn: boolean;
   excludeId?: string | null;
 };
 
-export type ProcedureSnapshot = { id: string; name: string; durationMinutes: number; bufferMinutes: number };
+export type ProcedureSnapshot = { id: string; name: string };
 
 /** Everything the booking rules need (spec 8.2 to 8.4), read in one place so the rules stay pure. */
 export async function bookingFacts(tx: Db, req: BookingRequest, now: Date): Promise<{ facts: BookingFacts; procedures: ProcedureSnapshot[] }> {
@@ -74,10 +78,8 @@ export async function bookingFacts(tx: Db, req: BookingRequest, now: Date): Prom
     });
   }
   const ordered = req.procedureIds.map((id) => picked.find((p) => p.id === id) as (typeof picked)[number]);
-  const minutes = ordered.reduce((sum, p) => sum + p.durationMinutes, 0);
-  const turnover = Math.max(0, ...ordered.map((p) => p.bufferMinutes));
-  const end = new Date(req.start.getTime() + minutes * 60_000);
-  const chairFreeAt = new Date(end.getTime() + turnover * 60_000);
+  const end = new Date(req.start.getTime() + req.minutes * 60_000);
+  const chairFreeAt = new Date(end.getTime() + req.cleaningMinutes * 60_000);
 
   const [chair] = await tx.select().from(chairs).where(and(eq(chairs.branchId, branch.id), eq(chairs.number, req.chairNumber))).for("share");
   const link = await tx
@@ -110,7 +112,7 @@ export async function bookingFacts(tx: Db, req: BookingRequest, now: Date): Prom
   );
 
   return {
-    procedures: ordered.map(({ id, name, durationMinutes, bufferMinutes }) => ({ id, name, durationMinutes, bufferMinutes })),
+    procedures: ordered.map(({ id, name }) => ({ id, name })),
     facts: {
       now,
       walkIn: req.walkIn,

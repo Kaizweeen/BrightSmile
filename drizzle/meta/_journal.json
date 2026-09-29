@@ -22,6 +22,20 @@
       "when": 1790662542927,
       "tag": "0002_row_level_security",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790671121983,
+      "tag": "0003_online_booking",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790671141535,
+      "tag": "0004_no_lengths",
+      "breakpoints": true
     }
   ]
 }

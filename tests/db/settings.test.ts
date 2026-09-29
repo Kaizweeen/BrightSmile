@@ -33,6 +33,22 @@ describe("practice", () => {
     expect(res.status).toBe(200);
     expect((await db.select().from(practice))[0].name).toBe("Smile Dental Group");
   });
+
+  it("keeps online booking off until there is a privacy notice", async () => {
+    const { cookie } = await ownerCookie();
+    const patch = (body: object) => call(practiceRoute.PATCH, request("/api/v1/practice", { method: "PATCH", cookie, body }));
+    const refused = await patch({ onlineBooking: true });
+    expect(refused.status).toBe(422);
+    expect((await refused.json()).error.fields.privacyNotice).toBe("Add the privacy notice first.");
+    const ok = await patch({ onlineBooking: true, privacyNotice: "We keep your details to run your visits.", visitMinutes: 45, cleaningMinutes: 5 });
+    expect(ok.status).toBe(200);
+    const read = await (await call(practiceRoute.GET, request("/api/v1/practice", { cookie }))).json();
+    expect(read).toMatchObject({ onlineBooking: true, visitMinutes: 45, cleaningMinutes: 5 });
+    const odd = await patch({ visitMinutes: 50 });
+    expect(odd.status).toBe(400);
+    expect((await odd.json()).error.fields.visitMinutes).toBe("Use 15-minute steps");
+    expect((await patch({ privacyNotice: "" })).status).toBe(422);
+  });
 });
 
 describe("branches", () => {
@@ -127,20 +143,36 @@ describe("branches", () => {
 });
 
 describe("procedures", () => {
-  it("adds, validates, and updates procedures", async () => {
+  it("adds, validates, and updates services", async () => {
     const { cookie } = await ownerCookie();
-    const res = await call(proceduresRoute.POST, request("/api/v1/procedures", { method: "POST", cookie, body: { name: "Oral prophylaxis", durationMinutes: 45, bufferMinutes: 15 } }));
+    const res = await call(proceduresRoute.POST, request("/api/v1/procedures", { method: "POST", cookie, body: { name: "Oral prophylaxis" } }));
     expect(res.status).toBe(201);
-    const { id } = await res.json();
-    const dup = await call(proceduresRoute.POST, request("/api/v1/procedures", { method: "POST", cookie, body: { name: "Oral prophylaxis", durationMinutes: 30, bufferMinutes: 0 } }));
+    const created = await res.json();
+    expect(created).toMatchObject({ name: "Oral prophylaxis", online: true, dentistIds: [] });
+    const { id } = created;
+    const dup = await call(proceduresRoute.POST, request("/api/v1/procedures", { method: "POST", cookie, body: { name: "Oral prophylaxis" } }));
     expect(dup.status).toBe(409);
-    const bad = await call(proceduresRoute.POST, request("/api/v1/procedures", { method: "POST", cookie, body: { name: "Odd", durationMinutes: 42, bufferMinutes: 0 } }));
-    expect(bad.status).toBe(400);
-    expect((await bad.json()).error.fields.durationMinutes).toBe("Use 5-minute steps");
-    const off = await call(procedureRoute.PATCH, request(`/api/v1/procedures/${id}`, { method: "PATCH", cookie, body: { active: false } }), { id });
+    const stranger = await call(proceduresRoute.POST, request("/api/v1/procedures", { method: "POST", cookie, body: { name: "Braces", dentistIds: [crypto.randomUUID()] } }));
+    expect(stranger.status).toBe(400);
+    expect((await stranger.json()).error.fields.dentistIds).toBe("Pick dentists who see patients.");
+    const off = await call(procedureRoute.PATCH, request(`/api/v1/procedures/${id}`, { method: "PATCH", cookie, body: { active: false, online: false } }), { id });
     expect(off.status).toBe(200);
+    expect(await off.json()).toMatchObject({ active: false, online: false });
     const active = await (await call(proceduresRoute.GET, request("/api/v1/procedures?active=1", { cookie }))).json();
     expect(active).toEqual([]);
+  });
+
+  it("limits a service to chosen dentists", async () => {
+    const { cookie } = await ownerCookie();
+    const ortho = await makeUser({ role: "dentist", name: "Dr. Ortho" });
+    const res = await call(proceduresRoute.POST, request("/api/v1/procedures", { method: "POST", cookie, body: { name: "Braces and Retainers", dentistIds: [ortho.id] } }));
+    expect(res.status).toBe(201);
+    const { id } = await res.json();
+    const list = await (await call(proceduresRoute.GET, request("/api/v1/procedures", { cookie }))).json();
+    expect(list.find((p: { id: string }) => p.id === id).dentistIds).toEqual([ortho.id]);
+    const cleared = await call(procedureRoute.PATCH, request(`/api/v1/procedures/${id}`, { method: "PATCH", cookie, body: { dentistIds: [] } }), { id });
+    expect(cleared.status).toBe(200);
+    expect((await cleared.json()).dentistIds).toEqual([]);
   });
 
   it("keeps a branch with visits not over yet open, counting one in the chair now", async () => {
