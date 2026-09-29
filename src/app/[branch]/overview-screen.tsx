@@ -113,7 +113,7 @@ export function OverviewScreen({ date, today, staff }: { date: string; today: st
                             <button
                               type="button"
                               onClick={() => setOpenId(v.id)}
-                              className="rounded-sm font-medium underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                              className="min-h-11 rounded-sm text-left font-medium underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-0"
                             >
                               {v.patientName}
                             </button>

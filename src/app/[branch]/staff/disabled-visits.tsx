@@ -22,7 +22,10 @@ export function DisabledVisits({ person }: { person: { id: string; name: string 
       <ul className="grid gap-1 text-sm">
         {visits.data.map((v) => (
           <li key={v.id}>
-            <Link href={`/${v.branchCode}/calendar?date=${manilaDate(new Date(v.start))}`} className="underline underline-offset-4">
+            <Link
+              href={`/${v.branchCode}/calendar?date=${manilaDate(new Date(v.start))}`}
+              className="inline-flex min-h-11 items-center underline underline-offset-4 sm:min-h-0"
+            >
               {`${formatDateTime(new Date(v.start))}, ${v.branchName}, ${chairName(v.chairNumber, v.chairLabel)}: ${v.patientName}`}
             </Link>
           </li>

@@ -35,7 +35,11 @@ export function MyDayScreen({ branch, date, today, staffId }: { branch: string; 
       toast.success("Saved.");
       await client.invalidateQueries({ queryKey: ["appointments"] });
     },
-    onError: (error) => toast.error(errorMessage(error)),
+    onError: async (error) => {
+      toast.error(errorMessage(error));
+      // Someone else may have changed the visit: show the day as it is now.
+      await client.invalidateQueries({ queryKey: ["appointments"] });
+    },
   });
   const go = (next: string) => router.push(`/${branch}/my-day?date=${next}`);
   const sorted = [...(visits.data ?? [])].sort((a, b) => ORDER[a.status] - ORDER[b.status] || a.start.localeCompare(b.start));

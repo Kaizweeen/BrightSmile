@@ -8,7 +8,7 @@ import { alertLines } from "@/lib/patients";
 import { can } from "@/lib/permissions";
 import { formatDateTime, formatTime, manilaMinutes } from "@/lib/time";
 import { audit } from "./audit";
-import { activeVisits, bookingFacts, type BookingRequest, type ProcedureSnapshot } from "./booking";
+import { activeVisits, bookingFacts, LONGEST_VISIT_MS, type BookingRequest, type ProcedureSnapshot } from "./booking";
 import { requireBranch } from "./branches";
 import { ApiError, forbidden, notFound, pgCode } from "./errors";
 import { requireCan } from "./guard";
@@ -37,6 +37,8 @@ export const moveSchema = z.object({
   start: instant.optional(),
   procedureIds: z.array(z.uuid()).min(1).max(10).optional(),
   acknowledgeWarnings: z.boolean().optional().default(false),
+  // The visit's updatedAt as the screen last saw it: a move made from an older view is refused (spec 8.8).
+  expectedUpdatedAt: instant.optional(),
 });
 
 export const transitionSchema = z.object({
@@ -171,6 +173,8 @@ export async function createAppointment(actor: Staff, input: z.infer<typeof book
 }
 
 /** Spec 8.8: locks the visit for the move, and refuses it when the visit changed after it was read (a check-in, another move). */
+const changed = () => new ApiError(409, "changed", "Someone just changed this visit. Refresh to see it, then try again.");
+
 async function lockUnchanged(tx: Db, visit: typeof appointments.$inferSelect): Promise<void> {
   const [now] = await tx.select().from(appointments).where(eq(appointments.id, visit.id)).for("update");
   const same = (a: Date, b: Date) => a.getTime() === b.getTime();
@@ -180,8 +184,9 @@ async function lockUnchanged(tx: Db, visit: typeof appointments.$inferSelect): P
     now.dentistId === visit.dentistId &&
     now.chairNumber === visit.chairNumber &&
     same(now.startTime, visit.startTime) &&
-    same(now.endTime, visit.endTime);
-  if (!unchanged) throw new ApiError(409, "changed", "Someone just changed this visit. Refresh to see it, then try again.");
+    same(now.endTime, visit.endTime) &&
+    same(now.updatedAt, visit.updatedAt);
+  if (!unchanged) throw changed();
 }
 
 /** Spec 8.7: a requested or confirmed visit moves through the same checks as a new booking; a checked-in one changes chair only. */
@@ -189,6 +194,8 @@ export async function moveAppointment(actor: Staff, id: string, input: z.infer<t
   const [visit] = await db.select().from(appointments).where(eq(appointments.id, id));
   if (!visit) throw notFound("That visit");
   requireCan(actor, "appointment.manage", { branchId: visit.branchId });
+  // Every move and status change stamps updatedAt, so a screen that opened the visit earlier is caught here.
+  if (input.expectedUpdatedAt && new Date(input.expectedUpdatedAt).getTime() !== visit.updatedAt.getTime()) throw changed();
   const status = visit.status as Status;
   const chairNumber = input.chairNumber ?? visit.chairNumber;
 
@@ -283,7 +290,8 @@ export async function transitionAppointment(actor: Staff, id: string, input: z.i
         entity: "appointment",
         entityId: id,
         branchId: visit.branchId,
-        details: { from: visit.status, to: input.to, ...(input.reason ? { reason: input.reason } : {}) },
+        // Never the cancel reason: it can hold health information, and the audit log is never edited (spec 13).
+        details: { from: visit.status, to: input.to },
       },
       tx,
     );
@@ -380,7 +388,15 @@ export async function listAppointments(actor: Staff, q: z.infer<typeof listSchem
     requireCan(actor, "calendar.view", { branchId: branch.id, dentistId: q.dentist });
     scope = eq(appointments.branchId, branch.id);
   }
-  return visitViews(and(scope, q.dentist ? eq(appointments.dentistId, q.dentist) : undefined, lt(appointments.startTime, to), gt(appointments.endTime, from)));
+  return visitViews(
+    and(
+      scope,
+      q.dentist ? eq(appointments.dentistId, q.dentist) : undefined,
+      lt(appointments.startTime, to),
+      gt(appointments.startTime, new Date(from.getTime() - LONGEST_VISIT_MS)),
+      gt(appointments.endTime, from),
+    ),
+  );
 }
 
 /** Spec 6.5: a dentist's active visits that have not ended, at the branches the caller covers, so a disabled dentist's can be moved. */
@@ -391,6 +407,7 @@ export async function upcomingVisits(actor: Staff, dentistId: string): Promise<V
       eq(appointments.dentistId, dentistId),
       inArray(appointments.status, [...ACTIVE]),
       gt(appointments.endTime, new Date()),
+      gt(appointments.startTime, new Date(Date.now() - LONGEST_VISIT_MS)),
       actor.role === "owner" ? undefined : inArray(appointments.branchId, [...actor.branchIds]),
     ),
   );
@@ -401,8 +418,7 @@ function historyText(action: string, details: Record<string, unknown>): string {
   if (action === "appointment.created") return `Booked as ${label(details.status)}`;
   if (action === "appointment.moved") return `Moved to ${formatDateTime(new Date(String(details.start)))}, chair ${String(details.chair)}`;
   if (action === "appointment.status_changed") {
-    const text = `${STATUS_LABEL[details.from as Status] ?? String(details.from)} to ${label(details.to)}`;
-    return details.reason ? `${text}: ${String(details.reason)}` : text;
+    return `${STATUS_LABEL[details.from as Status] ?? String(details.from)} to ${label(details.to)}`;
   }
   return action;
 }
@@ -423,6 +439,9 @@ export async function appointmentDetail(actor: Staff, id: string) {
       .where(eq(appointmentProcedures.appointmentId, id))
       .orderBy(asc(appointmentProcedures.position))
   ).map((p) => p.id);
+  const [{ updatedAt }] = await db.select({ updatedAt: appointments.updatedAt }).from(appointments).where(eq(appointments.id, id));
+  // The panel shows the patient's allergies and alerts, so opening it is a view of the record (spec 13).
+  await audit({ userId: actor.id, action: "patient.view", entity: "patient", entityId: view.patientId, details: { part: "visit", appointmentId: id } });
   const history = await db
     .select({ at: auditLog.at, action: auditLog.action, details: auditLog.details, by: users.name })
     .from(auditLog)
@@ -431,6 +450,7 @@ export async function appointmentDetail(actor: Staff, id: string) {
     .orderBy(asc(auditLog.id));
   return {
     ...view,
+    updatedAt,
     procedureIds,
     alerts: alertLines(patient),
     history: history.map((h) => ({ at: h.at, by: h.by ?? "Someone", text: historyText(h.action, h.details) })),

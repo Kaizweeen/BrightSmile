@@ -205,6 +205,27 @@ describe("moving", () => {
   });
 });
 
+describe("a stale view of a visit", () => {
+  it("refuses a move made from a view of the visit older than its last change (spec 8.8)", async () => {
+    const w = await world();
+    const res = await book(w.deskDt, { branch: "downtown", chairNumber: 1, dentistId: w.lim.id, patientId: w.cyd.id, start: at("16:00").toISOString(), procedureIds: [w.cleaning.id] });
+    expect(res.status).toBe(201);
+    const { id } = await res.json();
+    const seen = (await (await call(appointmentRoute.GET, request(`/api/v1/appointments/${id}`, { cookie: w.deskDt }), { id })).json()).updatedAt;
+    vi.setSystemTime(at("08:01"));
+    try {
+      // One desk moves it; another desk then saves a move from what it saw a minute earlier.
+      expect((await move(w.deskDt, id, { chairNumber: 2, expectedUpdatedAt: seen })).status).toBe(200);
+      const late = await move(w.deskDt, id, { start: at("16:30").toISOString(), expectedUpdatedAt: seen });
+      expect(late.status).toBe(409);
+      expect((await late.json()).error.code).toBe("changed");
+      expect((await visitRow(id)).chairNumber).toBe(2);
+    } finally {
+      vi.setSystemTime(at("08:00"));
+    }
+  });
+});
+
 describe("lifecycle", () => {
   it("lets each role make only its own changes, in order, on time", async () => {
     const w = await world();
@@ -281,6 +302,16 @@ describe("reading visits", () => {
       "Checked in to in treatment",
       "In treatment to completed",
     ]);
+  });
+
+  it("keeps cancel reasons out of the audit log, and logs opening a visit as a view of its patient", async () => {
+    const w = await world();
+    const rows = await db.select().from(auditLog).where(eq(auditLog.entityId, requested));
+    expect(rows.some((r) => r.action === "appointment.status_changed")).toBe(true);
+    expect(JSON.stringify(rows)).not.toContain("Patient called");
+    await call(appointmentRoute.GET, request(`/api/v1/appointments/${requested}`, { cookie: w.deskDt }), { id: requested });
+    const views = await db.select().from(auditLog).where(and(eq(auditLog.action, "patient.view"), eq(auditLog.entityId, w.cyd.id)));
+    expect(views.some((v) => v.details.part === "visit" && v.details.appointmentId === requested)).toBe(true);
   });
 
   it("reports a chair's conflicts, turnover included", async () => {

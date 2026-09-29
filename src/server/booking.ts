@@ -5,6 +5,12 @@ import type { BookingFacts, Visit } from "@/lib/booking-rules";
 import { ACTIVE } from "@/lib/lifecycle";
 import { ApiError, notFound } from "./errors";
 
+/**
+ * A visit never crosses midnight (spec 8.3) and its turnover is short, so no visit that started more than this long
+ * before a moment still holds its chair then: a lower bound on start time that lets the start-time indexes skip history.
+ */
+export const LONGEST_VISIT_MS = 26 * 3_600_000;
+
 /** Active visits whose chair time overlaps [from, until), narrowed by `where`. */
 export async function activeVisits(tx: Db, from: Date, until: Date, where?: SQL): Promise<Visit[]> {
   const rows = await tx
@@ -26,7 +32,15 @@ export async function activeVisits(tx: Db, from: Date, until: Date, where?: SQL)
     .innerJoin(branches, eq(branches.id, appointments.branchId))
     .innerJoin(users, eq(users.id, appointments.dentistId))
     .innerJoin(patients, eq(patients.id, appointments.patientId))
-    .where(and(inArray(appointments.status, [...ACTIVE]), lt(appointments.startTime, until), gt(appointments.chairFreeAt, from), where));
+    .where(
+      and(
+        inArray(appointments.status, [...ACTIVE]),
+        lt(appointments.startTime, until),
+        gt(appointments.startTime, new Date(from.getTime() - LONGEST_VISIT_MS)),
+        gt(appointments.chairFreeAt, from),
+        where,
+      ),
+    );
   return rows.map(({ lastName, firstName, ...visit }) => ({ ...visit, patientName: `${lastName}, ${firstName}` }));
 }
 
@@ -73,7 +87,9 @@ export async function bookingFacts(tx: Db, req: BookingRequest, now: Date): Prom
   const blocks = await tx
     .select({ branchId: dentistSchedules.branchId, dayOfWeek: dentistSchedules.dayOfWeek, startTime: dentistSchedules.startTime, endTime: dentistSchedules.endTime })
     .from(dentistSchedules)
-    .where(eq(dentistSchedules.dentistId, dentist.id));
+    .innerJoin(branches, eq(branches.id, dentistSchedules.branchId))
+    // A closed branch's old blocks no longer place the dentist anywhere.
+    .where(and(eq(dentistSchedules.dentistId, dentist.id), eq(branches.active, true)));
   const names = await tx.select({ id: branches.id, name: branches.name }).from(branches);
   const timeOff = await tx
     .select({ startsAt: dentistTimeOff.startsAt, endsAt: dentistTimeOff.endsAt, reason: dentistTimeOff.reason })

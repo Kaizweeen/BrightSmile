@@ -59,6 +59,8 @@ export function BookingPanel({ intent, branch, chairs, today, onClose }: Props) 
   const [chairNumber, setChairNumber] = useState<number | null>(moving?.chairNumber ?? fresh?.chairNumber ?? null);
   const [requested, setRequested] = useState(false);
   const [note, setNote] = useState("");
+  // The inputs of the last save: its error and warnings show only while the inputs are still the same.
+  const [tried, setTried] = useState<string | null>(null);
 
   const procedures = useQuery({ queryKey: ["procedures", "active"], queryFn: () => api<Procedure[]>("/procedures?active=1") });
   const dentists = useDentists();
@@ -92,7 +94,9 @@ export function BookingPanel({ intent, branch, chairs, today, onClose }: Props) 
       moving
         ? api(`/appointments/${moving.id}`, {
             method: "PATCH",
-            body: chairOnly ? { chairNumber } : { chairNumber, dentistId, start, procedureIds, acknowledgeWarnings },
+            body: chairOnly
+              ? { chairNumber, expectedUpdatedAt: moving.updatedAt }
+              : { chairNumber, dentistId, start, procedureIds, acknowledgeWarnings, expectedUpdatedAt: moving.updatedAt },
           })
         : api("/appointments", { method: "POST", body: { ...request, requested, note, acknowledgeWarnings } }),
     onSuccess: async () => {
@@ -102,14 +106,23 @@ export function BookingPanel({ intent, branch, chairs, today, onClose }: Props) 
       await client.invalidateQueries({ queryKey: ["availability"] });
       onClose();
     },
+    onError: async () => {
+      // Another desk may have just taken the time or changed the visit: show the calendar and open times as they are now.
+      await client.invalidateQueries({ queryKey: ["availability"] });
+      await client.invalidateQueries({ queryKey: ["validate"] });
+      await client.invalidateQueries({ queryKey: ["appointments"] });
+      await client.invalidateQueries({ queryKey: ["appointment"] });
+    },
   });
+  const attempt = JSON.stringify([request, requested, note]);
+  const failed = save.error && tried === attempt ? save.error : null;
   // A check the server refuses outright, such as a start off the 15-minute grid, is an error too: Book stays disabled.
   const errors = check.data?.errors ?? (check.error ? [{ code: "invalid", message: errorMessage(check.error) }] : []);
   const warnings =
     check.data && check.data.warnings.length > 0
       ? check.data.warnings
-      : save.error instanceof RequestError
-        ? (save.error.body.warnings ?? [])
+      : failed instanceof RequestError
+        ? (failed.body.warnings ?? [])
         : [];
 
   const pick = (t: OpenTime) => {
@@ -341,7 +354,7 @@ export function BookingPanel({ intent, branch, chairs, today, onClose }: Props) 
               </AlertDescription>
             </Alert>
           )}
-          {save.error && !(save.error instanceof RequestError && save.error.body.code === "warnings") && <FormAlert message={errorMessage(save.error)} />}
+          {failed && !(failed instanceof RequestError && failed.body.code === "warnings") && <FormAlert message={errorMessage(failed)} />}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
@@ -349,7 +362,10 @@ export function BookingPanel({ intent, branch, chairs, today, onClose }: Props) 
           </Button>
           <Button
             disabled={!complete || errors.length > 0 || save.isPending || (!chairOnly && check.isFetching)}
-            onClick={() => save.mutate(warnings.length > 0)}
+            onClick={() => {
+              setTried(attempt);
+              save.mutate(warnings.length > 0);
+            }}
           >
             {save.isPending
               ? "Saving..."

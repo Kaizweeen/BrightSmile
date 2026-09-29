@@ -174,7 +174,15 @@ function DetailsPanel({ patient, canEdit }: { patient: PatientJson; canEdit: boo
         {row("First registered at", patient.homeBranchName)}
       </dl>
       <div>
-        <Button variant="outline" onClick={() => setEditing(true)}>
+        <Button
+          variant="outline"
+          onClick={() => {
+            // Start from the record as it is now, never from an earlier, abandoned draft.
+            setDraft(draftOf(patient));
+            setErrors({});
+            setEditing(true);
+          }}
+        >
           {canEdit ? "Edit details" : "Edit allergies and alerts"}
         </Button>
       </div>

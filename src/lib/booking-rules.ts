@@ -98,7 +98,7 @@ export function checkBooking(f: BookingFacts): { errors: Finding[]; warnings: Fi
   if (!f.chair) errors.push({ code: "inactive", message: `That chair does not exist at ${f.branch.name}.` });
   else if (!f.chair.active) errors.push({ code: "inactive", message: `Chair ${f.chair.number} is not in use.` });
   if (!f.dentist.active || !f.dentist.seesPatients) {
-    errors.push({ code: "inactive", message: `${f.dentist.name} does not see patients.` });
+    errors.push({ code: "inactive", message: `${f.dentist.name} ${f.dentist.active ? "does not see patients" : "is disabled"}.` });
   } else if (!f.dentist.worksHere) {
     errors.push({ code: "inactive", message: `${f.dentist.name} does not work at ${f.branch.name}.` });
   }

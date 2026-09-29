@@ -30,6 +30,7 @@ export type VisitJson = {
 
 /** GET /appointments/{id}: the visit, its procedure ids, the patient's alerts, and its history. */
 export type VisitDetailJson = VisitJson & {
+  updatedAt: string;
   procedureIds: string[];
   alerts: string[];
   history: { at: string; by: string; text: string }[];
