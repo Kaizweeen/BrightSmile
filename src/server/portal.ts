@@ -1,8 +1,8 @@
 import { and, asc, count, eq, gt, gte, inArray, lt, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, type Db } from "@/db";
-import { appointmentProcedures, appointments, auditLog, branches, patients, procedureDentists, procedures, users } from "@/db/schema";
-import { BOOKING_DAYS, chooseDentist, NOTICE_MS } from "@/lib/portal";
+import { appointmentProcedures, appointments, auditLog, branches, chairs, patients, procedureDentists, procedures, users } from "@/db/schema";
+import { bookable, chooseDentist, NOTICE_MS } from "@/lib/portal";
 import { addDays, manilaDate, manilaInstant } from "@/lib/time";
 import { mobileSchema } from "@/lib/validation";
 import { audit } from "./audit";
@@ -41,11 +41,15 @@ export async function portalInfo(): Promise<PortalInfo> {
   return { open: true, practiceName: settings.name, branches: branchRows, services };
 }
 
-/** The branch and service a patient picked, refused as in online booking spec 8, with the service's dentists (null: all). */
+/**
+ * The branch and service a patient picked, refused as in online booking spec 8, with the service's dentists (null: all).
+ * In a booking's transaction the branch is read with the shared lock staff bookings take (src/server/booking.ts): closing
+ * the branch waits for the booking, and a closing that committed first is seen here.
+ */
 async function target(tx: Db, branchCode: string, serviceId: string) {
   const settings = await practiceSettings(tx);
   if (!settings.onlineBooking) throw closed();
-  const [branch] = await tx.select().from(branches).where(eq(branches.code, branchCode));
+  const [branch] = await tx.select().from(branches).where(eq(branches.code, branchCode)).for("share");
   if (!branch?.active) throw new ApiError(404, "branch", "That branch doesn't take online bookings.");
   const [service] = await tx.select().from(procedures).where(eq(procedures.id, serviceId));
   if (!service?.active || !service.online) throw new ApiError(404, "service", "That service isn't offered online.");
@@ -53,8 +57,23 @@ async function target(tx: Db, branchCode: string, serviceId: string) {
   return { settings, branch, service, dentistIds: limited.length > 0 ? limited.map((d) => d.id) : null };
 }
 
-/** Today to 30 days ahead, in Manila dates. */
-const bookable = (date: string, now: Date) => date >= manilaDate(now) && date <= addDays(manilaDate(now), BOOKING_DAYS);
+type Target = Awaited<ReturnType<typeof target>>;
+
+/** Online booking spec 6.3: the open starts at the standard length, two hours away at the earliest. */
+function openStarts(tx: Db, t: Target, date: string, now: Date, patientId?: string) {
+  return findOpenTimes(
+    {
+      branch: t.branch,
+      date,
+      minutes: t.settings.visitMinutes,
+      turnover: t.settings.cleaningMinutes,
+      notBefore: new Date(now.getTime() + NOTICE_MS),
+      dentistIds: t.dentistIds,
+      patientId,
+    },
+    tx,
+  );
+}
 
 export const timesSchema = z.object({ branch: z.string().min(1), service: z.uuid(), date: z.iso.date() });
 
@@ -63,14 +82,7 @@ export async function portalTimes(q: z.infer<typeof timesSchema>): Promise<{ tim
   const now = new Date();
   const t = await target(db, q.branch, q.service);
   if (!bookable(q.date, now)) return { times: [] };
-  const open = await findOpenTimes({
-    branch: t.branch,
-    date: q.date,
-    minutes: t.settings.visitMinutes,
-    turnover: t.settings.cleaningMinutes,
-    notBefore: new Date(now.getTime() + NOTICE_MS),
-    dentistIds: t.dentistIds,
-  });
+  const open = await openStarts(db, t, q.date, now);
   return { times: open.map((o) => o.start.toISOString()) };
 }
 
@@ -86,15 +98,19 @@ export const onlineBookingSchema = z.object({
   website: z.string().max(200).optional().default(""),
 });
 
-/** Online booking spec 7: an existing patient with this mobile number and last name (lowest chart number), or a new one. */
-async function matchPatient(tx: Db, input: { firstName: string; lastName: string; mobile: string }, branchId: string): Promise<string> {
+/** Online booking spec 7: the existing patient with this mobile number and last name (lowest chart number), if there is one. */
+async function findPatient(tx: Db, input: { lastName: string; mobile: string }): Promise<string | null> {
   const [found] = await tx
     .select({ id: patients.id })
     .from(patients)
     .where(and(eq(patients.mobile, input.mobile), sql`lower(trim(${patients.lastName})) = lower(${input.lastName})`))
     .orderBy(asc(patients.chartNo))
     .limit(1);
-  if (found) return found.id;
+  return found?.id ?? null;
+}
+
+/** Online booking spec 7: a new patient, with the booking's branch as home branch and no creator. */
+async function createPatient(tx: Db, input: { firstName: string; lastName: string; mobile: string }, branchId: string): Promise<string> {
   const [created] = await tx
     .insert(patients)
     .values({ firstName: input.firstName, lastName: input.lastName, mobile: input.mobile, homeBranchId: branchId })
@@ -141,40 +157,41 @@ export async function bookOnline(input: z.infer<typeof onlineBookingSchema>, ip:
       if (fromIp.n >= BOOKINGS_PER_IP_PER_HOUR) {
         throw new ApiError(429, "too_many_requests", "Too many bookings from this connection. Please call the clinic.");
       }
-      const patientId = await matchPatient(tx, input, t.branch.id);
-      const [waiting] = await tx
-        .select({ n: count() })
-        .from(appointments)
-        .where(and(eq(appointments.patientId, patientId), eq(appointments.source, "portal"), eq(appointments.status, "requested"), gt(appointments.startTime, now)));
-      if (waiting.n >= WAITING_PER_PATIENT) {
-        throw new ApiError(429, "too_many_waiting", "You already have 2 requests waiting. The clinic will call you.");
+      const existing = await findPatient(tx, input);
+      if (existing) {
+        const [waiting] = await tx
+          .select({ n: count() })
+          .from(appointments)
+          .where(and(eq(appointments.patientId, existing), eq(appointments.source, "portal"), eq(appointments.status, "requested"), gt(appointments.startTime, now)));
+        if (waiting.n >= WAITING_PER_PATIENT) {
+          throw new ApiError(429, "too_many_waiting", "You already have 2 requests waiting. The clinic will call you.");
+        }
       }
       const date = manilaDate(start);
       if (!bookable(date, now)) throw taken();
-      const open = await findOpenTimes(
-        {
-          branch: t.branch,
-          date,
-          minutes: t.settings.visitMinutes,
-          turnover: t.settings.cleaningMinutes,
-          notBefore: new Date(now.getTime() + NOTICE_MS),
-          dentistIds: t.dentistIds,
-          patientId,
-        },
-        tx,
-      );
+      const open = await openStarts(tx, t, date, now, existing ?? undefined);
       const slot = open.find((o) => o.start.getTime() === start.getTime());
       if (!slot) throw taken();
       const dentist = chooseDentist(slot.dentists, await visitsOn(tx, date, slot.dentists.map((d) => d.id)));
       if (!dentist) throw taken();
+      // The shared lock staff bookings take on the chair (src/server/booking.ts): closing it waits for this booking, and a
+      // closing that committed first is seen here.
+      const [chair] = await tx
+        .select()
+        .from(chairs)
+        .where(and(eq(chairs.branchId, t.branch.id), eq(chairs.number, Math.min(...dentist.chairs))))
+        .for("share");
+      if (!chair?.active) throw taken();
       const end = new Date(start.getTime() + t.settings.visitMinutes * 60_000);
+      // A new patient is made last, so a refused booking never uses up a chart number.
+      const patientId = existing ?? (await createPatient(tx, input, t.branch.id));
       const [row] = await tx
         .insert(appointments)
         .values({
           patientId,
           dentistId: dentist.id,
           branchId: t.branch.id,
-          chairNumber: Math.min(...dentist.chairs),
+          chairNumber: chair.number,
           startTime: start,
           endTime: end,
           chairFreeAt: new Date(end.getTime() + t.settings.cleaningMinutes * 60_000),

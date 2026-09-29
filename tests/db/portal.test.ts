@@ -1,14 +1,19 @@
-import { and, eq } from "drizzle-orm";
-import { describe, expect, it, vi } from "vitest";
+import { and, eq, max } from "drizzle-orm";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import * as appointmentRoute from "@/app/api/v1/appointments/[id]/route";
 import * as onlineRequestsRoute from "@/app/api/v1/online-requests/route";
 import * as bookingsRoute from "@/app/api/v1/portal/bookings/route";
 import * as timesRoute from "@/app/api/v1/portal/times/route";
 import { db } from "@/db";
-import { appointmentProcedures, appointments, auditLog, chairs, dentistSchedules, patients, practice, procedureDentists, procedures } from "@/db/schema";
+import { appointmentProcedures, appointments, auditLog, branches, chairs, dentistSchedules, patients, practice, procedureDentists, procedures } from "@/db/schema";
+import { normalizeMobile } from "@/lib/validation";
 import { call, makeBranch, makeUser, request, signIn } from "../helpers";
 
 const MONDAY = "2026-10-05";
 const TUESDAY = "2026-10-06";
+const WEDNESDAY = "2026-10-07";
+// The next Monday: nothing is booked then, and both dentists work.
+const NEXT_MONDAY = "2026-10-12";
 const at = (clock: string, date = MONDAY) => new Date(`${date}T${clock}:00+08:00`);
 // 08:00 on Monday in Manila: with two hours' notice, the first online start is 10:00.
 vi.useFakeTimers({ toFake: ["Date"], now: at("08:00") });
@@ -89,6 +94,13 @@ describe("booking online", () => {
     expect(services).toMatchObject([{ position: 0, procedureId: w.cleaning.id, name: "Oral Prophylaxis (Cleaning)" }]);
     const [log] = await db.select().from(auditLog).where(and(eq(auditLog.entityId, visit.id), eq(auditLog.action, "appointment.requested_online")));
     expect(log).toMatchObject({ userId: null, details: { ip: "203.0.113.1", privacyNoticeAccepted: true, online: true } });
+    // The new patient's own row names no one and holds nothing about them.
+    const [created] = await db.select().from(auditLog).where(and(eq(auditLog.entityId, patient.id), eq(auditLog.action, "patient.created")));
+    expect(created).toMatchObject({ userId: null, entity: "patient", branchId: w.dt.id });
+    expect(created.details).toEqual({ online: true });
+    // The front desk sees the visit's history as done by the online booking, not by "Someone".
+    const detail = await (await call(appointmentRoute.GET, request(`/api/v1/appointments/${visit.id}`, { cookie: w.desk }), { id: visit.id })).json();
+    expect(detail.history).toContainEqual(expect.objectContaining({ by: "Online booking", text: "Booked online, waiting to be confirmed" }));
   });
 
   it("gives the free dentist with the fewest visits that day, then the first by name", async () => {
@@ -98,9 +110,11 @@ describe("booking online", () => {
     // Now Dr. Lim has two and Dr. Reyes one: 14:00 goes to Dr. Reyes.
     await bookOnline({ branch: "downtown", service: w.cleaning.id, start: at("14:00").toISOString(), ...details("Cyd", "Uy", "0918 000 0002") });
     const rows = await db.select().from(appointments).where(eq(appointments.source, "portal"));
-    const dentistAt = (clock: string) => rows.find((r) => r.startTime.getTime() === at(clock).getTime())?.dentistId;
-    expect(dentistAt("13:00")).toBe(w.lim.id);
-    expect(dentistAt("14:00")).toBe(w.reyes.id);
+    const visitAt = (clock: string) => rows.find((r) => r.startTime.getTime() === at(clock).getTime());
+    expect(visitAt("13:00")?.dentistId).toBe(w.lim.id);
+    expect(visitAt("14:00")?.dentistId).toBe(w.reyes.id);
+    // Both chairs are free at 13:00, so it is the lowest one that is taken.
+    expect(visitAt("13:00")?.chairNumber).toBe(1);
   });
 
   it("puts a returning patient's booking on their record", async () => {
@@ -165,11 +179,95 @@ describe("booking online", () => {
     expect(booked.status).toBe(404);
     await db.update(practice).set({ onlineBooking: true });
   });
+
+  it("refuses a branch that is closed", async () => {
+    const w = await world();
+    await db.update(branches).set({ active: false }).where(eq(branches.id, w.dt.id));
+    try {
+      const booked = await bookOnline({ branch: "downtown", service: w.cleaning.id, start: at("16:00", TUESDAY).toISOString(), ...details("Fe", "Lim", "09190000007") }, 6);
+      expect(booked.status).toBe(404);
+      expect((await booked.json()).error.message).toBe("That branch doesn't take online bookings.");
+      const open = await times(w.cleaning.id);
+      expect(open.status).toBe(404);
+      expect((await open.json()).error.message).toBe("That branch doesn't take online bookings.");
+    } finally {
+      await db.update(branches).set({ active: true }).where(eq(branches.id, w.dt.id));
+    }
+  });
+});
+
+describe("refusals on the booking route", () => {
+  // The highest chart number before any refusal below: a refused booking must not use one up.
+  let chartNoBefore = 0;
+  beforeAll(async () => {
+    await world();
+    chartNoBefore = (await db.select({ n: max(patients.chartNo) }).from(patients))[0].n ?? 0;
+  });
+
+  /** A booking the route refuses as taken: it says so, saves no visit, and leaves no patient for the new mobile number. */
+  async function expectTaken(start: Date, firstName: string, lastName: string, mobile: string, from: number) {
+    const w = await world();
+    const visits = (await db.select().from(appointments)).length;
+    const res = await bookOnline({ branch: "downtown", service: w.cleaning.id, start: start.toISOString(), ...details(firstName, lastName, mobile) }, from);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.message).toBe("That time was just taken. Please pick another.");
+    expect((await db.select().from(appointments)).length).toBe(visits);
+    expect(await db.select().from(patients).where(eq(patients.mobile, normalizeMobile(mobile) ?? ""))).toEqual([]);
+  }
+
+  it("refuses a start inside the two hours' notice", async () => {
+    await expectTaken(at("09:00"), "Uma", "Notice", "09190000101", 7);
+  });
+
+  it("refuses a start off the 15-minute grid", async () => {
+    await expectTaken(at("10:07"), "Ollie", "Grid", "09190000102", 7);
+  });
+
+  it("gives a patient no second visit at the same time, though another dentist is free", async () => {
+    const w = await world();
+    const rosa = { branch: "downtown", service: w.cleaning.id, ...details("Rosa", "Nolasco", "09190000103") };
+    expect((await bookOnline({ ...rosa, start: at("10:00", NEXT_MONDAY).toISOString() }, 8)).status).toBe(201);
+    // Dr. Reyes is free at 10:30, and the public list offers it: the only one busy is Rosa, who is with Dr. Lim until 11:00.
+    expect((await (await times(w.cleaning.id, NEXT_MONDAY)).json()).times).toContain(at("10:30", NEXT_MONDAY).toISOString());
+    const visits = (await db.select().from(appointments)).length;
+    const again = await bookOnline({ ...rosa, start: at("10:30", NEXT_MONDAY).toISOString() }, 8);
+    expect(again.status).toBe(409);
+    expect((await again.json()).error.message).toBe("That time was just taken. Please pick another.");
+    expect((await db.select().from(appointments)).length).toBe(visits);
+    expect(await db.select().from(patients).where(eq(patients.mobile, "+639190000103"))).toHaveLength(1);
+    // Anyone else can have that 10:30.
+    const sam = await bookOnline({ branch: "downtown", service: w.cleaning.id, start: at("10:30", NEXT_MONDAY).toISOString(), ...details("Sam", "Ocampo", "09190000104") }, 8);
+    expect(sam.status).toBe(201);
+    // The two refusals of new patients before this test used no chart number: Rosa's is the one after the highest.
+    const [patient] = await db.select().from(patients).where(eq(patients.mobile, "+639190000103"));
+    expect(patient.chartNo).toBe(chartNoBefore + 1);
+  });
 });
 
 describe("online requests", () => {
   it("lists the branch's waiting online requests for the front desk", async () => {
     const w = await world();
+    // Visits the list must leave out, for people named Excluded: one booked by staff, one already confirmed, and one that has
+    // started. They clash with nothing: each is Dr. Reyes on chair 1 at a time when no other visit is.
+    for (const [firstName, status, source, start] of [
+      ["Staff", "requested", "staff", at("09:00", WEDNESDAY)],
+      ["Confirmed", "confirmed", "portal", at("11:00", WEDNESDAY)],
+      ["Started", "requested", "portal", at("07:00")],
+    ] as const) {
+      const [person] = await db.insert(patients).values({ lastName: "Excluded", firstName }).returning();
+      const end = new Date(start.getTime() + 3_600_000);
+      await db.insert(appointments).values({
+        patientId: person.id,
+        dentistId: w.reyes.id,
+        branchId: w.dt.id,
+        chairNumber: 1,
+        startTime: start,
+        endTime: end,
+        chairFreeAt: new Date(end.getTime() + 600_000),
+        status,
+        source,
+      });
+    }
     const res = await call(onlineRequestsRoute.GET, request("/api/v1/online-requests?branch=downtown", { cookie: w.desk }));
     expect(res.status).toBe(200);
     const list = await res.json();
@@ -177,6 +275,7 @@ describe("online requests", () => {
     expect(list).toContainEqual(
       expect.objectContaining({ patientName: "Santos, Ana", mobile: "+639171234567", services: ["Oral Prophylaxis (Cleaning)"], dentistName: "Dr. Reyes", note: "Tooth pain" }),
     );
+    expect(list.filter((r: { patientName: string }) => r.patientName.startsWith("Excluded"))).toEqual([]);
   });
 
   it("is for people who manage the branch's visits", async () => {
