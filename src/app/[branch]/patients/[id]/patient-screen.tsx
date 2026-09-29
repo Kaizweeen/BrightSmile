@@ -17,6 +17,7 @@ import { formatDateTime, manilaDate } from "@/lib/time";
 import type { PatientVisitJson } from "@/lib/visits";
 import type { Subject } from "@/lib/permissions";
 import { ChartTab } from "./chart-tab";
+import { NotesTab } from "./notes-tab";
 
 export type PatientJson = {
   id: string;
@@ -62,6 +63,7 @@ export function PatientScreen({ patient, canEdit, staff, initialTab }: { patient
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="visits">Visits</TabsTrigger>
           <TabsTrigger value="chart">Chart</TabsTrigger>
+          <TabsTrigger value="notes">Notes</TabsTrigger>
         </TabsList>
         <TabsContent value="details" className="pt-4">
           <DetailsPanel patient={patient} canEdit={canEdit} />
@@ -71,6 +73,9 @@ export function PatientScreen({ patient, canEdit, staff, initialTab }: { patient
         </TabsContent>
         <TabsContent value="chart" className="pt-4">
           <ChartTab patientId={patient.id} staff={staff} />
+        </TabsContent>
+        <TabsContent value="notes" className="pt-4">
+          <NotesTab patientId={patient.id} staff={staff} />
         </TabsContent>
       </Tabs>
     </div>
@@ -211,8 +216,9 @@ function VisitsPanel({ patientId }: { patientId: string }) {
                 <TableHead>When</TableHead>
                 <TableHead>Branch</TableHead>
                 <TableHead>Chair</TableHead>
-                <TableHead>Dentist</TableHead>
+                <TableHead>Teeth</TableHead>
                 <TableHead>Procedures</TableHead>
+                <TableHead>Dentist</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
@@ -222,8 +228,9 @@ function VisitsPanel({ patientId }: { patientId: string }) {
                   <TableCell>{formatDateTime(new Date(v.start))}</TableCell>
                   <TableCell>{v.branchName}</TableCell>
                   <TableCell>{v.chairLabel ? `${v.chairNumber}, ${v.chairLabel}` : v.chairNumber}</TableCell>
-                  <TableCell>{v.dentistName}</TableCell>
+                  <TableCell>{v.teeth.join(", ")}</TableCell>
                   <TableCell className="whitespace-normal">{v.procedures.join(", ")}</TableCell>
+                  <TableCell>{v.dentistName}</TableCell>
                   <TableCell>
                     <StatusBadge status={v.status} />
                   </TableCell>
