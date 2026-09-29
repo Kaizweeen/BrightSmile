@@ -43,13 +43,15 @@ export async function portalInfo(): Promise<PortalInfo> {
 
 /**
  * The branch and service a patient picked, refused as in online booking spec 8, with the service's dentists (null: all).
- * In a booking's transaction the branch is read with the shared lock staff bookings take (src/server/booking.ts): closing
- * the branch waits for the booking, and a closing that committed first is seen here.
+ * With `lock`, in a booking's transaction, the branch is read with the shared lock staff bookings take (src/server/booking.ts):
+ * closing the branch waits for the booking, and a closing that committed first is seen here. The public open times and the
+ * bot trap only read, so they pass false.
  */
-async function target(tx: Db, branchCode: string, serviceId: string) {
+async function target(tx: Db, branchCode: string, serviceId: string, lock: boolean) {
   const settings = await practiceSettings(tx);
   if (!settings.onlineBooking) throw closed();
-  const [branch] = await tx.select().from(branches).where(eq(branches.code, branchCode)).for("share");
+  const query = tx.select().from(branches).where(eq(branches.code, branchCode));
+  const [branch] = lock ? await query.for("share") : await query;
   if (!branch?.active) throw new ApiError(404, "branch", "That branch doesn't take online bookings.");
   const [service] = await tx.select().from(procedures).where(eq(procedures.id, serviceId));
   if (!service?.active || !service.online) throw new ApiError(404, "service", "That service isn't offered online.");
@@ -80,7 +82,7 @@ export const timesSchema = z.object({ branch: z.string().min(1), service: z.uuid
 /** GET /portal/times: the open starts only (online booking spec 6.3), never who is free. */
 export async function portalTimes(q: z.infer<typeof timesSchema>): Promise<{ times: string[] }> {
   const now = new Date();
-  const t = await target(db, q.branch, q.service);
+  const t = await target(db, q.branch, q.service, false);
   if (!bookable(q.date, now)) return { times: [] };
   const open = await openStarts(db, t, q.date, now);
   return { times: open.map((o) => o.start.toISOString()) };
@@ -140,7 +142,7 @@ async function visitsOn(tx: Db, date: string, dentistIds: string[]): Promise<Map
 export async function bookOnline(input: z.infer<typeof onlineBookingSchema>, ip: string): Promise<{ branch: string; service: string; start: string }> {
   // The bot trap: the same answer as a real booking, and nothing saved.
   if (input.website !== "") {
-    const t = await target(db, input.branch, input.service);
+    const t = await target(db, input.branch, input.service, false);
     return { branch: t.branch.name, service: t.service.name, start: new Date(input.start).toISOString() };
   }
   const now = new Date();
@@ -149,7 +151,7 @@ export async function bookOnline(input: z.infer<typeof onlineBookingSchema>, ip:
     return await db.transaction(async (tx) => {
       // One online booking at a time, so two cannot both pass the counts below.
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('dentasync.portal'))`);
-      const t = await target(tx, input.branch, input.service);
+      const t = await target(tx, input.branch, input.service, true);
       const [fromIp] = await tx
         .select({ n: count() })
         .from(auditLog)
