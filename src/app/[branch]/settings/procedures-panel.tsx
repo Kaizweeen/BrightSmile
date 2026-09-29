@@ -19,9 +19,10 @@ export function ProceduresPanel() {
   const services = useQuery({ queryKey: ["procedures"], queryFn: () => api<Service[]>("/procedures") });
   const dentists = useDentists();
   const [editing, setEditing] = useState<Service | "new" | null>(null);
-  if (services.isPending) return <p className="text-muted-foreground">Loading services...</p>;
+  if (services.isPending || dentists.isPending) return <p className="text-muted-foreground">Loading services...</p>;
   if (services.isError) return <FormAlert message={errorMessage(services.error)} />;
-  const names = new Map((dentists.data ?? []).map((d) => [d.id, d.name]));
+  if (dentists.isError) return <FormAlert message={errorMessage(dentists.error)} />;
+  const names = new Map(dentists.data.map((d) => [d.id, d.name]));
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -67,7 +68,7 @@ export function ProceduresPanel() {
           </TableBody>
         </Table>
       </div>
-      {editing && <ServiceDialog service={editing === "new" ? null : editing} dentists={dentists.data ?? []} onClose={() => setEditing(null)} />}
+      {editing && <ServiceDialog service={editing === "new" ? null : editing} dentists={dentists.data} onClose={() => setEditing(null)} />}
     </div>
   );
 }
@@ -78,7 +79,7 @@ function ServiceDialog({ service, dentists, onClose }: { service: Service | null
     name: service?.name ?? "",
     online: service?.online ?? true,
     active: service?.active ?? true,
-    dentistIds: service?.dentistIds ?? [],
+    dentistIds: (service?.dentistIds ?? []).filter((id) => dentists.some((d) => d.id === id)),
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const save = useMutation({
@@ -120,6 +121,9 @@ function ServiceDialog({ service, dentists, onClose }: { service: Service | null
           <fieldset className="grid gap-1">
             <legend className="mb-1 text-sm font-medium">Dentists</legend>
             {dentists.length === 0 && <p className="text-sm text-muted-foreground">No dentists yet.</p>}
+            {dentists.length > 0 && form.dentistIds.length === 0 && (
+              <p className="text-sm text-muted-foreground">None ticked: any dentist can be booked for it online.</p>
+            )}
             {dentists.map((d) => (
               <label key={d.id} className="flex min-h-11 items-center gap-3">
                 <input type="checkbox" checked={form.dentistIds.includes(d.id)} onChange={(event) => toggle(d.id, event.target.checked)} className="size-4 accent-primary" />

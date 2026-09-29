@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { api, errorMessage, RequestError } from "@/lib/fetcher";
-import { useDentists } from "@/lib/queries";
+import { useDentists, usePractice } from "@/lib/queries";
 import { durationText, formatDay, formatTime, fromMinutes, manilaDate, manilaInstant, manilaMinutes, toMinutes } from "@/lib/time";
 import { chairName, type VisitDetailJson } from "@/lib/visits";
 
@@ -67,18 +67,24 @@ export function BookingPanel({ intent, branch, chairs, today, onClose }: Props) 
 
   const procedures = useQuery({ queryKey: ["procedures", "active"], queryFn: () => api<Procedure[]>("/procedures?active=1") });
   const dentists = useDentists();
-  const practice = useQuery({ queryKey: ["practice"], queryFn: () => api<{ visitMinutes: number; cleaningMinutes: number }>("/practice") });
+  const practice = usePractice();
   // Online booking spec 6.2: a new visit starts at the standard length, a moved one keeps its own; staff can change either.
-  const minutes = length ?? (moving ? minutesBetween(moving.start, moving.end) : practice.data?.visitMinutes);
-  const turnover = moving ? minutesBetween(moving.end, moving.chairFreeAt) : practice.data?.cleaningMinutes;
-  const lengthOptions = minutes !== undefined && !LENGTHS.includes(minutes) ? [...LENGTHS, minutes].sort((a, b) => a - b) : LENGTHS;
-  // A moved visit's own length is sent only when staff change it.
-  const sentMinutes = moving && length === null ? undefined : minutes;
+  const own = moving ? minutesBetween(moving.start, moving.end) : undefined;
+  const lengthMinutes = length ?? own ?? practice.data?.visitMinutes;
+  const cleaningMinutes = moving ? minutesBetween(moving.end, moving.chairFreeAt) : practice.data?.cleaningMinutes;
+  // A moved visit's own length may be off the 15-minute steps: it stays in the list, so staff can go back to it.
+  const lengthOptions = own !== undefined && !LENGTHS.includes(own) ? [...LENGTHS, own].sort((a, b) => a - b) : LENGTHS;
+  // A moved visit's own length is sent only when staff pick another: the server keeps it otherwise, and takes only 15-minute steps.
+  const sentMinutes = moving && (length === null || length === own) ? undefined : lengthMinutes;
+  // Open times are found for the length rounded up to the grid: any time that fits the longer visit fits the real one.
+  const searchMinutes = lengthMinutes === undefined ? undefined : Math.min(480, Math.ceil(lengthMinutes / 15) * 15);
+  // The standard length could not be loaded, so a new visit has no length to book or search with.
+  const practiceFailed = practice.isError && lengthMinutes === undefined;
   const open = useQuery({
-    queryKey: ["availability", branch.code, date, minutes, patient?.id ?? ""],
+    queryKey: ["availability", branch.code, date, searchMinutes, patient?.id ?? ""],
     queryFn: () =>
-      api<{ times: OpenTime[] }>(`/availability?branch=${branch.code}&date=${date}&minutes=${minutes}${patient ? `&patient=${patient.id}` : ""}`),
-    enabled: minutes !== undefined && !walkIn && !anyTime && !chairOnly,
+      api<{ times: OpenTime[] }>(`/availability?branch=${branch.code}&date=${date}&minutes=${searchMinutes}${patient ? `&patient=${patient.id}` : ""}`),
+    enabled: searchMinutes !== undefined && !walkIn && !anyTime && !chairOnly,
   });
   const working = [...new Map((open.data?.times ?? []).flatMap((t) => t.dentists.map((d) => [d.id, d.name] as const))).entries()];
   const times = (open.data?.times ?? []).filter((t) => !dentistFilter || t.dentists.some((d) => d.id === dentistFilter));
@@ -172,41 +178,47 @@ export function BookingPanel({ intent, branch, chairs, today, onClose }: Props) 
           )}
 
           {!chairOnly && (
-            <fieldset className="grid gap-2">
-              <legend className="mb-1 text-sm font-medium">Services</legend>
-              <div className="grid gap-1 sm:grid-cols-2">
-                {(procedures.data ?? []).map((p) => (
-                  <label key={p.id} className={toggleClass}>
-                    <input
-                      type="checkbox"
-                      className="size-4 accent-primary"
-                      checked={procedureIds.includes(p.id)}
-                      onChange={(event) => setProcedureIds(event.target.checked ? [...procedureIds, p.id] : procedureIds.filter((id) => id !== p.id))}
-                    />
-                    {p.name}
-                  </label>
-                ))}
-              </div>
-              <label className="grid gap-1.5 text-sm font-medium sm:max-w-xs">
-                Length
-                <NativeSelect
-                  value={minutes === undefined ? "" : String(minutes)}
-                  onChange={(event) => {
-                    setLength(Number(event.target.value));
-                    if (!anyTime) setTime("");
-                  }}
-                >
-                  {lengthOptions.map((m) => (
-                    <NativeSelectOption key={m} value={String(m)}>
-                      {durationText(m)}
-                    </NativeSelectOption>
+            <>
+              <fieldset className="grid gap-2">
+                <legend className="mb-1 text-sm font-medium">Services</legend>
+                <div className="grid gap-1 sm:grid-cols-2">
+                  {(procedures.data ?? []).map((p) => (
+                    <label key={p.id} className={toggleClass}>
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-primary"
+                        checked={procedureIds.includes(p.id)}
+                        onChange={(event) => setProcedureIds(event.target.checked ? [...procedureIds, p.id] : procedureIds.filter((id) => id !== p.id))}
+                      />
+                      {p.name}
+                    </label>
                   ))}
-                </NativeSelect>
-              </label>
-              {minutes !== undefined && turnover !== undefined && (
-                <p className="text-sm text-muted-foreground">{`${durationText(minutes)}, then ${turnover === 0 ? "no chair cleaning" : `${durationText(turnover)} of chair cleaning`}.`}</p>
-              )}
-            </fieldset>
+                </div>
+              </fieldset>
+              <div className="grid gap-2">
+                <label className="grid gap-1.5 text-sm font-medium sm:max-w-xs">
+                  Length
+                  <NativeSelect
+                    value={lengthMinutes === undefined ? "" : String(lengthMinutes)}
+                    disabled={lengthMinutes === undefined}
+                    onChange={(event) => {
+                      setLength(Number(event.target.value));
+                      if (!anyTime) setTime("");
+                    }}
+                  >
+                    {lengthOptions.map((m) => (
+                      <NativeSelectOption key={m} value={String(m)}>
+                        {durationText(m)}
+                      </NativeSelectOption>
+                    ))}
+                  </NativeSelect>
+                </label>
+                {practiceFailed && <FormAlert message={errorMessage(practice.error)} />}
+                {lengthMinutes !== undefined && cleaningMinutes !== undefined && (
+                  <p className="text-sm text-muted-foreground">{`${durationText(lengthMinutes)}, then ${cleaningMinutes === 0 ? "no chair cleaning" : `${durationText(cleaningMinutes)} of chair cleaning`}.`}</p>
+                )}
+              </div>
+            </>
           )}
 
           {!moving && (
@@ -283,7 +295,9 @@ export function BookingPanel({ intent, branch, chairs, today, onClose }: Props) 
                 </Button>
               </div>
               {!anyTime &&
-                (open.isPending ? (
+                (practiceFailed ? (
+                  <FormAlert message={errorMessage(practice.error)} />
+                ) : open.isPending ? (
                   <p className="text-sm text-muted-foreground">Finding open times...</p>
                 ) : open.isError ? (
                   <FormAlert message={errorMessage(open.error)} />

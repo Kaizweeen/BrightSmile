@@ -234,7 +234,7 @@ export async function moveAppointment(actor: Staff, id: string, input: z.infer<t
         and(ne(appointments.id, id), eq(appointments.branchId, visit.branchId), eq(appointments.chairNumber, chairNumber)),
       );
       if (clashes.length > 0) {
-        throw new ApiError(409, "conflict", `Chair ${chairNumber} is taken until ${formatTime(clashes[0].chairFreeAt)}, turnover included.`, {
+        throw new ApiError(409, "conflict", `Chair ${chairNumber} is taken until ${formatTime(clashes[0].chairFreeAt)}, cleaning included.`, {
           conflicts: clashes.map((c) => conflictFor("chair", c)),
         });
       }

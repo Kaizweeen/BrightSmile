@@ -99,7 +99,7 @@ export function DayGrid({ date, range, chairs, visits, onOpen, onSlot }: Props) 
                       {at.turnover > 0 && (
                         <div
                           aria-hidden
-                          title={`Turnover until ${formatTime(new Date(v.chairFreeAt))}`}
+                          title={`Cleaning until ${formatTime(new Date(v.chairFreeAt))}`}
                           className="absolute inset-x-1 rounded-b-md border border-dashed"
                           style={{
                             top: px(at.top + at.height),

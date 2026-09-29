@@ -80,7 +80,7 @@ export function conflictFor(kind: Conflict["kind"], v: Visit): Conflict {
 }
 
 function clashMessage(c: Conflict): string {
-  if (c.kind === "chair") return `Chair ${c.chairNumber} is taken until ${formatTime(c.chairFreeAt)}, turnover included.`;
+  if (c.kind === "chair") return `Chair ${c.chairNumber} is taken until ${formatTime(c.chairFreeAt)}, cleaning included.`;
   const who = c.kind === "dentist" ? c.dentist : c.patient;
   return `${who} has a visit from ${formatTime(c.start)} to ${formatTime(c.end)} at ${c.branch}.`;
 }

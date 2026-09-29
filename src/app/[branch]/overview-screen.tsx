@@ -100,7 +100,7 @@ export function OverviewScreen({ date, today, staff }: { date: string; today: st
                       <TableHead>Branch</TableHead>
                       <TableHead>Chair</TableHead>
                       <TableHead>Dentist</TableHead>
-                      <TableHead>Procedures</TableHead>
+                      <TableHead>Services</TableHead>
                       <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -125,7 +125,7 @@ export function OverviewScreen({ date, today, staff }: { date: string; today: st
                         <TableCell>{v.dentistName}</TableCell>
                         <TableCell className="whitespace-normal">{v.procedures.join(", ")}</TableCell>
                         <TableCell>
-                          <StatusBadge status={v.status} />
+                          <StatusBadge status={v.status} online={v.source === "portal"} />
                         </TableCell>
                       </TableRow>
                     ))}
