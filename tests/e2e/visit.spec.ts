@@ -3,16 +3,16 @@ import { E2E } from "./env";
 
 const origin = `http://localhost:${E2E.port}`;
 
-/** The next quarter hour at least 15 minutes away, as "HH:MM" in Manila, or null when that is tomorrow. */
+/** The next quarter hour at least 15 minutes away, as "HH:MM" in Manila, or null when its 30-minute visit would end tomorrow. */
 function nextSlot(): string | null {
   const manila = new Date(Date.now() + 8 * 3_600_000);
   const slot = Math.ceil((manila.getUTCHours() * 60 + manila.getUTCMinutes() + 15) / 15) * 15;
-  return slot < 24 * 60 ? `${String(Math.floor(slot / 60)).padStart(2, "0")}:${String(slot % 60).padStart(2, "0")}` : null;
+  return slot + 30 < 24 * 60 ? `${String(Math.floor(slot / 60)).padStart(2, "0")}:${String(slot % 60).padStart(2, "0")}` : null;
 }
 
 test("a visit from setup to completion", async ({ page, browser }) => {
   const slot = nextSlot();
-  test.skip(slot === null, "The visit is booked for later today: run this before 23:30 Manila time.");
+  test.skip(slot === null, "The visit is booked for later today: run this before 23:00 Manila time.");
 
   // Setup (spec 6.1): the practice and its owner.
   await page.goto("/setup");

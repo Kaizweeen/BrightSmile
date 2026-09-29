@@ -32,7 +32,7 @@ export function ChartTab({ patientId, staff }: { patientId: string; staff: Subje
     examVisits.find((v) => v.status === "checked_in" || v.status === "in_treatment") ??
     examVisits.find((v) => new Date(v.start) <= now) ??
     examVisits.at(-1);
-  const chosen = visitId ?? current?.id ?? null;
+  const chosen = visitId ?? current?.id ?? allVisits[0]?.id ?? null;
 
   return (
     <div className="grid gap-8">

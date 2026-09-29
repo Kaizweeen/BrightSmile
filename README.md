@@ -31,7 +31,7 @@ Appointments, chairs, and dental charts for a dental practice with three branche
 
 - Stop `npm run dev` first; both would share `.next`.
 - Playwright needs a browser once: `npx playwright install chromium`. Or use an installed Chrome or Edge: `$env:PLAYWRIGHT_CHANNEL = "chrome"` in PowerShell, `PLAYWRIGHT_CHANNEL=chrome` elsewhere.
-- The visit is booked for the next quarter hour, so run it before 23:30 Manila time.
+- The visit is booked for the next quarter hour and must end the same day, so run it before 23:00 Manila time.
 
 ## Going live
 
@@ -40,7 +40,7 @@ Spec section 16 holds the decisions. The steps:
 1. **Database.** Create a Postgres 17 database in Singapore (Neon Free to start). From a trusted computer, apply the migrations: `$env:DATABASE_URL = "postgres://..."; npm run db:migrate; Remove-Item Env:DATABASE_URL` in PowerShell, or `DATABASE_URL="postgres://..." npm run db:migrate`, which sets it for that one command. Never leave `DATABASE_URL` set in a window where you then run `npm run dev` (it refuses a remote database for that reason). Run it again after any release that adds a file under `drizzle/`, before that release goes out.
 2. **App.** Deploy the repository to Netlify (the free plan allows commercial use; it pauses the site when the month's credits run out, so batch releases about weekly) or to Vercel Pro. The build command is `npm run build`. Set four environment variables: `DATABASE_URL`; `BETTER_AUTH_SECRET` and `SETUP_TOKEN`, each 32 or more random characters, the setup code kept private; and `APP_URL`, the site's https origin with no trailing slash. The server refuses to start if any is missing or if `DATABASE_URL` points at PGlite. The sign-in and join limits count per visitor, by the address in a header the host sets and never takes from the visitor: Netlify's `x-nf-client-connection-ip`, or `x-real-ip` on Vercel (found on its own there). On any other host, set `CLIENT_IP_HEADER` to that host's header.
 3. **First run.** Open `/setup` with the setup code to create the practice and the owner. If the owner sees patients, open Staff, edit their own row, and tick "I see patients" before booking or charting their visits. In Settings, add the real branches, hours, chairs, and procedures, then each dentist's weekly schedule, and print each branch's QR poster for its staff room.
-4. **Backups.** Neon Free keeps only 6 hours of restore history, so these nightly files are the practice's real backups. Each dump is encrypted to the owner's public key: the computer that runs the job holds no secret, and only the owner can decrypt.
+4. **Backups.** Neon Free keeps only 6 hours of restore history, so these nightly files are the practice's real backups. Each dump is encrypted to the owner's public key: the computer that runs the job holds no decryption key, only the database address (give it a read-only database role for the dumps), and only the owner can decrypt.
    - Once, on the owner's computer: make a key pair (`gpg --full-generate-key`), keep the private key there and on an offline copy, and export the public key (`gpg --export --armor OWNER_KEY_ID > owner.pub`).
    - On a trusted computer that stays on at night: install pg_dump 17 (it must match the server) and import the public key (`gpg --import owner.pub`). Use Neon's direct connection string, not the pooled one (whose host has `-pooler` in it).
    - Schedule this every night, with Windows Task Scheduler running Git Bash, or with cron elsewhere, and keep the files away from the database host:
