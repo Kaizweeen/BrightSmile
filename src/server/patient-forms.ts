@@ -1,12 +1,17 @@
-import { and, count, eq, gt, lt, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, type Db } from "@/db";
-import { auditLog, branches, patientForms } from "@/db/schema";
+import { auditLog, branches, patientForms, patients } from "@/db/schema";
+import { covers } from "@/lib/permissions";
 import { manilaDate } from "@/lib/time";
 import { mobileSchema } from "@/lib/validation";
 import { audit } from "./audit";
-import { ApiError } from "./errors";
+import { requireBranch } from "./branches";
+import { ApiError, forbidden, notFound } from "./errors";
+import { requireCan } from "./guard";
+import { duplicates, takeForm, type PatientSummary } from "./patients";
 import { practiceSettings } from "./practice";
+import type { Staff } from "./session";
 
 /** Patient forms spec 7. */
 const FORMS_PER_CLIENT_PER_HOUR = 5;
@@ -80,4 +85,63 @@ export async function sendPatientForm(input: z.infer<typeof patientFormSchema>, 
     );
   });
   return { firstName: input.firstName };
+}
+
+export const patientFormsQuerySchema = z.object({ branch: z.string().min(1) });
+export const attachSchema = z.object({ patientId: z.uuid() });
+
+export type PatientFormView = {
+  id: string;
+  createdAt: Date;
+  lastName: string;
+  firstName: string;
+  middleName: string | null;
+  birthday: string;
+  sex: string;
+  mobile: string;
+  address: string;
+  /** The patients this may already be, by the duplicate warning's rule (patients spec 10). */
+  matches: PatientSummary[];
+};
+
+/** GET /patient-forms (patient forms spec 5): the branch's waiting forms, the newest first, each with the patients it may be. */
+export async function listPatientForms(actor: Staff, q: z.infer<typeof patientFormsQuerySchema>): Promise<PatientFormView[]> {
+  const branch = await requireBranch(q.branch);
+  requireCan(actor, "patient.edit");
+  if (!covers(actor, branch.id)) throw forbidden();
+  await expireForms();
+  const rows = await db
+    .select({
+      id: patientForms.id,
+      createdAt: patientForms.createdAt,
+      lastName: patientForms.lastName,
+      firstName: patientForms.firstName,
+      middleName: patientForms.middleName,
+      birthday: patientForms.birthday,
+      sex: patientForms.sex,
+      mobile: patientForms.mobile,
+      address: patientForms.address,
+    })
+    .from(patientForms)
+    .where(eq(patientForms.branchId, branch.id))
+    .orderBy(desc(patientForms.createdAt));
+  return Promise.all(rows.map(async (form) => ({ ...form, matches: await duplicates(form) })));
+}
+
+/** POST /patient-forms/{id}/attach (spec 5): the form was an existing patient's. It is deleted; staff change the record by hand. */
+export async function attachPatientForm(actor: Staff, id: string, input: z.infer<typeof attachSchema>): Promise<void> {
+  await db.transaction(async (tx) => {
+    const branchId = await takeForm(tx, actor, id);
+    const [patient] = await tx.select({ id: patients.id }).from(patients).where(eq(patients.id, input.patientId));
+    if (!patient) throw notFound("That patient");
+    await audit({ userId: actor.id, action: "patient.form_attached", entity: "patient", entityId: patient.id, branchId, details: { form: id } }, tx);
+  });
+}
+
+/** DELETE /patient-forms/{id} (spec 5): spam, or a form sent twice. */
+export async function discardPatientForm(actor: Staff, id: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    const branchId = await takeForm(tx, actor, id);
+    await audit({ userId: actor.id, action: "patient.form_discarded", entity: "patient_form", entityId: id, branchId }, tx);
+  });
 }

@@ -1,10 +1,15 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
+import * as attachRoute from "@/app/api/v1/patient-forms/[id]/attach/route";
+import * as formRoute from "@/app/api/v1/patient-forms/[id]/route";
+import * as formsListRoute from "@/app/api/v1/patient-forms/route";
+import * as patientsRoute from "@/app/api/v1/patients/route";
 import * as formsRoute from "@/app/api/v1/portal/forms/route";
 import { db } from "@/db";
-import { auditLog, branches, patientForms, practice } from "@/db/schema";
+import { auditLog, branches, patientForms, patients, practice } from "@/db/schema";
+import { normalizeMobile } from "@/lib/validation";
 import { clientKey } from "@/server/api";
-import { call, makeBranch, request } from "../helpers";
+import { call, makeBranch, makeUser, request, signIn } from "../helpers";
 
 async function build() {
   await db.insert(practice).values({ name: "Smile Dental", patientForms: true, privacyNotice: "We keep your details to run your visits." });
@@ -154,5 +159,151 @@ describe("sending a patient form", () => {
     const left = (await db.select().from(patientForms)).map((f) => f.lastName);
     expect(left).toContain("Recent");
     expect(left).not.toContain("Stale");
+  });
+});
+
+async function frontDesk() {
+  const w = await world();
+  const up = await makeBranch({ code: "uptown", name: "Uptown" });
+  const owner = await makeUser({ role: "owner" });
+  const manager = await makeUser({ role: "manager", branchIds: [w.dt.id] });
+  const other = await makeUser({ role: "manager", branchIds: [up.id] });
+  const dentist = await makeUser({ role: "dentist", branchIds: [w.dt.id] });
+  return {
+    ...w,
+    owner: await signIn(owner.username),
+    manager: await signIn(manager.username),
+    other: await signIn(other.username),
+    dentist: await signIn(dentist.username),
+  };
+}
+let deskPromise: ReturnType<typeof frontDesk> | undefined;
+const desk = () => (deskPromise ??= frontDesk());
+
+const list = (cookie: string, branch = "downtown") => call(formsListRoute.GET, request(`/api/v1/patient-forms?branch=${branch}`, { cookie }));
+const addPatient = (cookie: string, body: Record<string, unknown>) => call(patientsRoute.POST, request("/api/v1/patients", { method: "POST", cookie, body }));
+const attach = (cookie: string, id: string, patientId: string) =>
+  call(attachRoute.POST, request(`/api/v1/patient-forms/${id}/attach`, { method: "POST", cookie, body: { patientId } }), { id });
+const discard = (cookie: string, id: string) => call(formRoute.DELETE, request(`/api/v1/patient-forms/${id}`, { method: "DELETE", cookie }), { id });
+const stillThere = async (id: string) => (await db.select().from(patientForms).where(eq(patientForms.id, id))).length === 1;
+
+/** Sends a form (each from its own connection, so the hourly limit never interferes) and answers its row, found by its mobile number. */
+let connection = 100;
+async function sent(changes: { lastName: string; firstName: string; mobile: string; birthday?: string }) {
+  expect((await send(form(changes), connection++)).status).toBe(201);
+  const [row] = await db.select().from(patientForms).where(eq(patientForms.mobile, normalizeMobile(changes.mobile) as string));
+  return row;
+}
+
+describe("the front desk", () => {
+  it("lists the branch's waiting forms, the newest first, each with the patients it may be", async () => {
+    const s = await desk();
+    const [known] = await db.insert(patients).values({ lastName: "Villar", firstName: "Rosa", birthday: "1975-03-09" }).returning();
+    const rosa = await sent({ lastName: "Villar", firstName: "Rosa", birthday: "1975-03-09", mobile: "0917 000 1001" });
+    const ben = await sent({ lastName: "Diaz", firstName: "Ben", mobile: "0917 000 1002" });
+    const res = await list(s.manager);
+    expect(res.status).toBe(200);
+    const forms = (await res.json()) as { id: string; matches: { id: string }[] }[];
+    const ids = forms.map((f) => f.id);
+    expect(ids.indexOf(ben.id)).toBeGreaterThanOrEqual(0);
+    expect(ids.indexOf(ben.id)).toBeLessThan(ids.indexOf(rosa.id));
+    expect(forms.find((f) => f.id === rosa.id)?.matches.map((m) => m.id)).toEqual([known.id]);
+    expect(forms.find((f) => f.id === ben.id)?.matches).toEqual([]);
+    expect(((await (await list(s.owner)).json()) as { id: string }[]).map((f) => f.id)).toEqual(ids);
+  });
+
+  it("shows a branch's forms only to the owner and that branch's managers", async () => {
+    const s = await desk();
+    expect((await list(s.dentist)).status).toBe(403);
+    expect((await list(s.other)).status).toBe(403);
+    const uptown = await list(s.other, "uptown");
+    expect(uptown.status).toBe(200);
+    expect(await uptown.json()).toEqual([]);
+  });
+
+  it("makes a chart from a form and removes the form in one go", async () => {
+    const s = await desk();
+    const f = await sent({ lastName: "Garcia", firstName: "Lea", birthday: "2001-11-30", mobile: "0917 000 1003" });
+    const body = { lastName: "Garcia", firstName: "Lea", birthday: "2001-11-30", sex: "female", mobile: "+639170001003", address: "1 Rizal Ave, Manila", homeBranch: "downtown", formId: f.id };
+    const res = await addPatient(s.manager, body);
+    expect(res.status).toBe(201);
+    const { id } = await res.json();
+    const [chart] = await db.select().from(patients).where(eq(patients.id, id));
+    expect(chart).toMatchObject({ lastName: "Garcia", firstName: "Lea", birthday: "2001-11-30", sex: "female", mobile: "+639170001003", homeBranchId: s.dt.id });
+    expect(await stillThere(f.id)).toBe(false);
+    const [created] = await db.select().from(auditLog).where(and(eq(auditLog.action, "patient.created"), eq(auditLog.entityId, id)));
+    expect(created.details).toEqual({ form: f.id });
+    // The form is gone: a second chart from it is refused, and nothing is made.
+    const before = (await db.select().from(patients)).length;
+    const again = await addPatient(s.manager, { ...body, firstName: "Leah", allowDuplicate: true });
+    expect(again.status).toBe(404);
+    expect((await again.json()).error.message).toBe("That form was already handled.");
+    expect((await db.select().from(patients)).length).toBe(before);
+  });
+
+  it("keeps the duplicate warning for a chart made from a form, and the form with it", async () => {
+    const s = await desk();
+    const f = await sent({ lastName: "Villar", firstName: "Rosa", birthday: "1975-03-09", mobile: "0917 000 1004" });
+    const res = await addPatient(s.manager, { lastName: "Villar", firstName: "Rosa", birthday: "1975-03-09", formId: f.id });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe("possible_duplicate");
+    expect(await stillThere(f.id)).toBe(true);
+  });
+
+  it("refuses a form from another branch's poster, and to dentists, and keeps it", async () => {
+    const s = await desk();
+    const f = await sent({ lastName: "Ramos", firstName: "Jo", mobile: "0917 000 1005" });
+    const before = (await db.select().from(patients)).length;
+    expect((await addPatient(s.other, { lastName: "Ramos", firstName: "Jo", formId: f.id })).status).toBe(403);
+    expect((await db.select().from(patients)).length).toBe(before);
+    expect((await discard(s.other, f.id)).status).toBe(403);
+    expect((await discard(s.dentist, f.id)).status).toBe(403);
+    expect(await stillThere(f.id)).toBe(true);
+  });
+
+  it("adds a form to an existing patient's record", async () => {
+    const s = await desk();
+    const [known] = await db.insert(patients).values({ lastName: "Lopez", firstName: "Mia" }).returning();
+    const f = await sent({ lastName: "Lopez", firstName: "Mia", mobile: "0917 000 1006" });
+    const res = await attach(s.manager, f.id, known.id);
+    expect(res.status).toBe(200);
+    expect(await stillThere(f.id)).toBe(false);
+    const [row] = await db.select().from(auditLog).where(eq(auditLog.action, "patient.form_attached"));
+    expect(row).toMatchObject({ entity: "patient", entityId: known.id, branchId: s.dt.id, details: { form: f.id } });
+    expect((await attach(s.manager, f.id, known.id)).status).toBe(404);
+  });
+
+  it("refuses to add a form to a patient who is not there, and keeps the form", async () => {
+    const s = await desk();
+    const f = await sent({ lastName: "Tan", firstName: "Kim", mobile: "0917 000 1007" });
+    expect((await attach(s.manager, f.id, "00000000-0000-4000-8000-000000000000")).status).toBe(404);
+    expect(await stillThere(f.id)).toBe(true);
+  });
+
+  it("discards a form", async () => {
+    const s = await desk();
+    const f = await sent({ lastName: "Spam", firstName: "Bot", mobile: "0917 000 1008" });
+    expect((await discard(s.owner, f.id)).status).toBe(200);
+    expect(await stillThere(f.id)).toBe(false);
+    const [row] = await db.select().from(auditLog).where(and(eq(auditLog.action, "patient.form_discarded"), eq(auditLog.entityId, f.id)));
+    expect(row).toMatchObject({ entity: "patient_form", branchId: s.dt.id });
+    expect((await discard(s.owner, f.id)).status).toBe(404);
+  });
+
+  it("deletes forms waiting more than 30 days when the list is read", async () => {
+    const s = await desk();
+    await db.insert(patientForms).values({
+      branchId: s.dt.id,
+      lastName: "Expired",
+      firstName: "Old",
+      birthday: "1970-01-01",
+      sex: "male",
+      mobile: "+639170000009",
+      address: "Old St",
+      createdAt: new Date(Date.now() - 31 * 86_400_000),
+    });
+    const forms = (await (await list(s.manager)).json()) as { lastName: string }[];
+    expect(forms.map((f) => f.lastName)).not.toContain("Expired");
+    expect(await db.select().from(patientForms).where(eq(patientForms.lastName, "Expired"))).toEqual([]);
   });
 });
