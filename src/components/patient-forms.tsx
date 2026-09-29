@@ -91,7 +91,8 @@ export function PatientForms({ branchCode, onOpenPatient }: { branchCode: string
           void list.refetch();
         }}
       >
-        {list.data ? `Patient forms (${count})` : "Patient forms"}
+        {/* The server sends at most the newest 100 (src/server/patient-forms.ts), so a full list may be only some of what waits. */}
+        {list.data ? `Patient forms (${count >= 100 ? "100+" : count})` : "Patient forms"}
       </Button>
       <Dialog open={listOpen} onOpenChange={setListOpen}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">

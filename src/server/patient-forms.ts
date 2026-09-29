@@ -7,7 +7,7 @@ import { manilaDate } from "@/lib/time";
 import { mobileSchema } from "@/lib/validation";
 import { audit } from "./audit";
 import { requireBranch } from "./branches";
-import { ApiError, forbidden, notFound } from "./errors";
+import { ApiError, forbidden, notFound, pgCode } from "./errors";
 import { requireCan } from "./guard";
 import { duplicates, takeForm, type PatientSummary } from "./patients";
 import { practiceSettings } from "./practice";
@@ -19,6 +19,7 @@ const FORMS_PER_CLIENT_PER_HOUR = 5;
 const closed = () => new ApiError(404, "closed", "Patient forms aren't available right now.");
 const noBranch = () => new ApiError(404, "branch", "That branch doesn't take patient forms.");
 const tooMany = () => new ApiError(429, "too_many_requests", "Too many forms from this connection. Please ask at the front desk.");
+const busy = () => new ApiError(503, "busy", "Patient forms are busy right now. Please try again in a moment.");
 
 const nameField = (what: string) => z.string().trim().min(1, `Enter your ${what}`).max(50, "Use at most 50 characters");
 
@@ -60,30 +61,38 @@ export async function sendPatientForm(input: z.infer<typeof patientFormSchema>, 
   if (input.website !== "") return { firstName: input.firstName };
   // A connection already at its limit is refused without waiting for the lock or holding a connection.
   if ((await formsFrom(client)) >= FORMS_PER_CLIENT_PER_HOUR) throw tooMany();
-  await db.transaction(async (tx) => {
-    // The count that decides: forms from one connection wait for each other here, so it holds even when many arrive at once.
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`dentasync.forms:${client}`}))`);
-    if ((await formsFrom(client, tx)) >= FORMS_PER_CLIENT_PER_HOUR) throw tooMany();
-    await expireForms(tx);
-    const [form] = await tx
-      .insert(patientForms)
-      .values({
-        branchId: branch.id,
-        lastName: input.lastName,
-        firstName: input.firstName,
-        middleName: input.middleName || null,
-        birthday: input.birthday,
-        sex: input.sex,
-        mobile: input.mobile,
-        address: input.address,
-      })
-      .returning({ id: patientForms.id });
-    // The client is a keyed hash of the address, never the address (src/server/api.ts), and nothing the patient typed is logged.
-    await audit(
-      { userId: null, action: "patient.form_received", entity: "patient_form", entityId: form.id, branchId: branch.id, details: { client, privacyNoticeAccepted: true } },
-      tx,
-    );
-  });
+  try {
+    await db.transaction(async (tx) => {
+      // A busy lock is waited for a few seconds at most, so one stuck form cannot hold every other form from its connection until the request times out.
+      await tx.execute(sql`set local lock_timeout = '5s'`);
+      // The count that decides: forms from one connection wait for each other here, so it holds even when many arrive at once.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`dentasync.forms:${client}`}))`);
+      if ((await formsFrom(client, tx)) >= FORMS_PER_CLIENT_PER_HOUR) throw tooMany();
+      await expireForms(tx);
+      const [form] = await tx
+        .insert(patientForms)
+        .values({
+          branchId: branch.id,
+          lastName: input.lastName,
+          firstName: input.firstName,
+          middleName: input.middleName || null,
+          birthday: input.birthday,
+          sex: input.sex,
+          mobile: input.mobile,
+          address: input.address,
+        })
+        .returning({ id: patientForms.id });
+      // The client is a keyed hash of the address, never the address (src/server/api.ts), and nothing the patient typed is logged.
+      await audit(
+        { userId: null, action: "patient.form_received", entity: "patient_form", entityId: form.id, branchId: branch.id, details: { client, privacyNoticeAccepted: true } },
+        tx,
+      );
+    });
+  } catch (error) {
+    // The database gave up waiting for the connection's lock.
+    if (pgCode(error) === "55P03") throw busy();
+    throw error;
+  }
   return { firstName: input.firstName };
 }
 
@@ -104,7 +113,7 @@ export type PatientFormView = {
   matches: PatientSummary[];
 };
 
-/** GET /patient-forms (patient forms spec 5): the branch's waiting forms, the newest first, each with the patients it may be. */
+/** GET /patient-forms (patient forms spec 5): the branch's newest 100 waiting forms, the newest first, each with the patients it may be. */
 export async function listPatientForms(actor: Staff, q: z.infer<typeof patientFormsQuerySchema>): Promise<PatientFormView[]> {
   const branch = await requireBranch(q.branch);
   requireCan(actor, "patient.edit");
@@ -124,7 +133,9 @@ export async function listPatientForms(actor: Staff, q: z.infer<typeof patientFo
     })
     .from(patientForms)
     .where(eq(patientForms.branchId, branch.id))
-    .orderBy(desc(patientForms.createdAt));
+    .orderBy(desc(patientForms.createdAt))
+    // A flood of forms cannot make every listing, polled every 30 s, run thousands of queries; the newest first keeps real forms on top.
+    .limit(100);
   return Promise.all(rows.map(async (form) => ({ ...form, matches: await duplicates(form) })));
 }
 

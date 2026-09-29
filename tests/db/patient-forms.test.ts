@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import * as attachRoute from "@/app/api/v1/patient-forms/[id]/attach/route";
 import * as formRoute from "@/app/api/v1/patient-forms/[id]/route";
@@ -129,6 +129,44 @@ describe("sending a patient form", () => {
     }
   });
 
+  it("answers busy when the database gives up waiting for the connection's lock", async () => {
+    await world();
+    const before = [await formCount(), await receivedCount()];
+    // A real wait needs two connections and PGlite has one, so the database's answer (55P03, lock_not_available) is injected.
+    const real = (globalThis as unknown as { __dentasync: { db: typeof db } }).__dentasync.db;
+    const spy = vi.spyOn(real, "transaction").mockRejectedValueOnce(Object.assign(new Error("canceling statement due to lock timeout"), { code: "55P03" }));
+    try {
+      const res = await send(form({ lastName: "Busy" }), 11);
+      expect(res.status).toBe(503);
+      expect((await res.json()).error).toMatchObject({ code: "busy", message: "Patient forms are busy right now. Please try again in a moment." });
+      expect([await formCount(), await receivedCount()]).toEqual(before);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("waits at most five seconds for the connection's lock", async () => {
+    await world();
+    const real = (globalThis as unknown as { __dentasync: { db: typeof db } }).__dentasync.db;
+    const original = real.transaction.bind(real);
+    let waits: string | undefined;
+    // `set local` lasts to the end of the transaction, so the limit is read from inside it, once the form is saved.
+    const spy = vi.spyOn(real, "transaction").mockImplementationOnce((run, config) =>
+      original(async (tx) => {
+        const done = await run(tx);
+        const { rows } = (await tx.execute(sql`show lock_timeout`)) as unknown as { rows: { lock_timeout: string }[] };
+        waits = rows[0].lock_timeout;
+        return done;
+      }, config),
+    );
+    try {
+      expect((await send(form({ lastName: "Patient" }), 12)).status).toBe(201);
+      expect(waits).toBe("5s");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("counts only the last hour toward the limit", async () => {
     await world();
     const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000);
@@ -172,6 +210,8 @@ async function frontDesk() {
   const dentist = await makeUser({ role: "dentist", branchIds: [w.dt.id] });
   return {
     ...w,
+    ownerId: owner.id,
+    managerId: manager.id,
     owner: await signIn(owner.username),
     manager: await signIn(manager.username),
     other: await signIn(other.username),
@@ -213,6 +253,27 @@ describe("the front desk", () => {
     expect(((await (await list(s.owner)).json()) as { id: string }[]).map((f) => f.id)).toEqual(ids);
   });
 
+  it("lists at most the newest 100 waiting forms", async () => {
+    const s = await desk();
+    const crowded = await makeBranch({ code: "crowded", name: "Crowded" });
+    // 105 forms a minute apart: Crowd0 is the newest and Crowd104 the oldest, so the five oldest are left off.
+    await db.insert(patientForms).values(
+      Array.from({ length: 105 }, (_, i) => ({
+        branchId: crowded.id,
+        lastName: `Crowd${i}`,
+        firstName: "Many",
+        birthday: "1970-01-01",
+        sex: "male",
+        mobile: "+639170002000",
+        address: "Crowd St",
+        createdAt: new Date(Date.now() - i * 60_000),
+      })),
+    );
+    const res = await list(s.owner, "crowded");
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { lastName: string }[]).map((f) => f.lastName)).toEqual(Array.from({ length: 100 }, (_, i) => `Crowd${i}`));
+  });
+
   it("shows a branch's forms only to the owner and that branch's managers", async () => {
     const s = await desk();
     expect((await list(s.dentist)).status).toBe(403);
@@ -238,7 +299,7 @@ describe("the front desk", () => {
     const before = (await db.select().from(patients)).length;
     const again = await addPatient(s.manager, { ...body, firstName: "Leah", allowDuplicate: true });
     expect(again.status).toBe(404);
-    expect((await again.json()).error.message).toBe("That form was already handled.");
+    expect((await again.json()).error).toMatchObject({ code: "handled", message: "That form was already handled." });
     expect((await db.select().from(patients)).length).toBe(before);
   });
 
@@ -270,7 +331,8 @@ describe("the front desk", () => {
     expect(res.status).toBe(200);
     expect(await stillThere(f.id)).toBe(false);
     const [row] = await db.select().from(auditLog).where(eq(auditLog.action, "patient.form_attached"));
-    expect(row).toMatchObject({ entity: "patient", entityId: known.id, branchId: s.dt.id, details: { form: f.id } });
+    expect(row).toMatchObject({ userId: s.managerId, entity: "patient", entityId: known.id, branchId: s.dt.id });
+    expect(row.details).toEqual({ form: f.id });
     expect((await attach(s.manager, f.id, known.id)).status).toBe(404);
   });
 
@@ -287,7 +349,8 @@ describe("the front desk", () => {
     expect((await discard(s.owner, f.id)).status).toBe(200);
     expect(await stillThere(f.id)).toBe(false);
     const [row] = await db.select().from(auditLog).where(and(eq(auditLog.action, "patient.form_discarded"), eq(auditLog.entityId, f.id)));
-    expect(row).toMatchObject({ entity: "patient_form", branchId: s.dt.id });
+    expect(row).toMatchObject({ userId: s.ownerId, entity: "patient_form", branchId: s.dt.id });
+    expect(row.details).toEqual({});
     expect((await discard(s.owner, f.id)).status).toBe(404);
   });
 

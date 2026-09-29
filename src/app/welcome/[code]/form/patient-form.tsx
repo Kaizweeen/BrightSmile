@@ -15,10 +15,15 @@ type TextKey = Exclude<keyof typeof EMPTY, "consent">;
 /** Moves focus to the heading when it appears, so screen readers announce the outcome. One function for every render, so it runs on mount only. */
 const focusHeading = (heading: HTMLHeadingElement | null) => heading?.focus();
 
+/** Moves focus to the First name field when it appears, so "Fill in another form" does not drop it to the top of the page. One function for every render, so it runs on mount only. */
+const focusField = (field: HTMLInputElement | null) => field?.focus();
+
 /** Patient forms spec 4: the patient's basic details and their agreement to the privacy notice, for the front desk to check. */
 export function PatientForm({ branch, booking, today }: { branch: string; booking: boolean; today: string }) {
   const [form, setForm] = useState(EMPTY);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // Set once "Fill in another form" was used: only that fresh form takes focus, never the first page load.
+  const [again, setAgain] = useState(false);
   const sexErrorId = useId();
   const consentErrorId = useId();
   const send = useMutation({
@@ -45,6 +50,7 @@ export function PatientForm({ branch, booking, today }: { branch: string; bookin
             variant="outline"
             onClick={() => {
               setForm(EMPTY);
+              setAgain(true);
               send.reset();
             }}
           >
@@ -65,7 +71,7 @@ export function PatientForm({ branch, booking, today }: { branch: string; bookin
         send.mutate();
       }}
     >
-      <TextField label="First name" value={form.firstName} onChange={set("firstName")} maxLength={50} autoComplete="given-name" error={errors.firstName} />
+      <TextField label="First name" ref={again ? focusField : undefined} value={form.firstName} onChange={set("firstName")} maxLength={50} autoComplete="given-name" error={errors.firstName} />
       <TextField label="Middle name (optional)" value={form.middleName} onChange={set("middleName")} maxLength={50} autoComplete="additional-name" error={errors.middleName} />
       <TextField label="Last name" value={form.lastName} onChange={set("lastName")} maxLength={50} autoComplete="family-name" error={errors.lastName} />
       <TextField label="Birthday" type="date" value={form.birthday} onChange={set("birthday")} min="1900-01-01" max={today} autoComplete="bday" error={errors.birthday} />
