@@ -11,6 +11,15 @@ export function envProblems(env: Env): string[] {
   if (production && env.DATABASE_URL?.startsWith("pglite:")) {
     problems.push("DATABASE_URL must be a Postgres URL in production");
   }
+  if (env.NODE_ENV === "development" && env.DATABASE_URL && !env.DATABASE_URL.startsWith("pglite:")) {
+    let host = "";
+    try {
+      host = new URL(env.DATABASE_URL).hostname;
+    } catch {}
+    if (host !== "localhost" && host !== "127.0.0.1") {
+      problems.push("npm run dev runs only on PGlite or a Postgres on this computer: unset DATABASE_URL, which may point at the practice's data");
+    }
+  }
   if (env.BETTER_AUTH_SECRET && env.BETTER_AUTH_SECRET.length < 32) {
     problems.push("BETTER_AUTH_SECRET must be at least 32 characters");
   }

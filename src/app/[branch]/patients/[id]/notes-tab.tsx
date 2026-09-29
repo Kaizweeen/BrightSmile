@@ -52,7 +52,7 @@ function NoteForm({ patientId, appointmentId, amendsId, onClose }: { patientId: 
     >
       <label className="grid gap-1.5 text-sm font-medium">
         {amendsId ? "Correction" : "Note"}
-        <Textarea value={body} maxLength={4000} rows={4} onChange={(event) => setBody(event.target.value)} />
+        <Textarea value={body} maxLength={4000} rows={4} autoFocus={amendsId !== undefined} onChange={(event) => setBody(event.target.value)} />
       </label>
       <div className="flex gap-2">
         <Button type="submit" disabled={!body.trim() || add.isPending}>

@@ -198,12 +198,15 @@ export async function patientNotes(actor: Staff, patientId: string) {
 export async function addNote(actor: Staff, appointmentId: string, input: z.infer<typeof noteSchema>): Promise<{ id: string }> {
   const visit = await requireVisit(appointmentId);
   requireCan(actor, "clinical.write", { dentistId: visit.dentistId });
-  if (!SEEN.includes(visit.status)) throw new ApiError(422, "not_seen", "Notes go on visits that are checked in, in treatment, or completed.");
   if (input.amendsId) {
-    const [original] = await db.select({ patientId: treatmentNotes.patientId }).from(treatmentNotes).where(eq(treatmentNotes.id, input.amendsId));
-    if (original?.patientId !== visit.patientId) {
-      throw new ApiError(400, "invalid", "Amend a note of this patient.", { fields: { amendsId: "Amend a note of this patient." } });
+    // A correction goes on the visit of the note it corrects, so only that visit's dentist (or the owner who sees
+    // patients) writes it; it needs no new check of the visit, since the note was valid when written.
+    const [original] = await db.select({ appointmentId: treatmentNotes.appointmentId }).from(treatmentNotes).where(eq(treatmentNotes.id, input.amendsId));
+    if (original?.appointmentId !== appointmentId) {
+      throw new ApiError(400, "invalid", "Correct a note on its own visit.", { fields: { amendsId: "Correct a note on its own visit." } });
     }
+  } else if (!SEEN.includes(visit.status)) {
+    throw new ApiError(422, "not_seen", "Notes go on visits that are checked in, in treatment, or completed.");
   }
   return db.transaction(async (tx) => {
     const [row] = await tx

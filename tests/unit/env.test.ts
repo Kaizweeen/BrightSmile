@@ -39,6 +39,14 @@ describe("environment check", () => {
     expect(envProblems({ NODE_ENV: "development" })).toEqual([]);
   });
 
+  it("keeps npm run dev off a remote database", () => {
+    expect(envProblems({ NODE_ENV: "development", DATABASE_URL: "postgres://u:p@ep-quiet-sky.ap-southeast-1.aws.neon.tech/db" })).toEqual([
+      "npm run dev runs only on PGlite or a Postgres on this computer: unset DATABASE_URL, which may point at the practice's data",
+    ]);
+    expect(envProblems({ NODE_ENV: "development", DATABASE_URL: "postgres://u:p@localhost:5432/db" })).toEqual([]);
+    expect(envProblems({ NODE_ENV: "development", DATABASE_URL: "pglite:.data/dev" })).toEqual([]);
+  });
+
   it("throws with the problems listed", () => {
     expect(() => assertEnv({ NODE_ENV: "production" })).toThrow(/DATABASE_URL is not set/);
   });

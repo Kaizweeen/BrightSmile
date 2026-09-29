@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import * as auditRoute from "@/app/api/v1/audit-log/route";
 import { db } from "@/db";
-import { auditLog, patients } from "@/db/schema";
-import { call, makeUser, request, signIn } from "../helpers";
+import { appointments, auditLog, chairs, patients } from "@/db/schema";
+import { call, makeBranch, makeUser, request, signIn } from "../helpers";
 
 describe("the access log", () => {
   it("lists entries newest first, 50 at a time, by patient and by staff member", async () => {
@@ -37,6 +37,19 @@ describe("the access log", () => {
     const aboutDesk = await get(`?user=${desk.id}`);
     expect(aboutDesk).toHaveLength(28);
     expect(aboutDesk[0]).toMatchObject({ action: "auth.sign_in_failed", entityId: desk.id, userName: null });
+    // Filtering by a patient also finds their visits' rows (booked, moved, status changes).
+    const branch = await makeBranch();
+    await db.insert(chairs).values({ branchId: branch.id, number: 1 });
+    const dentist = await makeUser({ role: "dentist", branchIds: [branch.id] });
+    const start = new Date("2026-10-05T01:00:00Z");
+    const end = new Date("2026-10-05T01:30:00Z");
+    const [visit] = await db
+      .insert(appointments)
+      .values({ patientId: ana.id, dentistId: dentist.id, branchId: branch.id, chairNumber: 1, startTime: start, endTime: end, chairFreeAt: end, status: "confirmed", source: "staff" })
+      .returning();
+    await db.insert(auditLog).values({ userId: desk.id, action: "appointment.created", entity: "appointment", entityId: visit.id, details: { status: "confirmed" } });
+    const visitRows = await get(`?patient=${ana.id}`);
+    expect(visitRows[0]).toMatchObject({ action: "appointment.created", patientName: "Santos, Ana", userName: "Liza Ramos" });
   });
 
   it("is for the owner only", async () => {

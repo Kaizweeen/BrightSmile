@@ -16,6 +16,7 @@ type AuditRow = {
   at: string;
   action: string;
   details: Record<string, unknown>;
+  userId: string | null;
   userName: string | null;
   branchName: string | null;
   patientName: string | null;
@@ -89,7 +90,7 @@ export function AccessLogPanel() {
               {rows.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell>{formatDateTime(new Date(r.at))}</TableCell>
-                  <TableCell>{r.userName ?? "No one signed in"}</TableCell>
+                  <TableCell>{r.userName ?? (r.userId ? "A removed account" : "No one signed in")}</TableCell>
                   <TableCell className="whitespace-normal">{actionText(r)}</TableCell>
                   <TableCell>{r.patientName ?? ""}</TableCell>
                   <TableCell>{r.branchName ?? ""}</TableCell>

@@ -1,7 +1,7 @@
 import { and, desc, eq, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { auditLog, branches, patients, users } from "@/db/schema";
+import { appointments, auditLog, branches, patients, users } from "@/db/schema";
 import { requireCan } from "./guard";
 import type { Staff } from "./session";
 
@@ -32,10 +32,15 @@ export async function accessLog(actor: Staff, q: z.infer<typeof auditQuerySchema
     .from(auditLog)
     .leftJoin(users, eq(users.id, auditLog.userId))
     .leftJoin(branches, eq(branches.id, auditLog.branchId))
-    .leftJoin(patients, and(eq(auditLog.entity, "patient"), eq(sql`${patients.id}::text`, auditLog.entityId)))
+    // A row names its patient directly, or through the visit it is about.
+    .leftJoin(appointments, and(eq(auditLog.entity, "appointment"), eq(sql`${appointments.id}::text`, auditLog.entityId)))
+    .leftJoin(
+      patients,
+      or(and(eq(auditLog.entity, "patient"), eq(sql`${patients.id}::text`, auditLog.entityId)), eq(patients.id, appointments.patientId)),
+    )
     .where(
       and(
-        q.patient ? and(eq(auditLog.entity, "patient"), eq(auditLog.entityId, q.patient)) : undefined,
+        q.patient ? eq(patients.id, q.patient) : undefined,
         // By the person, or about them (a failed sign-in as them, a change to their access, their schedule).
         q.user ? or(eq(auditLog.userId, q.user), eq(auditLog.entityId, q.user)) : undefined,
         q.before ? lt(auditLog.id, q.before) : undefined,

@@ -9,6 +9,7 @@ import { FormAlert } from "@/components/form-alert";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { CHART_LEGEND } from "@/lib/chart";
 import { api, errorMessage } from "@/lib/fetcher";
+import { STATUS_LABEL } from "@/lib/lifecycle";
 import { can, type Subject } from "@/lib/permissions";
 import { formatDateTime } from "@/lib/time";
 import type { PatientVisitJson } from "@/lib/visits";
@@ -22,7 +23,9 @@ export function ChartTab({ patientId, staff }: { patientId: string; staff: Subje
     queryKey: ["patient-visits", patientId],
     queryFn: () => api<{ visits: PatientVisitJson[] }>(`/patients/${patientId}/visits`),
   });
-  const examVisits = (visits.data?.visits ?? []).filter((v) => v.status !== "cancelled" && v.status !== "no_show");
+  // Every visit is listed, so an exam saved before a visit was cancelled stays readable; the default skips those.
+  const allVisits = visits.data?.visits ?? [];
+  const examVisits = allVisits.filter((v) => v.status !== "cancelled" && v.status !== "no_show");
   // The visit in progress, else the latest that has started, else the soonest booked (the list is newest first).
   const now = new Date();
   const current =
@@ -46,7 +49,7 @@ export function ChartTab({ patientId, staff }: { patientId: string; staff: Subje
           <ToothChart entries={chart.data} selected={tooth} onPick={setTooth} />
         )}
         <details className="text-sm">
-          <summary className="cursor-pointer py-2">Legend</summary>
+          <summary className="cursor-pointer py-3 sm:py-2">Legend</summary>
           <dl className="grid grid-cols-[3rem_1fr] gap-x-3 gap-y-1">
             {CHART_LEGEND.map((c) => (
               <Fragment key={c.code}>
@@ -65,16 +68,18 @@ export function ChartTab({ patientId, staff }: { patientId: string; staff: Subje
           <FormAlert message={errorMessage(visits.error)} />
         ) : visits.isPending ? (
           <p className="text-muted-foreground">Loading visits...</p>
-        ) : examVisits.length === 0 ? (
+        ) : allVisits.length === 0 ? (
           <p className="text-muted-foreground">No visits yet.</p>
         ) : (
           <>
             <label className="grid max-w-md gap-1.5 text-sm font-medium">
               Visit
               <NativeSelect value={chosen ?? ""} onChange={(event) => setVisitId(event.target.value)} className="w-full">
-                {examVisits.map((v) => (
+                {allVisits.map((v) => (
                   <NativeSelectOption key={v.id} value={v.id}>
-                    {`${formatDateTime(new Date(v.start))}, ${v.branchName}, ${v.dentistName}`}
+                    {`${formatDateTime(new Date(v.start))}, ${v.branchName}, ${v.dentistName}${
+                      v.status === "cancelled" || v.status === "no_show" ? `, ${STATUS_LABEL[v.status].toLowerCase()}` : ""
+                    }`}
                   </NativeSelectOption>
                 ))}
               </NativeSelect>

@@ -127,6 +127,28 @@ describe("treatment notes", () => {
     ]);
   });
 
+  it("takes a correction only on the visit of the note it corrects, even after that visit is cancelled", async () => {
+    const w = await world();
+    const first = await addNote(w.reyes, w.today, { body: "Sealant placed." });
+    expect(first.status).toBe(201);
+    const elsewhere = await addNote(w.reyes, w.earlier, { body: "Correction: on 36.", amendsId: (await first.json()).id });
+    expect(elsewhere.status).toBe(400);
+    expect((await elsewhere.json()).error.fields).toEqual({ amendsId: "Correct a note on its own visit." });
+    // Checked in, noted, then cancelled when the patient left before treatment: the note can still be corrected.
+    const [today] = await db.select().from(appointments).where(eq(appointments.id, w.today));
+    const start = inHours(4);
+    const end = new Date(start.getTime() + 1_800_000);
+    const [left] = await db
+      .insert(appointments)
+      .values({ patientId: w.ana.id, dentistId: today.dentistId, branchId: today.branchId, chairNumber: 1, startTime: start, endTime: end, chairFreeAt: end, status: "confirmed", source: "staff" })
+      .returning();
+    await db.update(appointments).set({ status: "checked_in" }).where(eq(appointments.id, left.id));
+    const note = await addNote(w.reyes, left.id, { body: "Felt faint in the chair." });
+    expect(note.status).toBe(201);
+    await db.update(appointments).set({ status: "cancelled", cancelReason: "Left before treatment" }).where(eq(appointments.id, left.id));
+    expect((await addNote(w.reyes, left.id, { body: "Correction: rebooked for next week.", amendsId: (await note.json()).id })).status).toBe(201);
+  });
+
   it("refuses the front desk, other dentists, and visits not seen yet", async () => {
     const w = await world();
     expect((await addNote(w.desk, w.earlier, { body: "x" })).status).toBe(403);

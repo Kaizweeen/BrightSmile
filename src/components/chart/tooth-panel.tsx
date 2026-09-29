@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ChartEntryJson } from "@/components/chart/tooth-chart";
 import { TextField } from "@/components/text-field";
@@ -24,8 +24,13 @@ export function ToothPanel({ patientId, tooth, entries, staff, onClose }: Props)
   const [note, setNote] = useState("");
   const [voiding, setVoiding] = useState<string | null>(null);
   const [reason, setReason] = useState("");
+  const codeRef = useRef<HTMLSelectElement>(null);
   const history = entries.filter((e) => e.tooth === tooth);
-  const refresh = () => client.invalidateQueries({ queryKey: ["chart", patientId] });
+  const refresh = async () => {
+    await client.invalidateQueries({ queryKey: ["chart", patientId] });
+    // The Visits tab lists the teeth charted during each visit.
+    await client.invalidateQueries({ queryKey: ["patient-visits", patientId] });
+  };
 
   const add = useMutation({
     mutationFn: () => api(`/patients/${patientId}/chart-entries`, { method: "POST", body: { tooth, code, surfaces: needsSurfaces(code) ? surfaces : [], note } }),
@@ -34,6 +39,7 @@ export function ToothPanel({ patientId, tooth, entries, staff, onClose }: Props)
       setCode("");
       setSurfaces([]);
       setNote("");
+      codeRef.current?.focus();
       await refresh();
     },
     onError: (error) => toast.error(errorMessage(error)),
@@ -66,7 +72,7 @@ export function ToothPanel({ patientId, tooth, entries, staff, onClose }: Props)
           >
             <label className="grid gap-1.5 text-sm font-medium">
               Code
-              <NativeSelect value={code} onChange={(event) => setCode(event.target.value)} className="w-full">
+              <NativeSelect ref={codeRef} value={code} onChange={(event) => setCode(event.target.value)} className="w-full">
                 <NativeSelectOption value="">Pick a code</NativeSelectOption>
                 {CHART_GROUPS.map((group) => (
                   <NativeSelectOptGroup key={group} label={group}>
@@ -131,7 +137,7 @@ export function ToothPanel({ patientId, tooth, entries, staff, onClose }: Props)
                           voidEntry.mutate(e.id);
                         }}
                       >
-                        <TextField label="Why void it?" value={reason} maxLength={200} required onChange={(event) => setReason(event.target.value)} className="min-w-48 flex-1" />
+                        <TextField label="Why void it?" value={reason} maxLength={200} required autoFocus onChange={(event) => setReason(event.target.value)} className="min-w-48 flex-1" />
                         <Button type="submit" variant="destructive" disabled={!reason.trim() || voidEntry.isPending}>
                           Void
                         </Button>
