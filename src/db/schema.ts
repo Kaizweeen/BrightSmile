@@ -36,7 +36,7 @@ export const practice = pgTable(
     createdAt: createdAt(),
   },
   (t) => [check("practice_one_row", sql`${t.id}`), check("practice_name", sql`char_length(${t.name}) between 1 and 80`)],
-);
+).enableRLS();
 
 export const branches = pgTable(
   "branches",
@@ -59,7 +59,7 @@ export const branches = pgTable(
     check("branches_phone", sql`char_length(${t.phone}) <= 20`),
     check("branches_hours", sql`jsonb_typeof(${t.operatingHours}) = 'object'`),
   ],
-);
+).enableRLS();
 
 export const chairs = pgTable(
   "chairs",
@@ -77,7 +77,7 @@ export const chairs = pgTable(
     check("chairs_number", sql`${t.number} between 1 and 99`),
     check("chairs_label", sql`char_length(${t.label}) <= 30`),
   ],
-);
+).enableRLS();
 
 /** Better Auth's user table (its model "user"), plus DentaSync's staff columns. */
 export const users = pgTable(
@@ -111,7 +111,7 @@ export const users = pgTable(
     check("users_managers_do_not", sql`${t.role} <> 'manager' or not ${t.seesPatients}`),
     uniqueIndex("users_one_owner").on(t.role).where(sql`${t.role} = 'owner'`),
   ],
-);
+).enableRLS();
 
 export const sessions = pgTable(
   "sessions",
@@ -128,7 +128,7 @@ export const sessions = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
   },
   (t) => [index("sessions_user").on(t.userId)],
-);
+).enableRLS();
 
 export const accounts = pgTable(
   "accounts",
@@ -150,7 +150,7 @@ export const accounts = pgTable(
     updatedAt: at("updated_at").notNull().defaultNow(),
   },
   (t) => [index("accounts_user").on(t.userId)],
-);
+).enableRLS();
 
 export const verifications = pgTable(
   "verifications",
@@ -163,14 +163,14 @@ export const verifications = pgTable(
     updatedAt: at("updated_at").notNull().defaultNow(),
   },
   (t) => [index("verifications_identifier").on(t.identifier)],
-);
+).enableRLS();
 
 export const rateLimits = pgTable("rate_limits", {
   id: uuid("id").primaryKey().defaultRandom(),
   key: text("key").notNull().unique(),
   count: integer("count").notNull(),
   lastRequest: bigint("last_request", { mode: "number" }).notNull(),
-});
+}).enableRLS();
 
 export const userBranches = pgTable(
   "user_branches",
@@ -183,7 +183,7 @@ export const userBranches = pgTable(
       .references(() => branches.id),
   },
   (t) => [primaryKey({ columns: [t.userId, t.branchId] })],
-);
+).enableRLS();
 
 export const dentistSchedules = pgTable(
   "dentist_schedules",
@@ -210,7 +210,7 @@ export const dentistSchedules = pgTable(
     ),
     index("dentist_schedules_dentist").on(t.dentistId, t.dayOfWeek),
   ],
-);
+).enableRLS();
 
 export const dentistTimeOff = pgTable(
   "dentist_time_off",
@@ -230,7 +230,7 @@ export const dentistTimeOff = pgTable(
     check("dentist_time_off_reason", sql`char_length(${t.reason}) <= 100`),
     index("dentist_time_off_dentist").on(t.dentistId, t.startsAt),
   ],
-);
+).enableRLS();
 
 export const procedures = pgTable(
   "procedures",
@@ -248,7 +248,7 @@ export const procedures = pgTable(
     check("procedures_duration", sql`${t.durationMinutes} between 5 and 480 and ${t.durationMinutes} % 5 = 0`),
     check("procedures_buffer", sql`${t.bufferMinutes} between 0 and 120`),
   ],
-);
+).enableRLS();
 
 /** The allergies the PDA form lists; anything else goes in allergies_other. */
 export const ALLERGIES = ["local_anesthetic", "penicillin", "sulfa", "aspirin", "latex"] as const;
@@ -309,7 +309,7 @@ export const patients = pgTable(
     index("patients_last_name_lower").on(sql`lower(${t.lastName})`),
     index("patients_mobile").on(t.mobile),
   ],
-);
+).enableRLS();
 
 export const APPOINTMENT_STATUSES = [
   "requested",
@@ -366,7 +366,7 @@ export const appointments = pgTable(
     index("appointments_dentist_time").on(t.dentistId, t.startTime),
     index("appointments_patient_time").on(t.patientId, t.startTime),
   ],
-);
+).enableRLS();
 
 export const appointmentProcedures = pgTable(
   "appointment_procedures",
@@ -383,7 +383,7 @@ export const appointmentProcedures = pgTable(
     bufferMinutes: integer("buffer_minutes").notNull(),
   },
   (t) => [primaryKey({ columns: [t.appointmentId, t.position] })],
-);
+).enableRLS();
 
 export const treatmentNotes = pgTable(
   "treatment_notes",
@@ -406,7 +406,7 @@ export const treatmentNotes = pgTable(
     check("treatment_notes_body", sql`char_length(${t.body}) between 1 and 4000`),
     index("treatment_notes_patient").on(t.patientId, t.createdAt),
   ],
-);
+).enableRLS();
 
 /** The PDA chart legend; "present" is the check mark. */
 export const CHART_CODES = [
@@ -473,7 +473,7 @@ export const chartEntries = pgTable(
     ),
     index("chart_entries_patient").on(t.patientId, t.tooth),
   ],
-);
+).enableRLS();
 
 export const exams = pgTable(
   "exams",
@@ -497,7 +497,7 @@ export const exams = pgTable(
     check("exams_findings", sql`jsonb_typeof(${t.findings}) = 'object' and octet_length(${t.findings}::text) <= 4000`),
     index("exams_patient").on(t.patientId),
   ],
-);
+).enableRLS();
 
 /** Who did what and when. user_id has no foreign key: a declined request deletes its user, and the log keeps the id. */
 export const auditLog = pgTable(
@@ -517,4 +517,4 @@ export const auditLog = pgTable(
     index("audit_log_user").on(t.userId, t.at),
     index("audit_log_at").on(t.at),
   ],
-);
+).enableRLS();

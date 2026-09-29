@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db";
 import * as s from "@/db/schema";
@@ -267,5 +267,16 @@ describe("people", () => {
       .values({ lastName: "Cruz", firstName: "Carlo", mobile: "+639171234567", allergies: ["latex"] })
       .returning();
     expect(p.chartNo).toBeGreaterThan(0);
+  });
+});
+
+describe("row level security", () => {
+  it("covers every table, so Supabase's Data API could never read one even if it were turned on", async () => {
+    // Both drivers answer raw SQL with { rows }; the shared Db type cannot say so.
+    const { rows } = (await db.execute(
+      sql`select relname, relrowsecurity from pg_class where relnamespace = 'public'::regnamespace and relkind = 'r'`,
+    )) as unknown as { rows: { relname: string; relrowsecurity: boolean }[] };
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.filter((table) => !table.relrowsecurity).map((table) => table.relname)).toEqual([]);
   });
 });

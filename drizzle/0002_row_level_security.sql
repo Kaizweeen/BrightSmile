@@ -1,0 +1,19 @@
+ALTER TABLE "accounts" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "appointment_procedures" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "appointments" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "audit_log" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "branches" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "chairs" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "chart_entries" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "dentist_schedules" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "dentist_time_off" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "exams" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "patients" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "practice" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "procedures" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "rate_limits" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "sessions" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "treatment_notes" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "user_branches" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "users" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "verifications" ENABLE ROW LEVEL SECURITY;

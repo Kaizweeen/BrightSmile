@@ -15,6 +15,13 @@
       "when": 1790621286183,
       "tag": "0001_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790662542927,
+      "tag": "0002_row_level_security",
+      "breakpoints": true
     }
   ]
 }
