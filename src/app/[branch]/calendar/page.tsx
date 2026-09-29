@@ -35,6 +35,7 @@ export default async function CalendarPage({
       today={today}
       staff={staff}
       canBook={can(staff, "appointment.book", { branchId: branch.id })}
+      canManage={can(staff, "appointment.manage", { branchId: branch.id })}
     />
   );
 }
