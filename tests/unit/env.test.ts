@@ -35,6 +35,14 @@ describe("environment check", () => {
     expect(problems.some((p) => p.startsWith("APP_URL must be an origin"))).toBe(true);
   });
 
+  it("refuses a malformed DATABASE_URL without repeating it", () => {
+    // The shape a missing "@db" gives: a password glued to the host.
+    const problems = envProblems({ ...good, DATABASE_URL: "postgresql://postgres:s3cret.ref.supabase.co:5432/postgres" });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/^DATABASE_URL is not a valid address/);
+    expect(problems[0]).not.toContain("s3cret");
+  });
+
   it("needs nothing in development", () => {
     expect(envProblems({ NODE_ENV: "development" })).toEqual([]);
   });

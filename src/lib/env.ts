@@ -10,6 +10,9 @@ export function envProblems(env: Env): string[] {
     : [];
   if (production && env.DATABASE_URL?.startsWith("pglite:")) {
     problems.push("DATABASE_URL must be a Postgres URL in production");
+  } else if (production && env.DATABASE_URL?.trim() && !URL.canParse(env.DATABASE_URL)) {
+    // Caught here, by name: parsing it later would throw an error that quotes the whole address, password included.
+    problems.push("DATABASE_URL is not a valid address: it should look like postgresql://user:password@host:6543/postgres");
   }
   if (env.NODE_ENV === "development" && env.DATABASE_URL && !env.DATABASE_URL.startsWith("pglite:")) {
     let host = "";
