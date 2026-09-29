@@ -43,7 +43,12 @@ export function VisitPanel({ visitId, branch, staff, onClose, onMove }: Props) {
       await client.invalidateQueries({ queryKey: ["appointments"] });
       await client.invalidateQueries({ queryKey: ["appointment", visitId] });
     },
-    onError: (error) => toast.error(errorMessage(error)),
+    onError: async (error) => {
+      toast.error(errorMessage(error));
+      // Someone else may have changed the visit: show what it is now.
+      await client.invalidateQueries({ queryKey: ["appointment", visitId] });
+      await client.invalidateQueries({ queryKey: ["appointments"] });
+    },
   });
 
   const v = detail.data;
@@ -61,6 +66,7 @@ export function VisitPanel({ visitId, branch, staff, onClose, onMove }: Props) {
       onOpenChange={(open) => {
         if (open) return;
         setCancelling(false);
+        setReason("");
         onClose();
       }}
     >

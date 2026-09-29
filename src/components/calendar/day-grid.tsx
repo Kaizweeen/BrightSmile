@@ -83,7 +83,7 @@ export function DayGrid({ date, range, chairs, visits, onOpen, onSlot }: Props) 
                         type="button"
                         onClick={() => onOpen(v)}
                         className={cn(
-                          "absolute inset-x-1 flex flex-col items-start overflow-hidden rounded-md border bg-card px-2 py-1 text-left text-xs shadow-sm outline-none hover:bg-muted focus-visible:z-20 focus-visible:ring-3 focus-visible:ring-ring/50",
+                          "absolute inset-x-1 flex min-h-11 flex-col items-start overflow-hidden rounded-md border bg-card px-2 py-1 text-left text-xs shadow-sm outline-none hover:bg-muted focus-visible:z-20 focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-0",
                           v.status === "completed" && "opacity-70",
                         )}
                         style={{ top: px(at.top), height: Math.max(px(at.height), ROW_PX) }}
@@ -94,7 +94,7 @@ export function DayGrid({ date, range, chairs, visits, onOpen, onSlot }: Props) 
                         </span>
                         <span className="w-full truncate text-muted-foreground">{`${v.procedures.join(", ")} · ${v.dentistName}`}</span>
                         <StatusBadge status={v.status} />
-                        <span className="sr-only">{`, chair free at ${formatTime(new Date(v.chairFreeAt))}`}</span>
+                        <span className="sr-only">{`, ${chairName(c.number, c.label)}, chair free at ${formatTime(new Date(v.chairFreeAt))}`}</span>
                       </button>
                       {at.turnover > 0 && (
                         <div
