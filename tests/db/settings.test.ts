@@ -61,6 +61,19 @@ describe("practice", () => {
     expect((await patch({ privacyNotice: notice, visitMinutes: 45 })).status).toBe(200);
     expect(await latest()).toEqual({ visitMinutes: 45 });
   });
+
+  it("keeps patient forms off until there is a privacy notice", async () => {
+    const { cookie } = await ownerCookie();
+    const patch = (body: object) => call(practiceRoute.PATCH, request("/api/v1/practice", { method: "PATCH", cookie, body }));
+    expect((await patch({ onlineBooking: false, privacyNotice: "" })).status).toBe(200);
+    const refused = await patch({ patientForms: true });
+    expect(refused.status).toBe(422);
+    expect((await refused.json()).error.fields.privacyNotice).toBe("Add the privacy notice first.");
+    expect((await patch({ patientForms: true, privacyNotice: "We keep your details to run your visits." })).status).toBe(200);
+    const read = await (await call(practiceRoute.GET, request("/api/v1/practice", { cookie }))).json();
+    expect(read).toMatchObject({ onlineBooking: false, patientForms: true });
+    expect((await patch({ privacyNotice: "" })).status).toBe(422);
+  });
 });
 
 describe("branches", () => {

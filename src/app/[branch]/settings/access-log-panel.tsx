@@ -7,7 +7,7 @@ import { PatientSearch, type PatientHit } from "@/components/patient-search";
 import { Button } from "@/components/ui/button";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { actionText } from "@/lib/access-log";
+import { actionText, actorText } from "@/lib/access-log";
 import { api, errorMessage } from "@/lib/fetcher";
 import { formatDateTime } from "@/lib/time";
 
@@ -90,7 +90,7 @@ export function AccessLogPanel() {
               {rows.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell>{formatDateTime(new Date(r.at))}</TableCell>
-                  <TableCell>{r.userName ?? (r.userId ? "A removed account" : r.details.online === true ? "Online booking" : "No one signed in")}</TableCell>
+                  <TableCell>{actorText(r)}</TableCell>
                   <TableCell className="whitespace-normal">{actionText(r)}</TableCell>
                   <TableCell>{r.patientName ?? ""}</TableCell>
                   <TableCell>{r.branchName ?? ""}</TableCell>

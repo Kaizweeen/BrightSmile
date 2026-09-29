@@ -97,7 +97,7 @@ function PracticeForm({ initial, bookingUrl }: { initial: PracticeSettings; book
           />
         </label>
         <p id={`${id}-notice`} className="text-sm text-muted-foreground">
-          Patients agree to it when they book online. Have a lawyer review it (RA 10173).
+          Patients agree to it when they book online or send a patient form. Have a lawyer review it (RA 10173).
         </p>
         {errors.privacyNotice && (
           <p id={`${id}-notice-error`} className="text-sm text-destructive">
@@ -116,6 +116,13 @@ function PracticeForm({ initial, bookingUrl }: { initial: PracticeSettings; book
         onFocus={(event) => event.currentTarget.select()}
         hint={form.onlineBooking ? "Share it with patients. Their requests come in as Requested, marked Online, for the front desk to confirm." : "Patients can use it once online booking is on."}
       />
+      <div className="grid gap-1">
+        <label className="flex min-h-11 items-center gap-3 text-sm">
+          <input type="checkbox" className="size-4 accent-primary" checked={form.patientForms} onChange={(event) => setForm({ ...form, patientForms: event.target.checked })} />
+          Take patient forms
+        </label>
+        <p className="text-sm text-muted-foreground">Patients reach the form from each branch&apos;s patient poster (Branches, Print patient poster).</p>
+      </div>
       <div>
         <Button type="submit" disabled={save.isPending}>
           {save.isPending ? "Saving..." : "Save"}

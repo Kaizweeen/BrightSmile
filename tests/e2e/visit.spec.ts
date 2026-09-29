@@ -119,6 +119,11 @@ test("a visit from setup to completion", async ({ page, browser }) => {
 
   const tomorrow = new Date(Date.now() + 8 * 3_600_000 + 86_400_000).toISOString().slice(0, 10);
   const patient = await (await browser.newContext({ baseURL: origin })).newPage();
+  // The welcome page's link opens /book at its branch (patient forms spec 9); any other value is ignored.
+  await patient.goto("/book?branch=uptown");
+  await expect(patient.getByLabel("Branch")).toHaveValue("uptown");
+  await patient.goto("/book?branch=nowhere");
+  await expect(patient.getByLabel("Branch")).toHaveValue("");
   await patient.goto("/book");
   // The Service list follows the branch: every service before one is chosen, and a picked service goes when the new branch lacks it.
   const service = patient.getByLabel("Service");
@@ -156,4 +161,41 @@ test("a visit from setup to completion", async ({ page, browser }) => {
   const online = page.getByRole("dialog", { name: "Cruz, Ben" });
   await online.getByRole("button", { name: "Confirm" }).click();
   await expect(online.getByText("Confirmed", { exact: true })).toBeVisible();
+
+  // Patient forms: the owner switches them on and online booking off; a patient opens the branch's welcome page from its
+  // patient poster, fills in the form, and the front desk makes a chart from it.
+  expect((await send("PATCH", "/practice", { onlineBooking: false, patientForms: true })).ok()).toBe(true);
+  await page.goto("/poster/downtown/patients");
+  const welcomeUrl = ((await page.getByText("/welcome/").textContent()) ?? "").trim();
+  const walkIn = await (await browser.newContext({ baseURL: origin })).newPage();
+  await walkIn.goto(welcomeUrl);
+  await expect(walkIn.getByRole("link", { name: "Book a visit" })).toHaveCount(0);
+  await walkIn.getByRole("link", { name: "Fill in my patient form" }).click();
+  await walkIn.getByLabel("First name").fill("Carla");
+  await walkIn.getByLabel("Last name").fill("Reyes");
+  await walkIn.getByLabel("Birthday").fill("1988-07-14");
+  await walkIn.getByLabel("Sex").selectOption("female");
+  await walkIn.getByLabel("Mobile number").fill("0918 222 3333");
+  await walkIn.getByLabel("Address").fill("12 Mabini St, Makati");
+  await walkIn.getByRole("checkbox", { name: /privacy notice/ }).check();
+  await walkIn.getByRole("button", { name: "Send the form" }).click();
+  await expect(walkIn.getByText("Thanks, Carla.")).toBeVisible();
+  // With online booking off, the notice still shows, for the form.
+  await walkIn.goto("/book/privacy");
+  await expect(walkIn.getByText("E2E privacy notice.")).toBeVisible();
+
+  await page.goto("/downtown/patients");
+  await page.getByRole("button", { name: "Patient forms (1)" }).click();
+  await page.getByRole("dialog", { name: "Patient forms" }).getByRole("button", { name: /Reyes, Carla/ }).click();
+  await page.getByRole("dialog", { name: "Reyes, Carla" }).getByRole("button", { name: "New chart" }).click();
+  const chart = page.getByRole("dialog", { name: "Add a patient" });
+  await expect(chart.getByLabel("First name")).toHaveValue("Carla");
+  await expect(chart.getByLabel("Home address")).toHaveValue("12 Mabini St, Makati");
+  await expect(chart.getByLabel("Birthday")).toHaveValue("1988-07-14");
+  await expect(chart.getByLabel("Sex")).toHaveValue("female");
+  await expect(chart.getByLabel("Mobile", { exact: true })).toHaveValue("+639182223333");
+  await chart.getByRole("button", { name: "Add patient" }).click();
+  await expect(page).toHaveURL(/\/downtown\/patients\/[0-9a-f-]{36}$/);
+  await page.goto("/downtown/patients");
+  await expect(page.getByRole("button", { name: "Patient forms (0)" })).toBeVisible();
 });

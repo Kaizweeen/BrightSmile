@@ -1,9 +1,9 @@
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
-import { db } from "@/db";
-import { ALLERGIES, appointmentProcedures, appointments, branches, chairs, chartEntries, patients, users } from "@/db/schema";
+import { db, type Db } from "@/db";
+import { ALLERGIES, appointmentProcedures, appointments, branches, chairs, chartEntries, patientForms, patients, users } from "@/db/schema";
 import { ACTIVE, type Status } from "@/lib/lifecycle";
-import { can } from "@/lib/permissions";
+import { can, covers } from "@/lib/permissions";
 import { manilaDate } from "@/lib/time";
 import { mobileSchema, normalizeMobile } from "@/lib/validation";
 import { audit } from "./audit";
@@ -43,6 +43,7 @@ export const patientSchema = z.object({
 export const createPatientSchema = patientSchema.extend({
   allowDuplicate: z.boolean().optional(),
   homeBranch: z.string().optional(),
+  formId: z.uuid().optional(),
 });
 
 export const updatePatientSchema = patientSchema.partial();
@@ -88,7 +89,8 @@ export async function searchPatients(actor: Staff, q: string): Promise<PatientSu
   return query.where(or(...matches)).orderBy(asc(patients.lastName), asc(patients.firstName)).limit(20);
 }
 
-async function duplicates(p: { lastName: string; firstName: string; birthday?: string | null; mobile?: string | null }): Promise<PatientSummary[]> {
+/** Patients who are probably the same person (spec 10): the same name and birthday, or the same mobile number and first name. */
+export async function duplicates(p: { lastName: string; firstName: string; birthday?: string | null; mobile?: string | null }): Promise<PatientSummary[]> {
   const sameName = and(sql`lower(${patients.lastName}) = lower(${p.lastName})`, sql`lower(${patients.firstName}) = lower(${p.firstName})`);
   const checks: SQL[] = [];
   if (p.birthday) checks.push(and(sameName, eq(patients.birthday, p.birthday)) as SQL);
@@ -97,10 +99,25 @@ async function duplicates(p: { lastName: string; firstName: string; birthday?: s
   return db.select(summary).from(patients).where(or(...checks)).limit(5);
 }
 
+const handled = () => new ApiError(404, "handled", "That form was already handled.");
+
+/**
+ * Patient forms spec 5: deletes a form the front desk has dealt with, inside the caller's transaction, and answers its branch.
+ * Only the owner or a manager of the form's branch may; a form already gone answers 404.
+ */
+export async function takeForm(tx: Db, actor: Staff, formId: string): Promise<string> {
+  requireCan(actor, "patient.edit");
+  const [form] = await tx.delete(patientForms).where(eq(patientForms.id, formId)).returning({ branchId: patientForms.branchId });
+  if (!form) throw handled();
+  // Throwing rolls the delete back, so the form waits for someone who may handle it.
+  if (!covers(actor, form.branchId)) throw forbidden();
+  return form.branchId;
+}
+
 /** Spec 10: a patient with the same name and birthday, or the same mobile and first name, is probably already on file. */
 export async function createPatient(actor: Staff, input: z.infer<typeof createPatientSchema>): Promise<{ id: string; chartNo: number }> {
   requireCan(actor, "patient.edit");
-  const { allowDuplicate, homeBranch, consent, ...fields } = input;
+  const { allowDuplicate, homeBranch, consent, formId, ...fields } = input;
   if (!allowDuplicate) {
     const candidates = await duplicates(fields);
     if (candidates.length > 0) {
@@ -109,6 +126,8 @@ export async function createPatient(actor: Staff, input: z.infer<typeof createPa
   }
   const home = homeBranch ? await branchByCode(homeBranch) : null;
   return db.transaction(async (tx) => {
+    // Patient forms spec 5: a chart made from a form uses the form up, in the same transaction.
+    if (formId) await takeForm(tx, actor, formId);
     const [row] = await tx
       .insert(patients)
       .values({
@@ -122,7 +141,10 @@ export async function createPatient(actor: Staff, input: z.infer<typeof createPa
         updatedBy: actor.id,
       })
       .returning({ id: patients.id, chartNo: patients.chartNo });
-    await audit({ userId: actor.id, action: "patient.created", entity: "patient", entityId: row.id, branchId: home?.id ?? null }, tx);
+    await audit(
+      { userId: actor.id, action: "patient.created", entity: "patient", entityId: row.id, branchId: home?.id ?? null, details: formId ? { form: formId } : undefined },
+      tx,
+    );
     return row;
   });
 }

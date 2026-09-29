@@ -18,7 +18,7 @@ export type Branch = {
 
 export type Dentist = { id: string; name: string; title: string | null; branchIds: string[] };
 
-export type PracticeSettings = { name: string; visitMinutes: number; cleaningMinutes: number; onlineBooking: boolean; privacyNotice: string };
+export type PracticeSettings = { name: string; visitMinutes: number; cleaningMinutes: number; onlineBooking: boolean; patientForms: boolean; privacyNotice: string };
 
 export const useBranches = () => useQuery({ queryKey: ["branches"], queryFn: () => api<Branch[]>("/branches") });
 

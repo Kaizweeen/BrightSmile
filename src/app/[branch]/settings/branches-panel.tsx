@@ -46,7 +46,7 @@ export function BranchesPanel() {
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-muted-foreground">Each branch has its own hours, chairs, and staff QR poster.</p>
+        <p className="text-muted-foreground">Each branch has its own hours, chairs, and QR posters.</p>
         <Button onClick={() => setEditing("new")}>Add branch</Button>
       </div>
       {branches.data.length === 0 ? (
@@ -81,7 +81,10 @@ export function BranchesPanel() {
                         Edit
                       </Button>
                       <Link href={`/poster/${b.code}`} target="_blank" className={buttonVariants({ variant: "ghost" })}>
-                        Print QR poster
+                        Print staff poster
+                      </Link>
+                      <Link href={`/poster/${b.code}/patients`} target="_blank" className={buttonVariants({ variant: "ghost" })}>
+                        Print patient poster
                       </Link>
                       <Button variant="ghost" onClick={() => setReplacing(b)}>
                         Replace QR

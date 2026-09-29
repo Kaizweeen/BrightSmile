@@ -12,25 +12,40 @@ import { api, errorMessage, fieldErrors, RequestError } from "@/lib/fetcher";
 
 type Added = { id: string; name: string };
 
-/** Adds a patient to the practice, warning first about a likely duplicate (spec section 10). */
+/** The toast after a patient form goes to an existing record: attaching only deletes the form, so staff change the record by hand. */
+export const formAttachedMessage = (patient: { lastName: string; firstName: string }) =>
+  `The form is deleted. Change anything that differs on ${patient.lastName}, ${patient.firstName}'s record.`;
+
+/**
+ * Adds a patient to the practice, warning first about a likely duplicate (spec section 10). From a patient form (patient forms
+ * spec 5) it starts filled in, saving uses the form up, and choosing an existing record adds the form to that record instead.
+ */
 export function AddPatientDialog({
   open,
   onOpenChange,
   onAdded,
   homeBranch,
+  initial,
+  formId,
+  onFormGone,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAdded: (patient: Added) => void;
   homeBranch?: string;
+  initial?: Partial<PatientDraft>;
+  formId?: string;
+  /** With a form: called once this dialog has said the form was already handled and started over. */
+  onFormGone?: () => void;
 }) {
   const client = useQueryClient();
-  const [draft, setDraft] = useState<PatientDraft>(EMPTY_PATIENT);
+  const start = { ...EMPTY_PATIENT, ...initial };
+  const [draft, setDraft] = useState<PatientDraft>(start);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [candidates, setCandidates] = useState<PatientHit[] | null>(null);
 
   const reset = () => {
-    setDraft(EMPTY_PATIENT);
+    setDraft(start);
     setErrors({});
     setCandidates(null);
   };
@@ -39,9 +54,17 @@ export function AddPatientDialog({
     reset();
     onOpenChange(false);
   };
+  // A form someone else has just handled (patient forms spec 5): say so, start over, and let the caller reload its list.
+  const formGone = (error: unknown) => {
+    if (!formId || !(error instanceof RequestError) || error.body.code !== "handled") return false;
+    toast.error(error.message);
+    reset();
+    onFormGone?.();
+    return true;
+  };
   const add = useMutation({
     mutationFn: (allowDuplicate: boolean) =>
-      api<{ id: string; chartNo: number }>("/patients", { method: "POST", body: { ...draft, allowDuplicate, homeBranch } }),
+      api<{ id: string; chartNo: number }>("/patients", { method: "POST", body: { ...draft, allowDuplicate, homeBranch, formId } }),
     onSuccess: async (created) => {
       await client.invalidateQueries({ queryKey: ["patients"] });
       toast.success(`Added ${draft.lastName}, ${draft.firstName} as chart ${created.chartNo}.`);
@@ -52,8 +75,20 @@ export function AddPatientDialog({
         setCandidates((error.body.candidates ?? []) as PatientHit[]);
         return;
       }
+      if (formGone(error)) return;
       setErrors(fieldErrors(error));
       if (Object.keys(fieldErrors(error)).length === 0) toast.error(errorMessage(error));
+    },
+  });
+  // With a form, the existing record takes the form (patient forms spec 5); without one, the record is simply opened.
+  const pick = useMutation({
+    mutationFn: (c: PatientHit) => (formId ? api(`/patient-forms/${formId}/attach`, { method: "POST", body: { patientId: c.id } }) : Promise.resolve(null)),
+    onSuccess: (_done, c) => {
+      if (formId) toast.success(formAttachedMessage(c));
+      finish({ id: c.id, name: `${c.lastName}, ${c.firstName}` });
+    },
+    onError: (error) => {
+      if (!formGone(error)) toast.error(errorMessage(error));
     },
   });
 
@@ -84,7 +119,7 @@ export function AddPatientDialog({
                     {`${c.lastName}, ${c.firstName}`}
                     <span className="block text-sm text-muted-foreground">{[`Chart ${c.chartNo}`, c.birthday, c.mobile].filter(Boolean).join(" · ")}</span>
                   </span>
-                  <Button variant="outline" onClick={() => finish({ id: c.id, name: `${c.lastName}, ${c.firstName}` })}>
+                  <Button variant="outline" disabled={pick.isPending} onClick={() => pick.mutate(c)}>
                     Use this record
                   </Button>
                 </li>

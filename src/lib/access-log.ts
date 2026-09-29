@@ -8,6 +8,9 @@ const ACTIONS: Record<string, string> = {
   "patient.view": "Viewed the record",
   "patient.created": "Added the patient",
   "patient.updated": "Changed the patient's details",
+  "patient.form_received": "Sent a patient form",
+  "patient.form_attached": "Added a patient form to the record",
+  "patient.form_discarded": "Discarded a patient form",
   "chart.added": "Charted a tooth",
   "chart.voided": "Voided a chart entry",
   "exam.saved": "Saved an exam",
@@ -44,4 +47,13 @@ export function actionText(row: { action: string; details: Record<string, unknow
   if (row.action === "patient.updated" && Array.isArray(fields)) return `${base}: ${fields.join(", ")}`;
   if (row.action === "auth.sign_in_failed" && typeof username === "string") return `${base} as ${username}`;
   return base;
+}
+
+/** Who did it: the staff member, or, for a row no one signed in wrote, the public page that wrote it. */
+export function actorText(row: { userId: string | null; userName: string | null; action: string; details: Record<string, unknown> }): string {
+  if (row.userName !== null) return row.userName;
+  if (row.userId !== null) return "A removed account";
+  if (row.details.online === true) return "Online booking";
+  if (row.action === "patient.form_received") return "Patient form";
+  return "No one signed in";
 }
