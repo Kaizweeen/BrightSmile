@@ -23,7 +23,7 @@ Appointments, chairs, and dental charts for a dental practice with three branche
 | `npm run lint` | ESLint |
 | `npm run typecheck` | TypeScript |
 | `npm run build` | Production build |
-| `npm run db:migrate` | Applies `drizzle/` to the Postgres in `DATABASE_URL` (production) |
+| `npm run db:migrate` | Applies `drizzle/` to the production Postgres, asking for its address (or reading `DATABASE_URL`) |
 
 ## The end-to-end run
 
@@ -42,7 +42,7 @@ Spec section 16 holds the decisions. The steps:
    - Turn on Enforce SSL (Database settings, SSL Configuration).
    - Open Connect and copy two addresses, each with the password filled in: the session pooler (port 5432), for migrations and backups, and the transaction pooler (port 6543), for the app. Use them as shown, without adding `sslmode`: DentaSync checks Supabase's certificate itself (`src/db/ssl.ts`).
 
-   From a trusted computer, apply the migrations with the session pooler address: `$env:DATABASE_URL = Read-Host "Database address"; npm run db:migrate; Remove-Item Env:DATABASE_URL` in PowerShell, or `read -rsp "Database address: " DATABASE_URL && DATABASE_URL="$DATABASE_URL" npm run db:migrate; unset DATABASE_URL` in Bash. Both ask for the address, so the password never lands in the shell's history. It prints "The database is up to date." or the database's reason for refusing. Never leave `DATABASE_URL` set in a window where you then run `npm run dev` (it refuses a remote database for that reason). Run it again after any release that adds a file under `drizzle/`, before that release goes out.
+   From a trusted computer, apply the migrations: run `npm run db:migrate` and paste the session pooler address when it asks (asked for, the password never lands in a command line or the shell's history). It prints "The database is up to date." or the database's reason for refusing. Run it again after any release that adds a file under `drizzle/`, before that release goes out.
 
    Supabase Free holds 500 MB (years of a 3-branch practice's records), keeps no backups of its own (step 4 makes them), and pauses a project after a week without use. Daily use keeps it awake; after a longer closure, the owner clicks Resume project in the dashboard and the data is all there.
 2. **App: Vercel.** Vercel's free Hobby plan is for personal, non-commercial use only, so a practice's app belongs on Pro ($20 a month per member). Import the GitHub repository as a new project and add no variables yet: that first deployment builds but will not start. `vercel.json` runs the server in Singapore, next to the database. Then open Settings, Environment Variables, and add four, each for Production only (untick Preview and Development, so preview builds of unmerged branches never reach the practice's data):
