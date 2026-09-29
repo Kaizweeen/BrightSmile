@@ -36,6 +36,7 @@ export const practice = pgTable(
     visitMinutes: integer("visit_minutes").notNull().default(60),
     cleaningMinutes: integer("cleaning_minutes").notNull().default(10),
     onlineBooking: boolean("online_booking").notNull().default(false),
+    patientForms: boolean("patient_forms").notNull().default(false),
     privacyNotice: text("privacy_notice").notNull().default(""),
     createdAt: createdAt(),
   },
@@ -327,6 +328,35 @@ export const patients = pgTable(
     check("patients_consent", sql`(${t.consentAt} is null) = (${t.consentBy} is null)`),
     index("patients_last_name_lower").on(sql`lower(${t.lastName})`),
     index("patients_mobile").on(t.mobile),
+  ],
+).enableRLS();
+
+/** A patient's own form, sent from the branch's patient poster (patient forms spec, section 6). It waits for the front desk. */
+export const patientForms = pgTable(
+  "patient_forms",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    lastName: text("last_name").notNull(),
+    firstName: text("first_name").notNull(),
+    middleName: text("middle_name"),
+    birthday: date("birthday").notNull(),
+    sex: text("sex").notNull(),
+    mobile: text("mobile").notNull(),
+    address: text("address").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check("patient_forms_last_name", sql`char_length(${t.lastName}) between 1 and 50`),
+    check("patient_forms_first_name", sql`char_length(${t.firstName}) between 1 and 50`),
+    check("patient_forms_middle_name", sql`char_length(${t.middleName}) between 1 and 50`),
+    check("patient_forms_birthday", sql`${t.birthday} >= '1900-01-01'`),
+    check("patient_forms_sex", sql`${t.sex} in ('female', 'male')`),
+    check("patient_forms_mobile", sql`${t.mobile} ~ '^\\+639[0-9]{9}$'`),
+    check("patient_forms_address", sql`char_length(${t.address}) between 1 and 200`),
+    index("patient_forms_branch_created").on(t.branchId, t.createdAt),
   ],
 ).enableRLS();
 
