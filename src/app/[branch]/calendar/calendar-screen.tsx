@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { BookingPanel, type BookingIntent } from "@/components/calendar/booking-panel";
 import { DayGrid } from "@/components/calendar/day-grid";
+import { OnlineRequests } from "@/components/calendar/online-requests";
 import { VisitPanel } from "@/components/calendar/visit-panel";
 import { WeekGrid } from "@/components/calendar/week-grid";
 import { FormAlert } from "@/components/form-alert";
@@ -25,10 +26,11 @@ export type CalendarProps = {
   today: string;
   staff: Subject;
   canBook: boolean;
+  canManage: boolean;
 };
 
 /** Spec 10: the branch calendar, refreshed every 30 seconds and after every change. */
-export function CalendarScreen({ branch, chairs, date, view, today, staff, canBook }: CalendarProps) {
+export function CalendarScreen({ branch, chairs, date, view, today, staff, canBook, canManage }: CalendarProps) {
   const router = useRouter();
   const [openId, setOpenId] = useState<string | null>(null);
   const [intent, setIntent] = useState<BookingIntent | null>(null);
@@ -66,6 +68,7 @@ export function CalendarScreen({ branch, chairs, date, view, today, staff, canBo
               </Button>
             </>
           )}
+          {canManage && <OnlineRequests branchCode={branch.code} onOpen={setOpenId} />}
           <Button variant="outline" onClick={() => go(addDays(date, -step))}>
             Previous
           </Button>
@@ -114,7 +117,7 @@ export function CalendarScreen({ branch, chairs, date, view, today, staff, canBo
                   className="flex min-h-11 items-center gap-2 rounded-md border px-3 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-9"
                 >
                   {`${formatTime(new Date(v.start))} ${v.patientName}`}
-                  <StatusBadge status={v.status} />
+                  <StatusBadge status={v.status} online={v.source === "portal"} />
                 </button>
               </li>
             ))}

@@ -10,6 +10,7 @@ import * as staffMemberRoute from "@/app/api/v1/staff/[id]/route";
 import * as staffListRoute from "@/app/api/v1/staff/route";
 import { db } from "@/db";
 import { auditLog, branches, dentistSchedules, userBranches, users, verifications } from "@/db/schema";
+import { clientKey } from "@/server/api";
 import { staffById, staffFromHeaders, type Staff } from "@/server/session";
 import { call, makeBranch, makeUser, PASSWORD, request, signIn, userRow } from "../helpers";
 
@@ -23,8 +24,11 @@ function ownerCookie() {
 }
 
 const newcomer = (username: string, role = "dentist") => ({ name: "New Person", username, password: PASSWORD, role });
+const from = (ip: string) => ({ "x-nf-client-connection-ip": ip });
 const join = (code: string, body: unknown, ip = "10.0.0.1") =>
-  call(joinRoute.POST, request(`/api/v1/join/${code}`, { method: "POST", body, headers: { "x-nf-client-connection-ip": ip } }), { code });
+  call(joinRoute.POST, request(`/api/v1/join/${code}`, { method: "POST", body, headers: from(ip) }), { code });
+/** What the access log holds for a request from `ip`: a keyed hash of it (src/server/api.ts). */
+const clientOf = (ip: string) => clientKey(request("/api/v1/join/code", { headers: from(ip) }));
 const approve = (cookie: string, id: string, body: unknown) =>
   call(approveRoute.POST, request(`/api/v1/join-requests/${id}/approve`, { method: "POST", cookie, body }), { id });
 const patch = (cookie: string, id: string, body: unknown) =>
@@ -43,7 +47,10 @@ describe("joining by QR", () => {
     const cookie = await signIn("ana.cruz");
     expect((await staffFromHeaders(new Headers({ cookie })))?.status).toBe("pending");
     const [log] = await db.select().from(auditLog).where(eq(auditLog.action, "staff.join_requested"));
-    expect(log.details).toMatchObject({ ip: "10.0.0.1", username: "ana.cruz" });
+    // The address itself is never stored (RA 10173): the row holds a keyed hash of it.
+    expect(log.details).toMatchObject({ client: clientOf("10.0.0.1"), username: "ana.cruz" });
+    expect(log.details).not.toHaveProperty("ip");
+    expect(JSON.stringify(log.details)).not.toContain("10.0.0.1");
   });
 
   it("refuses a replaced code and a taken username", async () => {
@@ -62,6 +69,11 @@ describe("joining by QR", () => {
     const sixth = await join(branch.joinCode, newcomer("lim.6"), "10.0.0.9");
     expect(sixth.status).toBe(429);
     expect((await sixth.json()).error.code).toBe("too_many_requests");
+    // The limit counts the key, and no join row holds an address.
+    expect((await join(branch.joinCode, newcomer("lim.7"), "10.0.0.8")).status).toBe(201);
+    const rows = await db.select().from(auditLog).where(eq(auditLog.action, "staff.join_requested"));
+    expect(rows.filter((row) => row.details.client === clientOf("10.0.0.9"))).toHaveLength(5);
+    expect(JSON.stringify(rows.map((row) => row.details))).not.toMatch(/10\.0\.0\./);
   });
 
   it("holds at most 20 open requests per branch", async () => {

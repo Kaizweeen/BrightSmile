@@ -7,6 +7,7 @@ describe("the access log in words", () => {
     expect(actionText({ action: "patient.updated", details: { fields: ["mobile", "email"] } })).toBe("Changed the patient's details: mobile, email");
     expect(actionText({ action: "auth.sign_in_failed", details: { username: "ana.s", ip: null } })).toBe("Failed to sign in as ana.s");
     expect(actionText({ action: "chart.added", details: { entryId: "x" } })).toBe("Charted a tooth");
+    expect(actionText({ action: "appointment.requested_online", details: { online: true } })).toBe("Booked a visit online");
     expect(actionText({ action: "something.new", details: {} })).toBe("something.new");
   });
 });

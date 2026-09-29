@@ -92,14 +92,14 @@ describe("patients", () => {
     const other = await makeBranch({ name: "Westside" });
     await db.insert(chairs).values([{ branchId: branch.id, number: 1, label: "General" }, { branchId: other.id, number: 1 }]);
     const dentist = await makeUser({ role: "dentist", name: "Dr. Reyes", branchIds: [branch.id, other.id] });
-    const [proc] = await db.insert(procedures).values({ name: `Cleaning ${Date.now()}`, durationMinutes: 45, bufferMinutes: 15 }).returning();
+    const [proc] = await db.insert(procedures).values({ name: `Cleaning ${Date.now()}` }).returning();
     const { id } = await (await add(cookie, { lastName: "Uy", firstName: "Kim" })).json();
     const visit = async (branchId: string, start: Date, status: string) => {
       const [row] = await db
         .insert(appointments)
         .values({ patientId: id, dentistId: dentist.id, branchId, chairNumber: 1, startTime: start, endTime: new Date(start.getTime() + 45 * 60_000), chairFreeAt: new Date(start.getTime() + 60 * 60_000), status, source: "staff" })
         .returning();
-      await db.insert(appointmentProcedures).values({ appointmentId: row.id, position: 0, procedureId: proc.id, name: "Cleaning", durationMinutes: 45, bufferMinutes: 15 });
+      await db.insert(appointmentProcedures).values({ appointmentId: row.id, position: 0, procedureId: proc.id, name: "Cleaning" });
       return row;
     };
     await visit(other.id, new Date(Date.now() - 30 * 86_400_000), "requested");

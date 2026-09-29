@@ -14,7 +14,7 @@ import { requireCan } from "./guard";
 import { qrSvg } from "./qr";
 import type { Staff } from "./session";
 
-const REQUESTS_PER_IP_PER_HOUR = 5;
+const REQUESTS_PER_CLIENT_PER_HOUR = 5;
 const OPEN_REQUESTS_PER_BRANCH = 20;
 const RESET_MINUTES = 15;
 const RESET_PREFIX = "staff-reset:";
@@ -65,18 +65,18 @@ const usernameTaken = () =>
   });
 
 /** Spec 6.3: a pending account for the QR's branch. It can sign in, but reaches nothing until someone approves it. */
-export async function requestToJoin(code: string, input: z.infer<typeof joinSchema>, ip: string): Promise<{ username: string }> {
+export async function requestToJoin(code: string, input: z.infer<typeof joinSchema>, client: string): Promise<{ username: string }> {
   const branch = await branchForJoinCode(code);
   if (!branch) throw new ApiError(404, "qr_replaced", "This QR code no longer works. Ask the owner for the current one.");
   return db.transaction(async (tx) => {
     // One join at a time, so two requests cannot both pass the per-connection and per-branch counts below. Joins are rare.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('dentasync.join'))`);
     await deleteExpiredRequests(tx);
-    const [fromIp] = await tx
+    const [fromClient] = await tx
       .select({ n: count() })
       .from(auditLog)
-      .where(and(eq(auditLog.action, "staff.join_requested"), sql`${auditLog.details}->>'ip' = ${ip}`, gt(auditLog.at, sql`now() - interval '1 hour'`)));
-    if (fromIp.n >= REQUESTS_PER_IP_PER_HOUR) {
+      .where(and(eq(auditLog.action, "staff.join_requested"), sql`${auditLog.details}->>'client' = ${client}`, gt(auditLog.at, sql`now() - interval '1 hour'`)));
+    if (fromClient.n >= REQUESTS_PER_CLIENT_PER_HOUR) {
       throw new ApiError(429, "too_many_requests", "Too many requests from this connection. Try again in an hour.");
     }
     const [open] = await tx
@@ -104,7 +104,7 @@ export async function requestToJoin(code: string, input: z.infer<typeof joinSche
       tx,
     );
     await audit(
-      { userId: user.id, action: "staff.join_requested", entity: "user", entityId: user.id, branchId: branch.id, details: { ip, username: input.username, role: input.role } },
+      { userId: user.id, action: "staff.join_requested", entity: "user", entityId: user.id, branchId: branch.id, details: { client, username: input.username, role: input.role } },
       tx,
     );
     return { username: input.username };

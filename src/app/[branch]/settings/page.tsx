@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
+import { appUrl } from "@/lib/env";
 import { can } from "@/lib/permissions";
-import { practiceName } from "@/server/practice";
 import { requireStaff } from "@/server/session";
 import { SettingsScreen } from "./settings-screen";
 
@@ -16,7 +16,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ branc
       canEditSchedules={staff.role !== "dentist"}
       me={{ id: staff.id, role: staff.role, branchIds: [...staff.branchIds] }}
       currentBranch={branch}
-      practice={owner ? await practiceName() : ""}
+      bookingUrl={`${appUrl()}/book`}
     />
   );
 }

@@ -23,14 +23,15 @@ test("a visit from setup to completion", async ({ page, browser }) => {
   await page.getByLabel("Password", { exact: true }).fill("owner password 1");
   await page.getByLabel("Password again").fill("owner password 1");
   await page.getByRole("button", { name: "Set up DentaSync" }).click();
-  await expect(page.getByRole("heading", { name: "All branches" })).toBeVisible();
+  // The first sign-in after a build can take over 30 seconds while the dev server compiles.
+  await expect(page.getByRole("heading", { name: "All branches" })).toBeVisible({ timeout: 60_000 });
 
   // A branch, a chair, and a procedure through the API, as the owner (the Settings screens have their own checks).
   const hours = Object.fromEntries(["0", "1", "2", "3", "4", "5", "6"].map((day) => [day, { open: "09:00", close: "18:00" }]));
   const post = (path: string, data: object) => page.request.post(`/api/v1${path}`, { data, headers: { origin } });
   expect((await post("/branches", { code: "downtown", name: "Downtown", address: "", phone: "", operatingHours: hours })).ok()).toBe(true);
   expect((await post("/branches/downtown/chairs", { label: "General" })).ok()).toBe(true);
-  expect((await post("/procedures", { name: "Consultation", durationMinutes: 30, bufferMinutes: 10 })).ok()).toBe(true);
+  expect((await post("/procedures", { name: "Consultation" })).ok()).toBe(true);
 
   // A dentist asks to join with the branch's QR (spec 6.3), in a browser of their own.
   await page.goto("/poster/downtown");
@@ -62,7 +63,8 @@ test("a visit from setup to completion", async ({ page, browser }) => {
   await addPatient.getByLabel("First name").fill("Ana");
   await addPatient.getByRole("button", { name: "Add patient" }).click();
   await expect(booking.getByText("Santos, Ana")).toBeVisible();
-  await booking.getByLabel("Consultation, 30 min").check();
+  await booking.getByLabel("Consultation", { exact: true }).check();
+  await booking.getByLabel("Length").selectOption({ label: "30 minutes" });
   await booking.getByRole("button", { name: "Pick another time" }).click();
   await booking.getByLabel("Start").fill(slot ?? "");
   await booking.getByLabel("Dentist for this visit").selectOption({ label: "Dr. Dana Dentist" });
@@ -102,4 +104,56 @@ test("a visit from setup to completion", async ({ page, browser }) => {
   await dentist.goto("/downtown/my-day");
   await dentist.getByRole("button", { name: "Complete" }).click();
   await expect(dentist.getByText("Completed", { exact: true })).toBeVisible();
+
+  // Online booking: the owner turns it on and gives the dentist a week at the branch; a patient books tomorrow's first
+  // open time at /book; the front desk confirms it from Online requests.
+  const send = (method: "PATCH" | "PUT", path: string, data: object) => page.request.fetch(`/api/v1${path}`, { method, data, headers: { origin } });
+  expect((await send("PATCH", "/practice", { onlineBooking: true, privacyNotice: "E2E privacy notice." })).ok()).toBe(true);
+  const dana = ((await (await page.request.get("/api/v1/dentists")).json()) as { id: string; name: string }[]).find((d) => d.name === "Dr. Dana Dentist");
+  const downtown = ((await (await page.request.get("/api/v1/branches")).json()) as { id: string; code: string }[]).find((b) => b.code === "downtown");
+  const week = [0, 1, 2, 3, 4, 5, 6].map((dayOfWeek) => ({ branchId: downtown?.id, dayOfWeek, startTime: "09:00", endTime: "17:00" }));
+  expect((await send("PUT", `/dentists/${dana?.id}/schedule`, { blocks: week })).ok()).toBe(true);
+  // A second branch where no dentist works, and a service only Dr. Dana gives: /book offers that service at Downtown alone.
+  expect((await post("/branches", { code: "uptown", name: "Uptown", address: "", phone: "", operatingHours: hours })).ok()).toBe(true);
+  expect((await post("/procedures", { name: "Braces and Retainers", dentistIds: [dana?.id] })).ok()).toBe(true);
+
+  const tomorrow = new Date(Date.now() + 8 * 3_600_000 + 86_400_000).toISOString().slice(0, 10);
+  const patient = await (await browser.newContext({ baseURL: origin })).newPage();
+  await patient.goto("/book");
+  // The Service list follows the branch: every service before one is chosen, and a picked service goes when the new branch lacks it.
+  const service = patient.getByLabel("Service");
+  const braces = service.getByRole("option", { name: "Braces and Retainers" });
+  await expect(braces).toHaveCount(1);
+  await patient.getByLabel("Branch").selectOption({ label: "Downtown" });
+  await service.selectOption({ label: "Braces and Retainers" });
+  await patient.getByLabel("Branch").selectOption({ label: "Uptown" });
+  await expect(braces).toHaveCount(0);
+  await expect(service).toHaveValue("");
+  await patient.getByLabel("Branch").selectOption({ label: "Downtown" });
+  await expect(braces).toHaveCount(1);
+  await service.selectOption({ label: "Consultation" });
+  await patient.getByLabel("Day").selectOption(tomorrow);
+  await patient.getByRole("group", { name: "Open times" }).getByRole("button").first().click();
+  await patient.getByLabel("First name").fill("Ben");
+  await patient.getByLabel("Last name").fill("Cruz");
+  await patient.getByLabel("Mobile number").fill("0917 555 0101");
+  await patient.getByRole("checkbox", { name: /privacy notice/ }).check();
+
+  // The time is taken in between (the booking route answers 409 once): the patient sees why, then picks a time again and books for real.
+  const bookings = "**/api/v1/portal/bookings";
+  await patient.route(bookings, (route) => route.fulfill({ status: 409, json: { error: { code: "taken", message: "That time was just taken. Please pick another." } } }), { times: 1 });
+  await patient.getByRole("button", { name: "Request this time" }).click();
+  await expect(patient.getByText("That time was just taken. Please pick another.")).toBeVisible();
+  await patient.unroute(bookings);
+  await patient.getByRole("group", { name: "Open times" }).getByRole("button").first().click();
+  await expect(patient.getByText("That time was just taken. Please pick another.")).toBeHidden();
+  await patient.getByRole("button", { name: "Request this time" }).click();
+  await expect(patient.getByText("Your request is in.")).toBeVisible();
+
+  await page.goto("/downtown/calendar");
+  await page.getByRole("button", { name: "Online requests (1)" }).click();
+  await page.getByRole("dialog", { name: "Online requests" }).getByRole("button", { name: /Cruz, Ben/ }).click();
+  const online = page.getByRole("dialog", { name: "Cruz, Ben" });
+  await online.getByRole("button", { name: "Confirm" }).click();
+  await expect(online.getByText("Confirmed", { exact: true })).toBeVisible();
 });

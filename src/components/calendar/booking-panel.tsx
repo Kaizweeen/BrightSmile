@@ -13,11 +13,11 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { api, errorMessage, RequestError } from "@/lib/fetcher";
-import { useDentists } from "@/lib/queries";
-import { formatDay, formatTime, fromMinutes, manilaDate, manilaInstant, manilaMinutes, toMinutes } from "@/lib/time";
+import { useDentists, usePractice } from "@/lib/queries";
+import { durationText, formatDay, formatTime, fromMinutes, manilaDate, manilaInstant, manilaMinutes, toMinutes } from "@/lib/time";
 import { chairName, type VisitDetailJson } from "@/lib/visits";
 
-type Procedure = { id: string; name: string; durationMinutes: number; bufferMinutes: number };
+type Procedure = { id: string; name: string };
 type OpenTime = { start: string; dentists: { id: string; name: string; chairs: number[] }[] };
 type Finding = { code: string; message: string };
 type Check = { ok: boolean; errors: Finding[]; warnings: Finding[] };
@@ -38,6 +38,8 @@ type Props = {
 /** "HH:MM" in Manila for an ISO instant. */
 const clock = (iso: string) => fromMinutes(manilaMinutes(new Date(iso)));
 const lowest = (numbers: number[] | undefined) => (numbers && numbers.length > 0 ? Math.min(...numbers) : null);
+const LENGTHS = Array.from({ length: 32 }, (_, i) => (i + 1) * 15); // 15 minutes to 8 hours
+const minutesBetween = (from: string, to: string) => Math.round((new Date(to).getTime() - new Date(from).getTime()) / 60_000);
 
 const toggleClass = "flex min-h-11 items-center gap-3 rounded-md border px-3 text-sm sm:min-h-9";
 
@@ -59,21 +61,30 @@ export function BookingPanel({ intent, branch, chairs, today, onClose }: Props) 
   const [chairNumber, setChairNumber] = useState<number | null>(moving?.chairNumber ?? fresh?.chairNumber ?? null);
   const [requested, setRequested] = useState(false);
   const [note, setNote] = useState("");
+  const [length, setLength] = useState<number | null>(null);
   // The inputs of the last save: its error and warnings show only while the inputs are still the same.
   const [tried, setTried] = useState<string | null>(null);
 
   const procedures = useQuery({ queryKey: ["procedures", "active"], queryFn: () => api<Procedure[]>("/procedures?active=1") });
   const dentists = useDentists();
-  const picked = (procedures.data ?? []).filter((p) => procedureIds.includes(p.id));
-  const minutes = picked.reduce((sum, p) => sum + p.durationMinutes, 0);
-  const turnover = Math.max(0, ...picked.map((p) => p.bufferMinutes));
+  const practice = usePractice();
+  // Online booking spec 6.2: a new visit starts at the standard length, a moved one keeps its own; staff can change either.
+  const own = moving ? minutesBetween(moving.start, moving.end) : undefined;
+  const lengthMinutes = length ?? own ?? practice.data?.visitMinutes;
+  const cleaningMinutes = moving ? minutesBetween(moving.end, moving.chairFreeAt) : practice.data?.cleaningMinutes;
+  // A moved visit's own length may be off the 15-minute steps: it stays in the list, so staff can go back to it.
+  const lengthOptions = own !== undefined && !LENGTHS.includes(own) ? [...LENGTHS, own].sort((a, b) => a - b) : LENGTHS;
+  // A moved visit's own length is sent only when staff pick another: the server keeps it otherwise, and takes only 15-minute steps.
+  const sentMinutes = moving && (length === null || length === own) ? undefined : lengthMinutes;
+  // Open times are found for the length rounded up to the grid: any time that fits the longer visit fits the real one.
+  const searchMinutes = lengthMinutes === undefined ? undefined : Math.min(480, Math.ceil(lengthMinutes / 15) * 15);
+  // The standard length could not be loaded, so a new visit has no length to book or search with.
+  const practiceFailed = practice.isError && lengthMinutes === undefined;
   const open = useQuery({
-    queryKey: ["availability", branch.code, date, procedureIds.join(","), patient?.id ?? ""],
+    queryKey: ["availability", branch.code, date, searchMinutes, patient?.id ?? ""],
     queryFn: () =>
-      api<{ times: OpenTime[] }>(
-        `/availability?branch=${branch.code}&date=${date}&procedures=${procedureIds.join(",")}${patient ? `&patient=${patient.id}` : ""}`,
-      ),
-    enabled: procedureIds.length > 0 && !walkIn && !anyTime && !chairOnly,
+      api<{ times: OpenTime[] }>(`/availability?branch=${branch.code}&date=${date}&minutes=${searchMinutes}${patient ? `&patient=${patient.id}` : ""}`),
+    enabled: searchMinutes !== undefined && !walkIn && !anyTime && !chairOnly,
   });
   const working = [...new Map((open.data?.times ?? []).flatMap((t) => t.dentists.map((d) => [d.id, d.name] as const))).entries()];
   const times = (open.data?.times ?? []).filter((t) => !dentistFilter || t.dentists.some((d) => d.id === dentistFilter));
@@ -83,7 +94,7 @@ export function BookingPanel({ intent, branch, chairs, today, onClose }: Props) 
 
   const start = walkIn || !time ? null : manilaInstant(date, toMinutes(time)).toISOString();
   const complete = patient !== null && procedureIds.length > 0 && dentistId !== "" && chairNumber !== null && (walkIn || start !== null);
-  const request = { branch: branch.code, chairNumber, dentistId, patientId: patient?.id, start, procedureIds, walkIn };
+  const request = { branch: branch.code, chairNumber, dentistId, patientId: patient?.id, start, procedureIds, minutes: sentMinutes, walkIn };
   const check = useQuery({
     queryKey: ["validate", request, moving?.id ?? null],
     queryFn: () => api<Check>("/appointments/validate", { method: "POST", body: { ...request, excludeAppointmentId: moving?.id ?? null } }),
@@ -96,7 +107,7 @@ export function BookingPanel({ intent, branch, chairs, today, onClose }: Props) 
             method: "PATCH",
             body: chairOnly
               ? { chairNumber, expectedUpdatedAt: moving.updatedAt }
-              : { chairNumber, dentistId, start, procedureIds, acknowledgeWarnings, expectedUpdatedAt: moving.updatedAt },
+              : { chairNumber, dentistId, start, procedureIds, minutes: sentMinutes, acknowledgeWarnings, expectedUpdatedAt: moving.updatedAt },
           })
         : api("/appointments", { method: "POST", body: { ...request, requested, note, acknowledgeWarnings } }),
     onSuccess: async () => {
@@ -167,26 +178,47 @@ export function BookingPanel({ intent, branch, chairs, today, onClose }: Props) 
           )}
 
           {!chairOnly && (
-            <fieldset className="grid gap-2">
-              <legend className="mb-1 text-sm font-medium">Procedures</legend>
-              <div className="grid gap-1 sm:grid-cols-2">
-                {(procedures.data ?? []).map((p) => (
-                  <label key={p.id} className={toggleClass}>
-                    <input
-                      type="checkbox"
-                      className="size-4 accent-primary"
-                      checked={procedureIds.includes(p.id)}
-                      onChange={(event) => {
-                        setProcedureIds(event.target.checked ? [...procedureIds, p.id] : procedureIds.filter((id) => id !== p.id));
-                        if (!anyTime) setTime("");
-                      }}
-                    />
-                    {`${p.name}, ${p.durationMinutes} min`}
-                  </label>
-                ))}
+            <>
+              <fieldset className="grid gap-2">
+                <legend className="mb-1 text-sm font-medium">Services</legend>
+                <div className="grid gap-1 sm:grid-cols-2">
+                  {(procedures.data ?? []).map((p) => (
+                    <label key={p.id} className={toggleClass}>
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-primary"
+                        checked={procedureIds.includes(p.id)}
+                        onChange={(event) => setProcedureIds(event.target.checked ? [...procedureIds, p.id] : procedureIds.filter((id) => id !== p.id))}
+                      />
+                      {p.name}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <div className="grid gap-2">
+                <label className="grid gap-1.5 text-sm font-medium sm:max-w-xs">
+                  Length
+                  <NativeSelect
+                    value={lengthMinutes === undefined ? "" : String(lengthMinutes)}
+                    disabled={lengthMinutes === undefined}
+                    onChange={(event) => {
+                      setLength(Number(event.target.value));
+                      if (!anyTime) setTime("");
+                    }}
+                  >
+                    {lengthOptions.map((m) => (
+                      <NativeSelectOption key={m} value={String(m)}>
+                        {durationText(m)}
+                      </NativeSelectOption>
+                    ))}
+                  </NativeSelect>
+                </label>
+                {practiceFailed && <FormAlert message={errorMessage(practice.error)} />}
+                {lengthMinutes !== undefined && cleaningMinutes !== undefined && (
+                  <p className="text-sm text-muted-foreground">{`${durationText(lengthMinutes)}, then ${cleaningMinutes === 0 ? "no chair cleaning" : `${durationText(cleaningMinutes)} of chair cleaning`}.`}</p>
+                )}
               </div>
-              {picked.length > 0 && <p className="text-sm text-muted-foreground">{`${minutes} minutes, then ${turnover} minutes of chair turnover.`}</p>}
-            </fieldset>
+            </>
           )}
 
           {!moving && (
@@ -263,8 +295,8 @@ export function BookingPanel({ intent, branch, chairs, today, onClose }: Props) 
                 </Button>
               </div>
               {!anyTime &&
-                (procedureIds.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Pick procedures to see the open times.</p>
+                (practiceFailed ? (
+                  <FormAlert message={errorMessage(practice.error)} />
                 ) : open.isPending ? (
                   <p className="text-sm text-muted-foreground">Finding open times...</p>
                 ) : open.isError ? (

@@ -217,7 +217,7 @@ function VisitsPanel({ patientId }: { patientId: string }) {
                 <TableHead>Branch</TableHead>
                 <TableHead>Chair</TableHead>
                 <TableHead>Teeth</TableHead>
-                <TableHead>Procedures</TableHead>
+                <TableHead>Services</TableHead>
                 <TableHead>Dentist</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>

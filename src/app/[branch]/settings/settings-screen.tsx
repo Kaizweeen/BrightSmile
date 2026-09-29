@@ -18,13 +18,13 @@ export function SettingsScreen({
   canEditSchedules,
   me,
   currentBranch,
-  practice,
+  bookingUrl,
 }: {
   owner: boolean;
   canEditSchedules: boolean;
   me: Me;
   currentBranch: string;
-  practice: string;
+  bookingUrl: string;
 }) {
   return (
     <div className="grid gap-4">
@@ -34,14 +34,14 @@ export function SettingsScreen({
           {owner && <TabsTrigger value="practice">Practice</TabsTrigger>}
           {owner && <TabsTrigger value="branches">Branches</TabsTrigger>}
           {owner && <TabsTrigger value="chairs">Chairs</TabsTrigger>}
-          {owner && <TabsTrigger value="procedures">Procedures</TabsTrigger>}
+          {owner && <TabsTrigger value="procedures">Services</TabsTrigger>}
           <TabsTrigger value="schedules">Schedules</TabsTrigger>
           <TabsTrigger value="time-off">Time off</TabsTrigger>
           {owner && <TabsTrigger value="access-log">Access log</TabsTrigger>}
         </TabsList>
         {owner && (
           <TabsContent value="practice" className="pt-4">
-            <PracticePanel initialName={practice} />
+            <PracticePanel bookingUrl={bookingUrl} />
           </TabsContent>
         )}
         {owner && (

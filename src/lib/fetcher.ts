@@ -37,9 +37,13 @@ export async function api<T = unknown>(path: string, init: { method?: Method; bo
   return data as T;
 }
 
-/** The message to show for a failed call. */
+/** The message to show for a failed call. fetch reports a dropped connection as a TypeError ("Failed to fetch"). */
 export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Something went wrong. Try again.";
+  return error instanceof TypeError
+    ? "Could not connect. Check your internet connection and try again."
+    : error instanceof Error
+      ? error.message
+      : "Something went wrong. Try again.";
 }
 
 /** Field errors from a failed call, keyed by field name. */

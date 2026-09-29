@@ -3,34 +3,39 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import { StateBadge } from "@/components/state-badge";
 import { FormAlert } from "@/components/form-alert";
+import { StateBadge } from "@/components/state-badge";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, errorMessage, fieldErrors } from "@/lib/fetcher";
+import { useDentists } from "@/lib/queries";
 
-type Procedure = { id: string; name: string; durationMinutes: number; bufferMinutes: number; active: boolean };
+type Service = { id: string; name: string; online: boolean; active: boolean; dentistIds: string[] };
 
+/** Online booking spec 11: services have no length; each can be offered online and limited to chosen dentists. */
 export function ProceduresPanel() {
-  const procedures = useQuery({ queryKey: ["procedures"], queryFn: () => api<Procedure[]>("/procedures") });
-  const [editing, setEditing] = useState<Procedure | "new" | null>(null);
-  if (procedures.isPending) return <p className="text-muted-foreground">Loading procedures...</p>;
-  if (procedures.isError) return <FormAlert message={errorMessage(procedures.error)} />;
+  const services = useQuery({ queryKey: ["procedures"], queryFn: () => api<Service[]>("/procedures") });
+  const dentists = useDentists();
+  const [editing, setEditing] = useState<Service | "new" | null>(null);
+  if (services.isPending || dentists.isPending) return <p className="text-muted-foreground">Loading services...</p>;
+  if (services.isError) return <FormAlert message={errorMessage(services.error)} />;
+  if (dentists.isError) return <FormAlert message={errorMessage(dentists.error)} />;
+  const names = new Map(dentists.data.map((d) => [d.id, d.name]));
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-muted-foreground">A visit lasts as long as its procedures; the longest turnover then keeps the chair free for cleaning.</p>
-        <Button onClick={() => setEditing("new")}>Add procedure</Button>
+        <p className="text-muted-foreground">Visits start at the standard length on the Practice tab. Online, a service goes only to its dentists.</p>
+        <Button onClick={() => setEditing("new")}>Add service</Button>
       </div>
       <div className="overflow-x-auto rounded-lg border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Procedure</TableHead>
-              <TableHead>Length</TableHead>
-              <TableHead>Turnover</TableHead>
+              <TableHead>Service</TableHead>
+              <TableHead>Online</TableHead>
+              <TableHead>Dentists</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>
                 <span className="sr-only">Actions</span>
@@ -38,21 +43,23 @@ export function ProceduresPanel() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {procedures.data.length === 0 && (
+            {services.data.length === 0 && (
               <TableRow>
                 <TableCell colSpan={5} className="text-muted-foreground">
-                  No procedures yet.
+                  No services yet.
                 </TableCell>
               </TableRow>
             )}
-            {procedures.data.map((p) => (
-              <TableRow key={p.id}>
-                <TableCell className="font-medium">{p.name}</TableCell>
-                <TableCell>{`${p.durationMinutes} min`}</TableCell>
-                <TableCell>{`${p.bufferMinutes} min`}</TableCell>
-                <TableCell><StateBadge on={p.active} yes="Offered" no="Retired" /></TableCell>
+            {services.data.map((s) => (
+              <TableRow key={s.id}>
+                <TableCell className="font-medium">{s.name}</TableCell>
+                <TableCell>{s.online ? "Yes" : "No"}</TableCell>
+                <TableCell>{s.dentistIds.length === 0 ? "All" : s.dentistIds.map((id) => names.get(id) ?? "A former dentist").join(", ")}</TableCell>
+                <TableCell>
+                  <StateBadge on={s.active} yes="Offered" no="Retired" />
+                </TableCell>
                 <TableCell className="text-right">
-                  <Button variant="ghost" onClick={() => setEditing(p)}>
+                  <Button variant="ghost" onClick={() => setEditing(s)}>
                     Edit
                   </Button>
                 </TableCell>
@@ -61,24 +68,25 @@ export function ProceduresPanel() {
           </TableBody>
         </Table>
       </div>
-      {editing && <ProcedureDialog procedure={editing === "new" ? null : editing} onClose={() => setEditing(null)} />}
+      {editing && <ServiceDialog service={editing === "new" ? null : editing} dentists={dentists.data} onClose={() => setEditing(null)} />}
     </div>
   );
 }
 
-function ProcedureDialog({ procedure, onClose }: { procedure: Procedure | null; onClose: () => void }) {
+function ServiceDialog({ service, dentists, onClose }: { service: Service | null; dentists: { id: string; name: string }[]; onClose: () => void }) {
   const client = useQueryClient();
   const [form, setForm] = useState({
-    name: procedure?.name ?? "",
-    durationMinutes: String(procedure?.durationMinutes ?? 30),
-    bufferMinutes: String(procedure?.bufferMinutes ?? 10),
-    active: procedure?.active ?? true,
+    name: service?.name ?? "",
+    online: service?.online ?? true,
+    active: service?.active ?? true,
+    dentistIds: (service?.dentistIds ?? []).filter((id) => dentists.some((d) => d.id === id)),
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const body = { name: form.name, durationMinutes: Number(form.durationMinutes), bufferMinutes: Number(form.bufferMinutes) };
   const save = useMutation({
-    mutationFn: () =>
-      procedure ? api(`/procedures/${procedure.id}`, { method: "PATCH", body: { ...body, active: form.active } }) : api("/procedures", { method: "POST", body }),
+    mutationFn: () => {
+      const body = { name: form.name, online: form.online, dentistIds: form.dentistIds };
+      return service ? api(`/procedures/${service.id}`, { method: "PATCH", body: { ...body, active: form.active } }) : api("/procedures", { method: "POST", body });
+    },
     onSuccess: async () => {
       toast.success(`Saved ${form.name}.`);
       onClose();
@@ -89,12 +97,14 @@ function ProcedureDialog({ procedure, onClose }: { procedure: Procedure | null; 
       if (Object.keys(fieldErrors(error)).length === 0) toast.error(errorMessage(error));
     },
   });
+  const toggle = (id: string, on: boolean) =>
+    setForm({ ...form, dentistIds: on ? [...form.dentistIds, id] : form.dentistIds.filter((d) => d !== id) });
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{procedure ? `Edit ${procedure.name}` : "Add a procedure"}</DialogTitle>
-          <DialogDescription>Lengths use 5-minute steps. Turnover is the chair cleaning time after the visit.</DialogDescription>
+          <DialogTitle>{service ? `Edit ${service.name}` : "Add a service"}</DialogTitle>
+          <DialogDescription>Online bookings for this service go only to the dentists ticked here, or to any dentist when none is ticked.</DialogDescription>
         </DialogHeader>
         <form
           className="grid gap-4"
@@ -104,12 +114,28 @@ function ProcedureDialog({ procedure, onClose }: { procedure: Procedure | null; 
           }}
         >
           <TextField label="Name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} maxLength={60} error={errors.name} />
-          <TextField label="Length in minutes" type="number" inputMode="numeric" min={5} max={480} step={5} value={form.durationMinutes} onChange={(event) => setForm({ ...form, durationMinutes: event.target.value })} error={errors.durationMinutes} />
-          <TextField label="Turnover in minutes" type="number" inputMode="numeric" min={0} max={120} step={5} value={form.bufferMinutes} onChange={(event) => setForm({ ...form, bufferMinutes: event.target.value })} error={errors.bufferMinutes} />
-          {procedure && (
+          <label className="flex min-h-11 items-center gap-3">
+            <input type="checkbox" checked={form.online} onChange={(event) => setForm({ ...form, online: event.target.checked })} className="size-4 accent-primary" />
+            Offer online
+          </label>
+          <fieldset className="grid gap-1">
+            <legend className="mb-1 text-sm font-medium">Dentists</legend>
+            {dentists.length === 0 && <p className="text-sm text-muted-foreground">No dentists yet.</p>}
+            {dentists.length > 0 && form.dentistIds.length === 0 && (
+              <p className="text-sm text-muted-foreground">None ticked: any dentist can be booked for it online.</p>
+            )}
+            {dentists.map((d) => (
+              <label key={d.id} className="flex min-h-11 items-center gap-3">
+                <input type="checkbox" checked={form.dentistIds.includes(d.id)} onChange={(event) => toggle(d.id, event.target.checked)} className="size-4 accent-primary" />
+                {d.name}
+              </label>
+            ))}
+            {errors.dentistIds && <p className="text-sm text-destructive">{errors.dentistIds}</p>}
+          </fieldset>
+          {service && (
             <label className="flex min-h-11 items-center gap-3">
               <input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} className="size-4 accent-primary" />
-              Offered (retired procedures cannot be booked)
+              Offered (retired services cannot be booked)
             </label>
           )}
           <DialogFooter>
