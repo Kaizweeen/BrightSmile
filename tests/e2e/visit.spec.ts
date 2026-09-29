@@ -30,7 +30,7 @@ test("a visit from setup to completion", async ({ page, browser }) => {
   const post = (path: string, data: object) => page.request.post(`/api/v1${path}`, { data, headers: { origin } });
   expect((await post("/branches", { code: "downtown", name: "Downtown", address: "", phone: "", operatingHours: hours })).ok()).toBe(true);
   expect((await post("/branches/downtown/chairs", { label: "General" })).ok()).toBe(true);
-  expect((await post("/procedures", { name: "Consultation", durationMinutes: 30, bufferMinutes: 10 })).ok()).toBe(true);
+  expect((await post("/procedures", { name: "Consultation" })).ok()).toBe(true);
 
   // A dentist asks to join with the branch's QR (spec 6.3), in a browser of their own.
   await page.goto("/poster/downtown");
@@ -62,7 +62,8 @@ test("a visit from setup to completion", async ({ page, browser }) => {
   await addPatient.getByLabel("First name").fill("Ana");
   await addPatient.getByRole("button", { name: "Add patient" }).click();
   await expect(booking.getByText("Santos, Ana")).toBeVisible();
-  await booking.getByLabel("Consultation, 30 min").check();
+  await booking.getByLabel("Consultation", { exact: true }).check();
+  await booking.getByLabel("Length").selectOption({ label: "30 minutes" });
   await booking.getByRole("button", { name: "Pick another time" }).click();
   await booking.getByLabel("Start").fill(slot ?? "");
   await booking.getByLabel("Dentist for this visit").selectOption({ label: "Dr. Dana Dentist" });

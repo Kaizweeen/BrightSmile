@@ -78,3 +78,11 @@ export function formatDay(date: string): string {
 export function formatDateTime(instant: Date): string {
   return `${formatDate(instant)}, ${formatTime(instant)}`;
 }
+
+/** A length in words: "45 minutes", "1 hour", "1 hour 30 minutes". */
+export function durationText(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  const parts = [hours === 0 ? "" : hours === 1 ? "1 hour" : `${hours} hours`, rest === 0 ? "" : `${rest} minutes`].filter(Boolean);
+  return parts.length > 0 ? parts.join(" ") : "0 minutes";
+}

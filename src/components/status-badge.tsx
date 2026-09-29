@@ -12,13 +12,14 @@ const LOOK: Record<Status, { icon: typeof Clock; tone: string }> = {
   cancelled: { icon: Ban, tone: "bg-zinc-200 text-zinc-900 dark:bg-zinc-400/20 dark:text-zinc-100" },
 };
 
-/** A visit's status as a word and an icon (spec section 10: never colour alone). */
-export function StatusBadge({ status, className }: { status: Status; className?: string }) {
+/** A visit's status as a word and an icon (spec section 10: never colour alone), and "Online" for an online booking. */
+export function StatusBadge({ status, online = false, className }: { status: Status; online?: boolean; className?: string }) {
   const { icon: Icon, tone } = LOOK[status];
   return (
     <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", tone, className)}>
       <Icon aria-hidden className="size-3.5" />
-      {STATUS_LABEL[status]}
+      <span>{STATUS_LABEL[status]}</span>
+      {online && <span>· Online</span>}
     </span>
   );
 }

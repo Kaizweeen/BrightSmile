@@ -80,7 +80,7 @@ export function MyDayScreen({ branch, date, today, staffId }: { branch: string; 
                   <CardDescription>{`${v.branchName}, ${chairName(v.chairNumber, v.chairLabel)}. ${v.procedures.join(", ")}.`}</CardDescription>
                 </CardHeader>
                 <CardFooter className="flex flex-wrap items-center gap-2">
-                  <StatusBadge status={v.status} />
+                  <StatusBadge status={v.status} online={v.source === "portal"} />
                   {next && (
                     <Button disabled={change.isPending} onClick={() => change.mutate({ id: v.id, to: next })}>
                       {actionLabel(v.status, next)}

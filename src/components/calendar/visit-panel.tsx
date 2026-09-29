@@ -88,7 +88,7 @@ export function VisitPanel({ visitId, branch, staff, onClose, onMove }: Props) {
             <dl className="grid gap-x-3 gap-y-2 text-sm sm:grid-cols-[8rem_1fr]">
               <dt className="text-muted-foreground">Status</dt>
               <dd>
-                <StatusBadge status={v.status} />
+                <StatusBadge status={v.status} online={v.source === "portal"} />
               </dd>
               <dt className="text-muted-foreground">Dentist</dt>
               <dd>{v.dentistName}</dd>

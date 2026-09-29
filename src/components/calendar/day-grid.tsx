@@ -93,7 +93,7 @@ export function DayGrid({ date, range, chairs, visits, onOpen, onSlot }: Props) 
                           {v.hasAlerts && <AlertMark />}
                         </span>
                         <span className="w-full truncate text-muted-foreground">{`${v.procedures.join(", ")} · ${v.dentistName}`}</span>
-                        <StatusBadge status={v.status} />
+                        <StatusBadge status={v.status} online={v.source === "portal"} />
                         <span className="sr-only">{`, ${chairName(c.number, c.label)}, chair free at ${formatTime(new Date(v.chairFreeAt))}`}</span>
                       </button>
                       {at.turnover > 0 && (

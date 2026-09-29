@@ -77,7 +77,7 @@ export function WeekGrid({ days, today, chairs, visits, onOpen, onDay }: Props) 
                         {v.hasAlerts && <AlertMark />}
                       </span>
                       <span className="truncate">{v.patientName}</span>
-                      <StatusBadge status={v.status} className="justify-self-start" />
+                      <StatusBadge status={v.status} online={v.source === "portal"} className="justify-self-start" />
                     </button>
                   </li>
                 ))}

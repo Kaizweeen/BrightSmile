@@ -114,7 +114,7 @@ export function CalendarScreen({ branch, chairs, date, view, today, staff, canBo
                   className="flex min-h-11 items-center gap-2 rounded-md border px-3 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-9"
                 >
                   {`${formatTime(new Date(v.start))} ${v.patientName}`}
-                  <StatusBadge status={v.status} />
+                  <StatusBadge status={v.status} online={v.source === "portal"} />
                 </button>
               </li>
             ))}
