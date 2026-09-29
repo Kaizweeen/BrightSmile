@@ -32,6 +32,11 @@ describe("the access log", () => {
     const byDesk = await get(`?user=${desk.id}`);
     expect(byDesk).toHaveLength(27);
     expect(new Set(byDesk.map((r: { userName: string }) => r.userName))).toEqual(new Set(["Liza Ramos"]));
+    // Rows about the person count too, such as someone failing to sign in as them.
+    await expect(signIn(desk.username, "not the password")).rejects.toThrow();
+    const aboutDesk = await get(`?user=${desk.id}`);
+    expect(aboutDesk).toHaveLength(28);
+    expect(aboutDesk[0]).toMatchObject({ action: "auth.sign_in_failed", entityId: desk.id, userName: null });
   });
 
   it("is for the owner only", async () => {

@@ -1,4 +1,4 @@
-import { and, desc, eq, lt, sql } from "drizzle-orm";
+import { and, desc, eq, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { auditLog, branches, patients, users } from "@/db/schema";
@@ -36,7 +36,8 @@ export async function accessLog(actor: Staff, q: z.infer<typeof auditQuerySchema
     .where(
       and(
         q.patient ? and(eq(auditLog.entity, "patient"), eq(auditLog.entityId, q.patient)) : undefined,
-        q.user ? eq(auditLog.userId, q.user) : undefined,
+        // By the person, or about them (a failed sign-in as them, a change to their access, their schedule).
+        q.user ? or(eq(auditLog.userId, q.user), eq(auditLog.entityId, q.user)) : undefined,
         q.before ? lt(auditLog.id, q.before) : undefined,
       ),
     )
