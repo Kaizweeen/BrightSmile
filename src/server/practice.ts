@@ -45,15 +45,17 @@ export async function practiceName(): Promise<string> {
 export async function updatePractice(actor: Staff, patch: z.infer<typeof practiceSchema>): Promise<PracticeSettings> {
   requireCan(actor, "settings.edit");
   return db.transaction(async (tx) => {
-    const next = { ...(await practiceSettings(tx)), ...patch };
+    const current = await practiceSettings(tx);
+    const next = { ...current, ...patch };
     if (next.onlineBooking && next.privacyNotice === "") {
       throw new ApiError(422, "notice_needed", "Add the privacy notice first.", { fields: { privacyNotice: "Add the privacy notice first." } });
     }
     await tx.insert(practice).values(next).onConflictDoUpdate({ target: practice.id, set: next });
-    // The notice can be long: the log says only that it changed.
+    // A changed notice is logged in full (at most 5000 characters, no personal data), so the clinic can show which notice was
+    // in force when a patient agreed to it.
     const { privacyNotice, ...rest } = patch;
     await audit(
-      { userId: actor.id, action: "practice.updated", entity: "practice", details: { ...rest, ...(privacyNotice === undefined ? {} : { privacyNotice: "changed" }) } },
+      { userId: actor.id, action: "practice.updated", entity: "practice", details: { ...rest, ...(privacyNotice === undefined || privacyNotice === current.privacyNotice ? {} : { privacyNotice }) } },
       tx,
     );
     return next;

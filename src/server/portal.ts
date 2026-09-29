@@ -1,7 +1,7 @@
 import { and, asc, count, eq, gt, gte, inArray, lt, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, type Db } from "@/db";
-import { appointmentProcedures, appointments, auditLog, branches, chairs, patients, procedureDentists, procedures, users } from "@/db/schema";
+import { appointmentProcedures, appointments, auditLog, branches, chairs, patients, procedureDentists, procedures, userBranches, users } from "@/db/schema";
 import { ACTIVE } from "@/lib/lifecycle";
 import { bookable, chooseDentist, NOTICE_MS } from "@/lib/portal";
 import { STEP } from "@/lib/slots";
@@ -24,25 +24,46 @@ const taken = () => new ApiError(409, "taken", "That time was just taken. Please
 const tooMany = () => new ApiError(429, "too_many_requests", "Too many bookings from this connection. Please call the clinic.");
 const busy = () => new ApiError(503, "busy", "Online booking is busy right now. Please try again in a moment.");
 
+/** `branches` holds the codes of the branches offering the service: null for all of them (the service has no dentist limit). */
+type PortalService = { id: string; name: string; branches: string[] | null };
+
 export type PortalInfo =
   | { open: false; practiceName: string }
-  | { open: true; practiceName: string; branches: { code: string; name: string }[]; services: { id: string; name: string }[] };
+  | { open: true; practiceName: string; branches: { code: string; name: string }[]; services: PortalService[] };
 
-/** What /book shows (online booking spec 3): the active branches and the services offered online, nothing else. */
+/**
+ * What /book shows (online booking spec 3): the active branches and the services offered online, nothing else. A service limited
+ * to dentists is offered only where one of them works (as in findOpenTimes: an active dentist who sees patients, linked to the
+ * branch, or the owner, who works at every one), and left out when that is nowhere.
+ */
 export async function portalInfo(): Promise<PortalInfo> {
   const settings = await practiceSettings();
   if (!settings.onlineBooking) return { open: false, practiceName: settings.name };
   const branchRows = await db
-    .select({ code: branches.code, name: branches.name })
+    .select({ id: branches.id, code: branches.code, name: branches.name })
     .from(branches)
     .where(eq(branches.active, true))
     .orderBy(asc(branches.sort), asc(branches.name));
-  const services = await db
+  const rows = await db
     .select({ id: procedures.id, name: procedures.name })
     .from(procedures)
     .where(and(eq(procedures.active, true), eq(procedures.online, true)))
     .orderBy(asc(procedures.sort), asc(procedures.name));
-  return { open: true, practiceName: settings.name, branches: branchRows, services };
+  const limits = await db.select().from(procedureDentists);
+  const dentists = await db
+    .select({ id: users.id, role: users.role })
+    .from(users)
+    .where(and(eq(users.status, "active"), eq(users.seesPatients, true)));
+  const links = await db.select().from(userBranches);
+  const services = rows.flatMap((service): PortalService[] => {
+    const allowed = limits.filter((l) => l.procedureId === service.id).map((l) => l.dentistId);
+    if (allowed.length === 0) return [{ ...service, branches: null }];
+    const at = branchRows
+      .filter((b) => dentists.some((d) => allowed.includes(d.id) && (d.role === "owner" || links.some((l) => l.userId === d.id && l.branchId === b.id))))
+      .map((b) => b.code);
+    return at.length > 0 ? [{ ...service, branches: at }] : [];
+  });
+  return { open: true, practiceName: settings.name, branches: branchRows.map(({ code, name }) => ({ code, name })), services };
 }
 
 /**

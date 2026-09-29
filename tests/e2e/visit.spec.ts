@@ -112,12 +112,25 @@ test("a visit from setup to completion", async ({ page, browser }) => {
   const downtown = ((await (await page.request.get("/api/v1/branches")).json()) as { id: string; code: string }[]).find((b) => b.code === "downtown");
   const week = [0, 1, 2, 3, 4, 5, 6].map((dayOfWeek) => ({ branchId: downtown?.id, dayOfWeek, startTime: "09:00", endTime: "17:00" }));
   expect((await send("PUT", `/dentists/${dana?.id}/schedule`, { blocks: week })).ok()).toBe(true);
+  // A second branch where no dentist works, and a service only Dr. Dana gives: /book offers that service at Downtown alone.
+  expect((await post("/branches", { code: "uptown", name: "Uptown", address: "", phone: "", operatingHours: hours })).ok()).toBe(true);
+  expect((await post("/procedures", { name: "Braces and Retainers", dentistIds: [dana?.id] })).ok()).toBe(true);
 
   const tomorrow = new Date(Date.now() + 8 * 3_600_000 + 86_400_000).toISOString().slice(0, 10);
   const patient = await (await browser.newContext({ baseURL: origin })).newPage();
   await patient.goto("/book");
+  // The Service list follows the branch: every service before one is chosen, and a picked service goes when the new branch lacks it.
+  const service = patient.getByLabel("Service");
+  const braces = service.getByRole("option", { name: "Braces and Retainers" });
+  await expect(braces).toHaveCount(1);
   await patient.getByLabel("Branch").selectOption({ label: "Downtown" });
-  await patient.getByLabel("Service").selectOption({ label: "Consultation" });
+  await service.selectOption({ label: "Braces and Retainers" });
+  await patient.getByLabel("Branch").selectOption({ label: "Uptown" });
+  await expect(braces).toHaveCount(0);
+  await expect(service).toHaveValue("");
+  await patient.getByLabel("Branch").selectOption({ label: "Downtown" });
+  await expect(braces).toHaveCount(1);
+  await service.selectOption({ label: "Consultation" });
   await patient.getByLabel("Day").selectOption(tomorrow);
   await patient.getByRole("group", { name: "Open times" }).getByRole("button").first().click();
   await patient.getByLabel("First name").fill("Ben");

@@ -27,7 +27,7 @@ export default async function BookPage() {
       <BookForm
         practiceName={info.practiceName}
         branches={info.branches.map((b) => ({ value: b.code, label: b.name }))}
-        services={info.services.map((s) => ({ value: s.id, label: s.name }))}
+        services={info.services.map((s) => ({ value: s.id, label: s.name, branches: s.branches }))}
         today={manilaDate(new Date())}
       />
     </AuthCard>

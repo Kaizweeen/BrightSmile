@@ -9,6 +9,7 @@ import { db } from "@/db";
 import { appointmentProcedures, appointments, auditLog, branches, chairs, dentistSchedules, patients, practice, procedureDentists, procedures } from "@/db/schema";
 import { normalizeMobile } from "@/lib/validation";
 import { clientKey } from "@/server/api";
+import { portalInfo } from "@/server/portal";
 import { call, makeBranch, makeUser, request, signIn } from "../helpers";
 
 const MONDAY = "2026-10-05";
@@ -347,6 +348,38 @@ describe("online requests", () => {
     const w = await world();
     const res = await call(onlineRequestsRoute.GET, request("/api/v1/online-requests?branch=downtown", { cookie: w.reyesCookie }));
     expect(res.status).toBe(403);
+  });
+});
+
+describe("what /book offers", () => {
+  it("offers a limited service only at the branches where one of its dentists works", async () => {
+    const w = await world();
+    await makeBranch({ code: "uptown", name: "Uptown" });
+    // The owner works at every branch; Dr. Nowhere at none; Dr. Gone is disabled.
+    const owner = await makeUser({ role: "owner", seesPatients: true });
+    const nowhere = await makeUser({ role: "dentist", name: "Dr. Nowhere" });
+    const gone = await makeUser({ role: "dentist", name: "Dr. Gone", status: "disabled", branchIds: [w.dt.id] });
+    const [whitening] = await db.insert(procedures).values({ name: "Laser Teeth Whitening (Bleach)" }).returning();
+    const [dentures] = await db.insert(procedures).values({ name: "Dentures (Pustiso)" }).returning();
+    const [crowns] = await db.insert(procedures).values({ name: "Veneers and Crowns" }).returning();
+    await db.insert(procedureDentists).values([
+      { procedureId: whitening.id, dentistId: owner.id },
+      { procedureId: dentures.id, dentistId: nowhere.id },
+      { procedureId: crowns.id, dentistId: gone.id },
+    ]);
+    const info = await portalInfo();
+    if (!info.open) throw new Error("Online booking should be on.");
+    expect(info.branches).toEqual([
+      { code: "downtown", name: "Downtown" },
+      { code: "uptown", name: "Uptown" },
+    ]);
+    // Braces: only Dr. Lim, who works at Downtown. Not listed: the service that is not offered online, and the two that
+    // no working dentist can take anywhere.
+    expect(info.services).toEqual([
+      { id: w.braces.id, name: "Braces and Retainers", branches: ["downtown"] },
+      { id: whitening.id, name: "Laser Teeth Whitening (Bleach)", branches: ["downtown", "uptown"] },
+      { id: w.cleaning.id, name: "Oral Prophylaxis (Cleaning)", branches: null },
+    ]);
   });
 });
 

@@ -12,6 +12,8 @@ import { BOOKING_DAYS } from "@/lib/portal";
 import { addDays, formatDay, formatTime, manilaDate } from "@/lib/time";
 
 type Option = { value: string; label: string };
+/** `branches`: the codes of the branches that offer the service, or null for all of them. */
+type ServiceOption = Option & { branches: string[] | null };
 type Done = { branch: string; service: string; start: string };
 
 const EMPTY = { firstName: "", lastName: "", mobile: "", note: "", consent: false, website: "" };
@@ -20,7 +22,7 @@ const EMPTY = { firstName: "", lastName: "", mobile: "", note: "", consent: fals
 const focusHeading = (heading: HTMLHeadingElement | null) => heading?.focus();
 
 /** Online booking spec 3: branch, service, day and time, then the patient's details, on one page. */
-export function BookForm({ practiceName, branches, services, today }: { practiceName: string; branches: Option[]; services: Option[]; today: string }) {
+export function BookForm({ practiceName, branches, services, today }: { practiceName: string; branches: Option[]; services: ServiceOption[]; today: string }) {
   const [branch, setBranch] = useState(branches.length === 1 ? branches[0].value : "");
   const [service, setService] = useState("");
   const [date, setDate] = useState(today);
@@ -30,6 +32,8 @@ export function BookForm({ practiceName, branches, services, today }: { practice
   const [done, setDone] = useState<Done | null>(null);
   const consentErrorId = useId();
   const days = Array.from({ length: BOOKING_DAYS + 1 }, (_, i) => addDays(today, i));
+  // A service is offered where its dentists work (online booking spec 3); every service until a branch is chosen.
+  const offeredAt = (s: ServiceOption, code: string) => code === "" || s.branches === null || s.branches.includes(code);
   const times = useQuery({
     queryKey: ["portal-times", branch, service, date],
     queryFn: () => api<{ times: string[] }>(`/portal/times?branch=${encodeURIComponent(branch)}&service=${service}&date=${date}`),
@@ -81,7 +85,15 @@ export function BookForm({ practiceName, branches, services, today }: { practice
     >
       <label className="grid gap-1.5 text-sm font-medium">
         Branch
-        <NativeSelect className="w-full" value={branch} onChange={(event) => setBranch(event.target.value)}>
+        <NativeSelect
+          className="w-full"
+          value={branch}
+          onChange={(event) => {
+            setBranch(event.target.value);
+            // A service the new branch does not offer is dropped.
+            if (!services.some((s) => s.value === service && offeredAt(s, event.target.value))) setService("");
+          }}
+        >
           <NativeSelectOption value="">Pick a branch</NativeSelectOption>
           {branches.map((b) => (
             <NativeSelectOption key={b.value} value={b.value}>
@@ -94,7 +106,7 @@ export function BookForm({ practiceName, branches, services, today }: { practice
         Service
         <NativeSelect className="w-full" value={service} onChange={(event) => setService(event.target.value)}>
           <NativeSelectOption value="">Pick a service</NativeSelectOption>
-          {services.map((s) => (
+          {services.filter((s) => offeredAt(s, branch)).map((s) => (
             <NativeSelectOption key={s.value} value={s.value}>
               {s.label}
             </NativeSelectOption>

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import * as chairRoute from "@/app/api/v1/branches/[code]/chairs/[number]/route";
 import * as chairsRoute from "@/app/api/v1/branches/[code]/chairs/route";
@@ -9,7 +9,7 @@ import * as practiceRoute from "@/app/api/v1/practice/route";
 import * as procedureRoute from "@/app/api/v1/procedures/[id]/route";
 import * as proceduresRoute from "@/app/api/v1/procedures/route";
 import { db } from "@/db";
-import { appointments, branches, patients, practice } from "@/db/schema";
+import { appointments, auditLog, branches, patients, practice } from "@/db/schema";
 import { DEFAULT_HOURS } from "@/lib/hours";
 import type { Staff } from "@/server/session";
 import { call, makeUser, request, signIn } from "../helpers";
@@ -48,6 +48,18 @@ describe("practice", () => {
     expect(odd.status).toBe(400);
     expect((await odd.json()).error.fields.visitMinutes).toBe("Use 15-minute steps");
     expect((await patch({ privacyNotice: "" })).status).toBe(422);
+  });
+
+  it("logs the privacy notice's words when it changes, so the clinic can show which one was in force", async () => {
+    const { cookie } = await ownerCookie();
+    const patch = (body: object) => call(practiceRoute.PATCH, request("/api/v1/practice", { method: "PATCH", cookie, body }));
+    const latest = async () => (await db.select().from(auditLog).where(eq(auditLog.action, "practice.updated")).orderBy(desc(auditLog.id)).limit(1))[0].details;
+    const notice = "We keep your details to run your visits. We keep them in Singapore.";
+    expect((await patch({ privacyNotice: notice, visitMinutes: 60 })).status).toBe(200);
+    expect(await latest()).toEqual({ visitMinutes: 60, privacyNotice: notice });
+    // A save that leaves the notice as it is does not repeat it.
+    expect((await patch({ privacyNotice: notice, visitMinutes: 45 })).status).toBe(200);
+    expect(await latest()).toEqual({ visitMinutes: 45 });
   });
 });
 
@@ -180,6 +192,21 @@ describe("procedures", () => {
     const cleared = await call(procedureRoute.PATCH, request(`/api/v1/procedures/${id}`, { method: "PATCH", cookie, body: { dentistIds: [] } }), { id });
     expect(cleared.status).toBe(200);
     expect((await cleared.json()).dentistIds).toEqual([]);
+  });
+
+  it("refuses dentists who are not active, such as a pending join request", async () => {
+    const { cookie } = await ownerCookie();
+    const [b] = await db.select().from(branches).where(eq(branches.code, "downtown"));
+    // A pending request as a dentist sees patients, but must not be put on a service: the link would block declining it.
+    const pending = await makeUser({ role: "dentist", status: "pending", requestedBranchId: b.id });
+    const disabled = await makeUser({ role: "dentist", status: "disabled", branchIds: [b.id] });
+    for (const dentist of [pending, disabled]) {
+      const res = await call(proceduresRoute.POST, request("/api/v1/procedures", { method: "POST", cookie, body: { name: "Veneers", dentistIds: [dentist.id] } }));
+      expect(res.status).toBe(400);
+      expect((await res.json()).error.fields.dentistIds).toBe("Pick dentists who see patients.");
+    }
+    const list = await (await call(proceduresRoute.GET, request("/api/v1/procedures", { cookie }))).json();
+    expect(list.map((p: { name: string }) => p.name)).not.toContain("Veneers");
   });
 
   it("keeps a branch with visits not over yet open, counting one in the chair now", async () => {

@@ -37,14 +37,17 @@ export async function listProcedures(opts: { activeOnly?: boolean } = {}): Promi
   return rows.map((row) => ({ ...row, dentistIds: links.filter((l) => l.procedureId === row.id).map((l) => l.dentistId) }));
 }
 
-/** Replaces a service's dentists; only dentists who see patients can be chosen. */
+/**
+ * Replaces a service's dentists; only active dentists who see patients can be chosen. A pending join request sees patients
+ * too, but a link to it would block declining or expiring it (the foreign key).
+ */
 async function setDentists(tx: Db, procedureId: string, dentistIds: string[]): Promise<string[]> {
   const unique = [...new Set(dentistIds)];
   if (unique.length > 0) {
     const found = await tx
       .select({ id: users.id })
       .from(users)
-      .where(and(inArray(users.id, unique), eq(users.seesPatients, true)));
+      .where(and(inArray(users.id, unique), eq(users.seesPatients, true), eq(users.status, "active")));
     if (found.length !== unique.length) {
       throw new ApiError(400, "invalid", "Pick dentists who see patients.", { fields: { dentistIds: "Pick dentists who see patients." } });
     }

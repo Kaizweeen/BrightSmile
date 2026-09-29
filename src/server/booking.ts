@@ -73,8 +73,8 @@ export async function bookingFacts(tx: Db, req: BookingRequest, now: Date): Prom
   if (!patient) throw notFound("That patient");
   const picked = await tx.select().from(procedures).where(inArray(procedures.id, req.procedureIds));
   if (new Set(req.procedureIds).size !== req.procedureIds.length || picked.length !== req.procedureIds.length) {
-    throw new ApiError(400, "invalid", "Pick each procedure once, from the list.", {
-      fields: { procedureIds: "Pick each procedure once, from the list." },
+    throw new ApiError(400, "invalid", "Pick each service once, from the list.", {
+      fields: { procedureIds: "Pick each service once, from the list." },
     });
   }
   const ordered = req.procedureIds.map((id) => picked.find((p) => p.id === id) as (typeof picked)[number]);
