@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as formsRoute from "@/app/api/v1/portal/forms/route";
 import { db } from "@/db";
 import { auditLog, branches, patientForms, practice } from "@/db/schema";
@@ -106,6 +106,21 @@ describe("sending a patient form", () => {
     expect(sixth.status).toBe(429);
     expect((await sixth.json()).error.message).toBe("Too many forms from this connection. Please ask at the front desk.");
     expect((await send(form({ lastName: "Other" }), 6)).status).toBe(201);
+  });
+
+  it("refuses a connection that is at its limit without opening a transaction", async () => {
+    await world();
+    for (let i = 0; i < 5; i++) expect((await send(form({ lastName: `Full${i}` }), 10)).status).toBe(201);
+    // A transaction would wait for the connection's lock, so the refusal comes before any (as in online booking).
+    const real = (globalThis as unknown as { __dentasync: { db: typeof db } }).__dentasync.db;
+    const spy = vi.spyOn(real, "transaction");
+    try {
+      const sixth = await send(form({ lastName: "Full5" }), 10);
+      expect(sixth.status).toBe(429);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("counts only the last hour toward the limit", async () => {

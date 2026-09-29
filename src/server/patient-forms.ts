@@ -53,8 +53,10 @@ export async function sendPatientForm(input: z.infer<typeof patientFormSchema>, 
   if (!branch?.active) throw noBranch();
   // The bot trap: the same answer as a real form, and nothing saved or logged.
   if (input.website !== "") return { firstName: input.firstName };
+  // A connection already at its limit is refused without waiting for the lock or holding a connection.
+  if ((await formsFrom(client)) >= FORMS_PER_CLIENT_PER_HOUR) throw tooMany();
   await db.transaction(async (tx) => {
-    // Forms from one connection wait for each other, so the count holds even when many arrive at once.
+    // The count that decides: forms from one connection wait for each other here, so it holds even when many arrive at once.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`dentasync.forms:${client}`}))`);
     if ((await formsFrom(client, tx)) >= FORMS_PER_CLIENT_PER_HOUR) throw tooMany();
     await expireForms(tx);
