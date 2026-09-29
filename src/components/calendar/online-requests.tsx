@@ -29,7 +29,7 @@ export function OnlineRequests({ branchCode, onOpen }: { branchCode: string; onO
           void list.refetch();
         }}
       >
-        {`Online requests (${count})`}
+        {list.data ? `Online requests (${count})` : "Online requests"}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
@@ -47,15 +47,17 @@ export function OnlineRequests({ branchCode, onOpen }: { branchCode: string; onO
             <ul className="grid gap-2">
               {list.data.map((r) => (
                 <li key={r.id}>
+                  {/* wrap-anywhere, not break-words: in this grid only "anywhere" lets a long unbroken word (a pasted link) shrink the row. */}
                   <button
                     type="button"
-                    className="grid min-h-11 w-full gap-1 rounded-md border p-3 text-left text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+                    className="grid min-h-11 w-full gap-1 rounded-md border p-3 text-left text-sm wrap-anywhere outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
                     onClick={() => {
                       setOpen(false);
                       onOpen(r.id);
                     }}
                   >
-                    <span className="font-medium">{`${formatDateTime(new Date(r.start))}, ${r.patientName}`}</span>
+                    <span>{formatDateTime(new Date(r.start))}</span>
+                    <span className="font-medium">{r.patientName}</span>
                     <span>{`${r.mobile ?? "No mobile number"}. ${r.services.join(", ")}, with ${r.dentistName}.`}</span>
                     {r.note && <span className="text-muted-foreground">{r.note}</span>}
                     <span className="text-xs text-muted-foreground">{`Came in ${formatDateTime(new Date(r.createdAt))}`}</span>

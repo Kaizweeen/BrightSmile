@@ -63,6 +63,13 @@ describe("branches", () => {
     expect(bad.status).toBe(400);
   });
 
+  it("refuses a code that is one of the app's own pages", async () => {
+    const { cookie } = await ownerCookie();
+    const res = await call(branchesRoute.POST, request("/api/v1/branches", { method: "POST", cookie, body: branchBody("book", "Booking") }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.fields).toEqual({ code: "That code is reserved" });
+  });
+
   it("refuses managers", async () => {
     const [b] = await db.select().from(branches).where(eq(branches.code, "downtown"));
     const manager = await makeUser({ role: "manager", branchIds: [b.id] });

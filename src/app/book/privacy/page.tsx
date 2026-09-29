@@ -14,7 +14,7 @@ export default async function PrivacyPage() {
   if (!settings.onlineBooking) notFound();
   return (
     <AuthCard title={`${settings.name} privacy notice`}>
-      <div className="whitespace-pre-wrap text-sm leading-relaxed">{settings.privacyNotice}</div>
+      <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">{settings.privacyNotice}</div>
     </AuthCard>
   );
 }

@@ -14,12 +14,15 @@ export const ACTIVE_STATUSES = ["requested", "confirmed", "checked_in", "in_trea
 
 const somethingToChange = (patch: Record<string, unknown>) => Object.values(patch).some((value) => value !== undefined);
 
+/** A branch lives at /{code}, so its code may not be "all" (every branch at once) or one of the app's own top-level pages. */
+const RESERVED_CODES = new Set(["all", "api", "book", "join", "login", "poster", "reset", "setup", "waiting"]);
+
 export const branchCodeSchema = z
   .string()
   .trim()
   .toLowerCase()
   .regex(/^[a-z0-9][a-z0-9-]{0,22}[a-z0-9]$/, "Use 2 to 24 lowercase letters, numbers, or hyphens")
-  .refine((code) => code !== "all", "That code is reserved");
+  .refine((code) => !RESERVED_CODES.has(code), "That code is reserved");
 
 export const branchSchema = z.object({
   code: branchCodeSchema,
