@@ -6,12 +6,16 @@ import {
   appointments,
   branches,
   chairs,
+  chartEntries,
   dentistSchedules,
+  exams,
   patients,
   practice,
   procedures,
+  treatmentNotes,
   userBranches,
   users,
+  type ExamFindings,
 } from "@/db/schema";
 import { DEFAULT_HOURS } from "@/lib/hours";
 import type { Status } from "@/lib/lifecycle";
@@ -100,6 +104,25 @@ function randomFrom(seed: number): () => number {
 }
 
 const COMPLETED: Status[] = ["checked_in", "in_treatment", "completed"];
+
+// Sample clinical records for past visits: a tooth, a chart code with its surfaces, exam findings, and a note.
+const TEETH = [11, 14, 16, 21, 24, 26, 36, 37, 46, 47];
+const CHARTED: [string, string[]][] = [
+  ["present", []],
+  ["D", ["O"]],
+  ["Co", ["O"]],
+  ["Am", ["O", "M"]],
+  ["S", ["O"]],
+  ["X", []],
+];
+const FINDINGS: ExamFindings[] = [{ periodontal: { gingivitis: "" } }, { xrays: { periapical: "16, 26" } }, { occlusion: { molar_class: "Class I" } }, {}];
+const NOTES = [
+  "Oral prophylaxis done. Advised to floss daily.",
+  "Composite restoration placed. No sensitivity reported.",
+  "Extraction done under local anesthesia. Post-operative care explained.",
+  "Consultation done. Treatment plan explained to the patient.",
+  "Fluoride varnish applied. Recall in six months.",
+];
 
 type Planned = {
   branchId: string;
@@ -289,6 +312,24 @@ export async function seed(now = new Date()): Promise<{ password: string; accoun
           .set({ status, ...(status === "cancelled" ? { cancelReason: "Asked to move to another day" } : {}) })
           .where(inArray(appointments.id, ids));
       }
+    }
+
+    // Most completed visits get a chart entry, an exam, and a note by their dentist, dated when the visit ended.
+    const done = planned.flatMap((v, i) => (v.path.at(-1) === "completed" && random() < 0.7 ? [{ ...v, id: saved[i].id }] : []));
+    const pick = <T>(list: readonly T[]) => list[Math.floor(random() * list.length)];
+    if (done.length > 0) {
+      await tx.insert(chartEntries).values(
+        done.map((v) => {
+          const [code, surfaces] = pick(CHARTED);
+          return { patientId: v.patientId, appointmentId: v.id, branchId: v.branchId, tooth: pick(TEETH), code, surfaces, authorId: v.dentistId, createdAt: v.end };
+        }),
+      );
+      await tx
+        .insert(exams)
+        .values(done.map((v) => ({ appointmentId: v.id, patientId: v.patientId, authorId: v.dentistId, findings: pick(FINDINGS), createdAt: v.end, updatedAt: v.end })));
+      await tx
+        .insert(treatmentNotes)
+        .values(done.map((v) => ({ appointmentId: v.id, patientId: v.patientId, authorId: v.dentistId, body: pick(NOTES), createdAt: v.end })));
     }
   });
 

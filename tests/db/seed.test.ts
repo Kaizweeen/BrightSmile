@@ -2,7 +2,7 @@ import { count } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db";
-import { appointments, branches, chairs, dentistSchedules, patients, procedures, users } from "@/db/schema";
+import { appointments, branches, chairs, chartEntries, dentistSchedules, exams, patients, procedures, treatmentNotes, users } from "@/db/schema";
 import { STATUSES } from "@/lib/lifecycle";
 import { seed } from "@/server/seed";
 
@@ -21,6 +21,9 @@ describe("development data", () => {
     expect(await total(dentistSchedules)).toBeGreaterThan(0);
     const statuses = await db.selectDistinct({ status: appointments.status }).from(appointments);
     expect(statuses.map((s) => s.status).sort()).toEqual([...STATUSES].sort());
+    expect(await total(chartEntries)).toBeGreaterThan(0);
+    expect(await total(exams)).toBeGreaterThan(0);
+    expect(await total(treatmentNotes)).toBeGreaterThan(0);
   });
 
   it("refuses a database that already has data", async () => {
