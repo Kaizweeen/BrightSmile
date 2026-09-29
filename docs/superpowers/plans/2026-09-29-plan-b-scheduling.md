@@ -4060,7 +4060,7 @@ export function DayGrid({ date, range, chairs, visits, onOpen, onSlot }: Props) 
                         type="button"
                         onClick={() => onOpen(v)}
                         className={cn(
-                          "absolute inset-x-1 flex flex-col items-start overflow-hidden rounded-md border bg-card px-2 py-1 text-left text-xs shadow-sm outline-none hover:bg-muted focus-visible:z-20 focus-visible:ring-3 focus-visible:ring-ring/50",
+                          "absolute inset-x-1 flex min-h-11 flex-col items-start overflow-hidden rounded-md border bg-card px-2 py-1 text-left text-xs shadow-sm outline-none hover:bg-muted focus-visible:z-20 focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-0",
                           v.status === "completed" && "opacity-70",
                         )}
                         style={{ top: px(at.top), height: Math.max(px(at.height), ROW_PX) }}
@@ -4071,7 +4071,7 @@ export function DayGrid({ date, range, chairs, visits, onOpen, onSlot }: Props) 
                         </span>
                         <span className="w-full truncate text-muted-foreground">{`${v.procedures.join(", ")} · ${v.dentistName}`}</span>
                         <StatusBadge status={v.status} />
-                        <span className="sr-only">{`, chair free at ${formatTime(new Date(v.chairFreeAt))}`}</span>
+                        <span className="sr-only">{`, ${chairName(c.number, c.label)}, chair free at ${formatTime(new Date(v.chairFreeAt))}`}</span>
                       </button>
                       {at.turnover > 0 && (
                         <div
@@ -4163,7 +4163,7 @@ export function WeekGrid({ days, today, chairs, visits, onOpen, onDay }: Props) 
                 <button
                   type="button"
                   onClick={() => onDay(day)}
-                  className="rounded-sm text-left underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                  className="min-h-11 rounded-sm text-left underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-0"
                 >
                   {formatDay(day)}
                 </button>
@@ -4245,7 +4245,12 @@ export function VisitPanel({ visitId, branch, staff, onClose, onMove }: Props) {
       await client.invalidateQueries({ queryKey: ["appointments"] });
       await client.invalidateQueries({ queryKey: ["appointment", visitId] });
     },
-    onError: (error) => toast.error(errorMessage(error)),
+    onError: async (error) => {
+      toast.error(errorMessage(error));
+      // Someone else may have changed the visit: show what it is now.
+      await client.invalidateQueries({ queryKey: ["appointment", visitId] });
+      await client.invalidateQueries({ queryKey: ["appointments"] });
+    },
   });
 
   const v = detail.data;
@@ -4263,6 +4268,7 @@ export function VisitPanel({ visitId, branch, staff, onClose, onMove }: Props) {
       onOpenChange={(open) => {
         if (open) return;
         setCancelling(false);
+        setReason("");
         onClose();
       }}
     >
@@ -4675,7 +4681,8 @@ export function BookingPanel({ intent, branch, chairs, today, onClose }: Props) 
       onClose();
     },
   });
-  const errors = check.data?.errors ?? [];
+  // A check the server refuses outright, such as a start off the 15-minute grid, is an error too: Book stays disabled.
+  const errors = check.data?.errors ?? (check.error ? [{ code: "invalid", message: errorMessage(check.error) }] : []);
   const warnings =
     check.data && check.data.warnings.length > 0
       ? check.data.warnings
