@@ -1,7 +1,7 @@
-import { and, asc, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { ALLERGIES, appointmentProcedures, appointments, branches, chairs, patients, users } from "@/db/schema";
+import { ALLERGIES, appointmentProcedures, appointments, branches, chairs, chartEntries, patients, users } from "@/db/schema";
 import { ACTIVE, type Status } from "@/lib/lifecycle";
 import { can } from "@/lib/permissions";
 import { manilaDate } from "@/lib/time";
@@ -179,8 +179,10 @@ export type PatientVisit = {
   branchName: string;
   chairNumber: number;
   chairLabel: string;
+  dentistId: string;
   dentistName: string;
   procedures: string[];
+  teeth: number[];
 };
 
 /** Every visit of a patient, newest first, at every branch (spec 9.3), and their next active visit. */
@@ -196,6 +198,7 @@ export async function patientVisits(actor: Staff, id: string): Promise<{ visits:
       branchName: branches.name,
       chairNumber: appointments.chairNumber,
       chairLabel: chairs.label,
+      dentistId: appointments.dentistId,
       dentistName: users.name,
     })
     .from(appointments)
@@ -208,11 +211,19 @@ export async function patientVisits(actor: Staff, id: string): Promise<{ visits:
   const procs = ids.length
     ? await db.select().from(appointmentProcedures).where(inArray(appointmentProcedures.appointmentId, ids)).orderBy(asc(appointmentProcedures.position))
     : [];
+  const charted = ids.length
+    ? await db
+        .select({ appointmentId: chartEntries.appointmentId, tooth: chartEntries.tooth })
+        .from(chartEntries)
+        .where(and(inArray(chartEntries.appointmentId, ids), isNull(chartEntries.voidedAt)))
+    : [];
   const visits = rows.map((r) => ({
     ...r,
     status: r.status as Status,
     chairLabel: r.chairLabel ?? "",
     procedures: procs.filter((p) => p.appointmentId === r.id).map((p) => p.name),
+    // Spec 9.3: the Visits tab lists the teeth charted during each visit.
+    teeth: [...new Set(charted.filter((c) => c.appointmentId === r.id).map((c) => c.tooth))].sort((a, b) => a - b),
   }));
   await audit({ userId: actor.id, action: "patient.view", entity: "patient", entityId: id, details: { part: "visits" } });
   const now = Date.now();
