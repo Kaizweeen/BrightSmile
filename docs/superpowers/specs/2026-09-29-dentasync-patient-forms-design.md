@@ -123,7 +123,7 @@ Access log rows, none holding a form's details:
 ## 10. Security and privacy (RA 10173)
 
 - A form holds personal information, and the birthday (age) is sensitive personal information under RA 10173. It is taken only with the patient's agreement to the practice's notice, kept only until the front desk handles it or, once 30 days have passed, until the branch's forms are next listed or a new form arrives, and seen only by the owner and the managers of its branch.
-- The privacy notice must cover the form: what it asks, why, that it waits for the front desk and is deleted when handled or after 30 days. Owners update the notice before switching forms on; the README's go-live steps say so.
+- The privacy notice must cover the form: what it asks, why, that it waits for the front desk and is deleted when handled or, once 30 days have passed, when the branch's forms are next listed or a new form arrives. Owners update the notice before switching forms on; the README's go-live steps say so.
 - As for bookings, the connection is stored only as a keyed hash, never the address, and no row of the access log holds a form's details. Vercel's own request logs see addresses, as they do for every page.
 - The form has no guardian field, as the booking page has none: the lawyer says who may agree for a child, and the front desk fills in the guardian at the visit.
 - Nothing on the public pages says whether anyone is already a patient.
