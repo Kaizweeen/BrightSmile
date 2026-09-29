@@ -13,6 +13,7 @@ const ACTIONS: Record<string, string> = {
   "exam.saved": "Saved an exam",
   "note.added": "Added a treatment note",
   "appointment.created": "Booked a visit",
+  "appointment.requested_online": "Booked a visit online",
   "appointment.moved": "Moved a visit",
   "appointment.status_changed": "Changed a visit's status",
   "staff.join_requested": "Asked to join",

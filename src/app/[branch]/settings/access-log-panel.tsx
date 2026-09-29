@@ -90,7 +90,7 @@ export function AccessLogPanel() {
               {rows.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell>{formatDateTime(new Date(r.at))}</TableCell>
-                  <TableCell>{r.userName ?? (r.userId ? "A removed account" : "No one signed in")}</TableCell>
+                  <TableCell>{r.userName ?? (r.userId ? "A removed account" : r.details.online === true ? "Online booking" : "No one signed in")}</TableCell>
                   <TableCell className="whitespace-normal">{actionText(r)}</TableCell>
                   <TableCell>{r.patientName ?? ""}</TableCell>
                   <TableCell>{r.branchName ?? ""}</TableCell>

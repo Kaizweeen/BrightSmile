@@ -442,6 +442,7 @@ function historyText(action: string, details: Record<string, unknown>): string {
   if (action === "appointment.status_changed") {
     return `${STATUS_LABEL[details.from as Status] ?? String(details.from)} to ${label(details.to)}`;
   }
+  if (action === "appointment.requested_online") return "Booked online, waiting to be confirmed";
   return action;
 }
 
@@ -475,7 +476,7 @@ export async function appointmentDetail(actor: Staff, id: string) {
     updatedAt,
     procedureIds,
     alerts: alertLines(patient),
-    history: history.map((h) => ({ at: h.at, by: h.by ?? "Someone", text: historyText(h.action, h.details) })),
+    history: history.map((h) => ({ at: h.at, by: h.by ?? (h.details.online === true ? "Online booking" : "Someone"), text: historyText(h.action, h.details) })),
   };
 }
 
