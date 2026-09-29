@@ -23,7 +23,13 @@ export function ChartTab({ patientId, staff }: { patientId: string; staff: Subje
     queryFn: () => api<{ visits: PatientVisitJson[] }>(`/patients/${patientId}/visits`),
   });
   const examVisits = (visits.data?.visits ?? []).filter((v) => v.status !== "cancelled" && v.status !== "no_show");
-  const chosen = visitId ?? examVisits[0]?.id ?? null;
+  // The visit in progress, else the latest that has started, else the soonest booked (the list is newest first).
+  const now = new Date();
+  const current =
+    examVisits.find((v) => v.status === "checked_in" || v.status === "in_treatment") ??
+    examVisits.find((v) => new Date(v.start) <= now) ??
+    examVisits.at(-1);
+  const chosen = visitId ?? current?.id ?? null;
 
   return (
     <div className="grid gap-8">
@@ -55,7 +61,11 @@ export function ChartTab({ patientId, staff }: { patientId: string; staff: Subje
         <h2 id="exam-title" className="text-lg font-semibold">
           Exam
         </h2>
-        {examVisits.length === 0 ? (
+        {visits.isError ? (
+          <FormAlert message={errorMessage(visits.error)} />
+        ) : visits.isPending ? (
+          <p className="text-muted-foreground">Loading visits...</p>
+        ) : examVisits.length === 0 ? (
           <p className="text-muted-foreground">No visits yet.</p>
         ) : (
           <>
