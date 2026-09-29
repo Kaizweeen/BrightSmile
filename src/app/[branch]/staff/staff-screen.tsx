@@ -17,6 +17,7 @@ import { roleLabel } from "@/lib/labels";
 import type { Role } from "@/lib/permissions";
 import { formatDateTime, formatTime } from "@/lib/time";
 import type { JoinRequestView, StaffView } from "@/server/staff";
+import { DisabledVisits } from "./disabled-visits";
 
 type BranchOption = { id: string; name: string };
 type Me = { id: string; role: Role; branchIds: string[] };
@@ -160,6 +161,12 @@ export function StaffScreen({ me, branches }: { me: Me; branches: BranchOption[]
           </div>
         )}
       </section>
+
+      {staff.data
+        ?.filter((s) => s.status === "disabled" && s.seesPatients)
+        .map((s) => (
+          <DisabledVisits key={s.id} person={s} />
+        ))}
 
       {approving && <ApproveDialog request={approving} branches={grantable} onClose={() => setApproving(null)} onDone={refresh} />}
       <ConfirmDialog

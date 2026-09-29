@@ -55,7 +55,7 @@ export function AppShell({ practice, branch, branches, nav, user, children }: Pr
           </DropdownMenu>
           <nav aria-label="Main" className="order-last -mx-1 flex w-full gap-1 overflow-x-auto md:order-none md:mx-0 md:w-auto">
             {nav.map((item) => {
-              const current = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const current = pathname === item.href || (item.href !== `/${branch}` && pathname.startsWith(`${item.href}/`));
               return (
                 <Link
                   key={item.href}

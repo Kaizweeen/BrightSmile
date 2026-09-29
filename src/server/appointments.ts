@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db, type Db } from "@/db";
 import { appointmentProcedures, appointments, auditLog, branches, chairs, patients, users } from "@/db/schema";
 import { checkBooking, conflictFor, type Conflict, type Finding } from "@/lib/booking-rules";
-import { actionFor, changeProblem, STATUS_LABEL, STATUSES, type Status } from "@/lib/lifecycle";
+import { ACTIVE, actionFor, changeProblem, STATUS_LABEL, STATUSES, type Status } from "@/lib/lifecycle";
 import { alertLines } from "@/lib/patients";
 import { can } from "@/lib/permissions";
 import { formatDateTime, formatTime, manilaMinutes } from "@/lib/time";
@@ -381,6 +381,19 @@ export async function listAppointments(actor: Staff, q: z.infer<typeof listSchem
     scope = eq(appointments.branchId, branch.id);
   }
   return visitViews(and(scope, q.dentist ? eq(appointments.dentistId, q.dentist) : undefined, lt(appointments.startTime, to), gt(appointments.endTime, from)));
+}
+
+/** Spec 6.5: a dentist's active visits that have not ended, at the branches the caller covers, so a disabled dentist's can be moved. */
+export async function upcomingVisits(actor: Staff, dentistId: string): Promise<VisitView[]> {
+  requireCan(actor, "staff.view");
+  return visitViews(
+    and(
+      eq(appointments.dentistId, dentistId),
+      inArray(appointments.status, [...ACTIVE]),
+      gt(appointments.endTime, new Date()),
+      actor.role === "owner" ? undefined : inArray(appointments.branchId, [...actor.branchIds]),
+    ),
+  );
 }
 
 function historyText(action: string, details: Record<string, unknown>): string {
