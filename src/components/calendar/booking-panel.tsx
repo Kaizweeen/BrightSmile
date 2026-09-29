@@ -103,7 +103,8 @@ export function BookingPanel({ intent, branch, chairs, today, onClose }: Props) 
       onClose();
     },
   });
-  const errors = check.data?.errors ?? [];
+  // A check the server refuses outright, such as a start off the 15-minute grid, is an error too: Book stays disabled.
+  const errors = check.data?.errors ?? (check.error ? [{ code: "invalid", message: errorMessage(check.error) }] : []);
   const warnings =
     check.data && check.data.warnings.length > 0
       ? check.data.warnings
