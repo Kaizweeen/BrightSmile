@@ -2,6 +2,7 @@
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Role } from "@/lib/permissions";
+import { AccessLogPanel } from "./access-log-panel";
 import { BranchesPanel } from "./branches-panel";
 import { ChairsPanel } from "./chairs-panel";
 import { PracticePanel } from "./practice-panel";
@@ -36,6 +37,7 @@ export function SettingsScreen({
           {owner && <TabsTrigger value="procedures">Procedures</TabsTrigger>}
           <TabsTrigger value="schedules">Schedules</TabsTrigger>
           <TabsTrigger value="time-off">Time off</TabsTrigger>
+          {owner && <TabsTrigger value="access-log">Access log</TabsTrigger>}
         </TabsList>
         {owner && (
           <TabsContent value="practice" className="pt-4">
@@ -63,6 +65,11 @@ export function SettingsScreen({
         <TabsContent value="time-off" className="pt-4">
           <TimeOffPanel canEdit={canEditSchedules} />
         </TabsContent>
+        {owner && (
+          <TabsContent value="access-log" className="pt-4">
+            <AccessLogPanel />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
