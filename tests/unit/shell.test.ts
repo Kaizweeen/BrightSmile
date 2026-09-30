@@ -42,10 +42,11 @@ describe("shell helpers", () => {
       "/downtown/calendar",
       "/downtown/patients",
       "/downtown/billing",
+      "/downtown/supplies",
       "/downtown/staff",
       "/downtown/settings",
     ]);
-    expect(navItems({ role: "dentist", seesPatients: true }, "downtown").map((i) => i.label)).toEqual(["Calendar", "My day", "Patients", "Schedules"]);
+    expect(navItems({ role: "dentist", seesPatients: true }, "downtown").map((i) => i.label)).toEqual(["Calendar", "My day", "Patients", "Supplies", "Schedules"]);
   });
 
   it("keeps the page when switching branch", () => {
