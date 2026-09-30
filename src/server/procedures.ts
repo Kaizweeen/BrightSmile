@@ -9,15 +9,17 @@ import type { Staff } from "./session";
 
 const nameSchema = z.string().trim().min(1, "Enter a name").max(60, "Use at most 60 characters");
 const dentistIdsSchema = z.array(z.uuid()).max(50);
+const priceSchema = z.number().int("Use whole centavos").min(0, "Use 0 or more").max(100_000_000, "That price is too high");
 
 export const procedureSchema = z.object({
   name: nameSchema,
   online: z.boolean().optional().default(true),
   dentistIds: dentistIdsSchema.optional().default([]),
+  price: priceSchema.optional().default(0),
 });
 
 export const procedurePatchSchema = z
-  .object({ name: nameSchema, online: z.boolean(), dentistIds: dentistIdsSchema, active: z.boolean(), sort: z.number().int().min(0).max(999) })
+  .object({ name: nameSchema, online: z.boolean(), dentistIds: dentistIdsSchema, active: z.boolean(), sort: z.number().int().min(0).max(999), price: priceSchema })
   .partial()
   .refine((patch) => Object.values(patch).some((value) => value !== undefined), "Nothing to change");
 
@@ -62,7 +64,7 @@ export async function createProcedure(actor: Staff, input: z.infer<typeof proced
   return db.transaction(async (tx) => {
     const [taken] = await tx.select({ id: procedures.id }).from(procedures).where(eq(procedures.name, input.name));
     if (taken) throw nameTaken();
-    const [row] = await tx.insert(procedures).values({ name: input.name, online: input.online }).returning();
+    const [row] = await tx.insert(procedures).values({ name: input.name, online: input.online, price: input.price }).returning();
     const dentistIds = await setDentists(tx, row.id, input.dentistIds);
     await audit({ userId: actor.id, action: "procedure.created", entity: "procedure", entityId: row.id, details: input }, tx);
     return { ...row, dentistIds };
