@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db";
-import { billLines, bills, cashCloses } from "@/db/schema";
+import { billLines, bills, cashCloses, practice, procedures } from "@/db/schema";
 import { makeBranch, makeUser } from "../helpers";
 
 function sqlState(error: unknown): string | undefined {
@@ -41,6 +41,13 @@ describe("bills", () => {
     await expect(db.insert(bills).values({ ...base, receiptNo: "e", method: "qr", total: 0 })).rejects.toThrow();
   });
 
+  it("refuses an empty payment reference", async () => {
+    const { branch, desk } = await paidBill();
+    const qr = { branchId: branch.id, day: "2026-10-01", total: 1000, issuedBy: desk.id, method: "qr" };
+    await expect(db.insert(bills).values({ ...qr, receiptNo: "r1", reference: "" })).rejects.toThrow();
+    await expect(db.insert(bills).values({ ...qr, receiptNo: "r2", reference: "GCash 123" })).resolves.toBeDefined();
+  });
+
   it("can only be voided, once, and never deleted", async () => {
     const { desk, bill } = await paidBill();
     expect(await refusal(db.update(bills).set({ total: 1 }).where(eq(bills.id, bill.id)))).toBe("DS002");
@@ -75,5 +82,26 @@ describe("bill lines and closes", () => {
     await expect(db.insert(billLines).values({ billId: bill.id, position: 1, name: "", qty: 1, unitPrice: 0 })).rejects.toThrow();
     await expect(db.insert(billLines).values({ billId: bill.id, position: 2, name: "x", qty: 0, unitPrice: 0 })).rejects.toThrow();
     await expect(db.insert(billLines).values({ billId: bill.id, position: 3, name: "x", qty: 1, unitPrice: -1 })).rejects.toThrow();
+  });
+});
+
+describe("prices and the QR image", () => {
+  it("bounds a procedure price", async () => {
+    await expect(db.insert(procedures).values({ name: "Neg", price: -1 })).rejects.toThrow();
+    await expect(db.insert(procedures).values({ name: "Max", price: 100000000 })).resolves.toBeDefined();
+    await expect(db.insert(procedures).values({ name: "Over", price: 100000001 })).rejects.toThrow();
+  });
+
+  it("accepts only a png or jpeg base64 data URI", async () => {
+    await db.insert(practice).values({ name: "x" }).onConflictDoNothing();
+    const set = (qrImage: string | null) => db.update(practice).set({ qrImage });
+    await expect(set("data:image/png;base64,iVBORw0KGgo=")).resolves.toBeDefined();
+    await expect(set("data:image/jpeg;base64,/9j/4AAQSkZJRg==")).resolves.toBeDefined();
+    await expect(set("data:image/gif;base64,AAAA")).rejects.toThrow();
+    await expect(set("data:text/html;base64,AAAA")).rejects.toThrow();
+    await expect(set("data:image/png;base64,AA!A")).rejects.toThrow();
+    await expect(set("data:image/png;base64,")).rejects.toThrow();
+    await expect(set(`data:image/png;base64,${"A".repeat(270000)}`)).rejects.toThrow();
+    await set(null);
   });
 });

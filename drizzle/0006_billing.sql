@@ -77,5 +77,5 @@ ALTER TABLE "cash_closes" ADD CONSTRAINT "cash_closes_branch_id_branches_id_fk" 
 ALTER TABLE "cash_closes" ADD CONSTRAINT "cash_closes_closed_by_users_id_fk" FOREIGN KEY ("closed_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "bills_branch_day" ON "bills" USING btree ("branch_id","day");--> statement-breakpoint
 CREATE UNIQUE INDEX "bills_one_paid_per_visit" ON "bills" USING btree ("appointment_id") WHERE "bills"."status" = 'paid' and "bills"."appointment_id" is not null;--> statement-breakpoint
-ALTER TABLE "practice" ADD CONSTRAINT "practice_qr_image" CHECK ("practice"."qr_image" is null or ("practice"."qr_image" ~ '^data:image/(png|jpeg)\x3bbase64,[A-Za-z0-9+/=]+$' and char_length("practice"."qr_image") <= 270000));--> statement-breakpoint
+ALTER TABLE "practice" ADD CONSTRAINT "practice_qr_image" CHECK ("practice"."qr_image" is null or ("practice"."qr_image" ~ '^data:image/(png|jpeg)\u003bbase64,[A-Za-z0-9+/=]+$' and char_length("practice"."qr_image") <= 270000));--> statement-breakpoint
 ALTER TABLE "procedures" ADD CONSTRAINT "procedures_price" CHECK ("procedures"."price" between 0 and 100000000);

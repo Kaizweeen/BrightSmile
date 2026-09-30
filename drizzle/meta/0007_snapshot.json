@@ -2485,7 +2485,7 @@
         },
         "practice_qr_image": {
           "name": "practice_qr_image",
-          "value": "\"practice\".\"qr_image\" is null or (\"practice\".\"qr_image\" ~ '^data:image/(png|jpeg)\\x3bbase64,[A-Za-z0-9+/=]+$' and char_length(\"practice\".\"qr_image\") <= 270000)"
+          "value": "\"practice\".\"qr_image\" is null or (\"practice\".\"qr_image\" ~ '^data:image/(png|jpeg)\\u003bbase64,[A-Za-z0-9+/=]+$' and char_length(\"practice\".\"qr_image\") <= 270000)"
         }
       },
       "isRLSEnabled": true

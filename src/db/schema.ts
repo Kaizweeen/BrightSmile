@@ -47,7 +47,7 @@ export const practice = pgTable(
     check("practice_visit_minutes", sql`${t.visitMinutes} between 15 and 240 and ${t.visitMinutes} % 15 = 0`),
     check("practice_cleaning_minutes", sql`${t.cleaningMinutes} between 0 and 60 and ${t.cleaningMinutes} % 5 = 0`),
     check("practice_privacy_notice", sql`char_length(${t.privacyNotice}) <= 5000`),
-    check("practice_qr_image", sql`${t.qrImage} is null or (${t.qrImage} ~ '^data:image/(png|jpeg)\\x3bbase64,[A-Za-z0-9+/=]+$' and char_length(${t.qrImage}) <= 270000)`),
+    check("practice_qr_image", sql`${t.qrImage} is null or (${t.qrImage} ~ '^data:image/(png|jpeg)\\u003bbase64,[A-Za-z0-9+/=]+$' and char_length(${t.qrImage}) <= 270000)`),
   ],
 ).enableRLS();
 
