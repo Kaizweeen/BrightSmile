@@ -9,10 +9,11 @@ import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { peso, toCentavos } from "@/lib/billing";
 import { api, errorMessage, fieldErrors } from "@/lib/fetcher";
 import { useDentists } from "@/lib/queries";
 
-type Service = { id: string; name: string; online: boolean; active: boolean; dentistIds: string[] };
+type Service = { id: string; name: string; price: number; online: boolean; active: boolean; dentistIds: string[] };
 
 /** Online booking spec 11: services have no length; each can be offered online and limited to chosen dentists. */
 export function ProceduresPanel() {
@@ -34,6 +35,7 @@ export function ProceduresPanel() {
           <TableHeader>
             <TableRow>
               <TableHead>Service</TableHead>
+              <TableHead>Price</TableHead>
               <TableHead>Online</TableHead>
               <TableHead>Dentists</TableHead>
               <TableHead>Status</TableHead>
@@ -45,7 +47,7 @@ export function ProceduresPanel() {
           <TableBody>
             {services.data.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-muted-foreground">
+                <TableCell colSpan={6} className="text-muted-foreground">
                   No services yet.
                 </TableCell>
               </TableRow>
@@ -53,6 +55,7 @@ export function ProceduresPanel() {
             {services.data.map((s) => (
               <TableRow key={s.id}>
                 <TableCell className="font-medium">{s.name}</TableCell>
+                <TableCell>{peso(s.price)}</TableCell>
                 <TableCell>{s.online ? "Yes" : "No"}</TableCell>
                 <TableCell>{s.dentistIds.length === 0 ? "All" : s.dentistIds.map((id) => names.get(id) ?? "A former dentist").join(", ")}</TableCell>
                 <TableCell>
@@ -77,6 +80,7 @@ function ServiceDialog({ service, dentists, onClose }: { service: Service | null
   const client = useQueryClient();
   const [form, setForm] = useState({
     name: service?.name ?? "",
+    price: service ? (service.price / 100).toFixed(2) : "0.00",
     online: service?.online ?? true,
     active: service?.active ?? true,
     dentistIds: (service?.dentistIds ?? []).filter((id) => dentists.some((d) => d.id === id)),
@@ -84,7 +88,9 @@ function ServiceDialog({ service, dentists, onClose }: { service: Service | null
   const [errors, setErrors] = useState<Record<string, string>>({});
   const save = useMutation({
     mutationFn: () => {
-      const body = { name: form.name, online: form.online, dentistIds: form.dentistIds };
+      const price = toCentavos(form.price);
+      if (price === null) throw new Error("Enter an amount like 1500 or 1500.50");
+      const body = { name: form.name, price, online: form.online, dentistIds: form.dentistIds };
       return service ? api(`/procedures/${service.id}`, { method: "PATCH", body: { ...body, active: form.active } }) : api("/procedures", { method: "POST", body });
     },
     onSuccess: async () => {
@@ -114,6 +120,14 @@ function ServiceDialog({ service, dentists, onClose }: { service: Service | null
           }}
         >
           <TextField label="Name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} maxLength={60} error={errors.name} />
+          <TextField
+            label="Default price (PHP)"
+            inputMode="decimal"
+            value={form.price}
+            onChange={(event) => setForm({ ...form, price: event.target.value })}
+            hint="Staff can change it on a bill."
+            error={errors.price}
+          />
           <label className="flex min-h-11 items-center gap-3">
             <input type="checkbox" checked={form.online} onChange={(event) => setForm({ ...form, online: event.target.checked })} className="size-4 accent-primary" />
             Offer online

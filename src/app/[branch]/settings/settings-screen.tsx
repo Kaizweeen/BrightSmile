@@ -3,6 +3,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Role } from "@/lib/permissions";
 import { AccessLogPanel } from "./access-log-panel";
+import { BillingPanel } from "./billing-panel";
 import { BranchesPanel } from "./branches-panel";
 import { ChairsPanel } from "./chairs-panel";
 import { PracticePanel } from "./practice-panel";
@@ -19,12 +20,14 @@ export function SettingsScreen({
   me,
   currentBranch,
   bookingUrl,
+  qrImage,
 }: {
   owner: boolean;
   canEditSchedules: boolean;
   me: Me;
   currentBranch: string;
   bookingUrl: string;
+  qrImage: string | null;
 }) {
   return (
     <div className="grid gap-4">
@@ -35,6 +38,7 @@ export function SettingsScreen({
           {owner && <TabsTrigger value="branches">Branches</TabsTrigger>}
           {owner && <TabsTrigger value="chairs">Chairs</TabsTrigger>}
           {owner && <TabsTrigger value="procedures">Services</TabsTrigger>}
+          {owner && <TabsTrigger value="billing">Billing</TabsTrigger>}
           <TabsTrigger value="schedules">Schedules</TabsTrigger>
           <TabsTrigger value="time-off">Time off</TabsTrigger>
           {owner && <TabsTrigger value="access-log">Access log</TabsTrigger>}
@@ -57,6 +61,11 @@ export function SettingsScreen({
         {owner && (
           <TabsContent value="procedures" className="pt-4">
             <ProceduresPanel />
+          </TabsContent>
+        )}
+        {owner && (
+          <TabsContent value="billing" className="pt-4">
+            <BillingPanel initialImage={qrImage} />
           </TabsContent>
         )}
         <TabsContent value="schedules" className="pt-4">
