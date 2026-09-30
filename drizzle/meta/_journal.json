@@ -43,6 +43,13 @@
       "when": 1790694363963,
       "tag": "0005_patient_forms",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790790217433,
+      "tag": "0006_supplies",
+      "breakpoints": true
     }
   ]
 }

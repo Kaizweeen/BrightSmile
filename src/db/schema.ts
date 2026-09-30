@@ -565,3 +565,27 @@ export const auditLog = pgTable(
     index("audit_log_at").on(t.at),
   ],
 ).enableRLS();
+
+/** A dental supply a branch keeps in stock (gloves, anaesthetic, composite). Counts change only through audited adjustments. */
+export const supplies = pgTable(
+  "supplies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    name: text("name").notNull(),
+    unit: text("unit").notNull().default("pcs"),
+    quantity: integer("quantity").notNull().default(0),
+    reorderLevel: integer("reorder_level").notNull().default(0),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check("supplies_name", sql`char_length(${t.name}) between 1 and 60`),
+    check("supplies_unit", sql`char_length(${t.unit}) between 1 and 20`),
+    check("supplies_quantity", sql`${t.quantity} >= 0`),
+    check("supplies_reorder_level", sql`${t.reorderLevel} >= 0`),
+    uniqueIndex("supplies_branch_name").on(t.branchId, sql`lower(${t.name})`),
+  ],
+).enableRLS();
