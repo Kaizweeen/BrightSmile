@@ -38,6 +38,7 @@ export const practice = pgTable(
     onlineBooking: boolean("online_booking").notNull().default(false),
     patientForms: boolean("patient_forms").notNull().default(false),
     privacyNotice: text("privacy_notice").notNull().default(""),
+    qrImage: text("qr_image"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -46,6 +47,7 @@ export const practice = pgTable(
     check("practice_visit_minutes", sql`${t.visitMinutes} between 15 and 240 and ${t.visitMinutes} % 15 = 0`),
     check("practice_cleaning_minutes", sql`${t.cleaningMinutes} between 0 and 60 and ${t.cleaningMinutes} % 5 = 0`),
     check("practice_privacy_notice", sql`char_length(${t.privacyNotice}) <= 5000`),
+    check("practice_qr_image", sql`${t.qrImage} is null or (${t.qrImage} ~ '^data:image/(png|jpeg)\\x3bbase64,[A-Za-z0-9+/=]+$' and char_length(${t.qrImage}) <= 270000)`),
   ],
 ).enableRLS();
 
@@ -251,9 +253,13 @@ export const procedures = pgTable(
     online: boolean("online").notNull().default(true),
     active: boolean("active").notNull().default(true),
     sort: integer("sort").notNull().default(0),
+    price: integer("price").notNull().default(0),
     createdAt: createdAt(),
   },
-  (t) => [check("procedures_name", sql`char_length(${t.name}) between 1 and 60`)],
+  (t) => [
+    check("procedures_name", sql`char_length(${t.name}) between 1 and 60`),
+    check("procedures_price", sql`${t.price} between 0 and 100000000`),
+  ],
 ).enableRLS();
 
 /** The dentists who may be assigned a service online (online booking spec, section 5). None means every dentist. */
@@ -563,5 +569,107 @@ export const auditLog = pgTable(
     index("audit_log_entity").on(t.entity, t.entityId, t.at),
     index("audit_log_user").on(t.userId, t.at),
     index("audit_log_at").on(t.at),
+  ],
+).enableRLS();
+
+/** A sale, created already paid (billing spec, section 2). Only ever voided, once (DS002 trigger, migration 0007). */
+export const bills = pgTable(
+  "bills",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    receiptNo: text("receipt_no").notNull().unique(),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    patientId: uuid("patient_id").references(() => patients.id),
+    appointmentId: uuid("appointment_id").references(() => appointments.id),
+    day: date("day").notNull(),
+    method: text("method").notNull(),
+    total: integer("total").notNull(),
+    tendered: integer("tendered"),
+    changeDue: integer("change_due"),
+    reference: text("reference"),
+    status: text("status").notNull().default("paid"),
+    issuedBy: uuid("issued_by")
+      .notNull()
+      .references(() => users.id),
+    issuedAt: timestamp("issued_at", { withTimezone: true }).notNull().defaultNow(),
+    voidReason: text("void_reason"),
+    voidedBy: uuid("voided_by").references(() => users.id),
+    voidedAt: at("voided_at"),
+  },
+  (t) => [
+    check("bills_method", sql`${t.method} in ('cash', 'qr')`),
+    check("bills_status", sql`${t.status} in ('paid', 'void')`),
+    check("bills_total", sql`${t.total} between 1 and 1000000000`),
+    check(
+      "bills_cash_fields",
+      sql`(${t.method} = 'cash' and ${t.tendered} is not null and ${t.changeDue} is not null and ${t.tendered} >= ${t.total} and ${t.changeDue} = ${t.tendered} - ${t.total})
+        or (${t.method} = 'qr' and ${t.tendered} is null and ${t.changeDue} is null)`,
+    ),
+    check("bills_reference", sql`char_length(${t.reference}) between 1 and 60`),
+    check(
+      "bills_void_fields",
+      sql`(${t.status} = 'paid' and ${t.voidReason} is null and ${t.voidedBy} is null and ${t.voidedAt} is null)
+        or (${t.status} = 'void' and char_length(${t.voidReason}) between 1 and 200 and ${t.voidedBy} is not null and ${t.voidedAt} is not null)`,
+    ),
+    index("bills_branch_day").on(t.branchId, t.day),
+    uniqueIndex("bills_one_paid_per_visit").on(t.appointmentId).where(sql`${t.status} = 'paid' and ${t.appointmentId} is not null`),
+  ],
+).enableRLS();
+
+/** A bill's lines as sold: a snapshot, so a later price change never rewrites a receipt. */
+export const billLines = pgTable(
+  "bill_lines",
+  {
+    billId: uuid("bill_id")
+      .notNull()
+      .references(() => bills.id),
+    position: smallint("position").notNull(),
+    name: text("name").notNull(),
+    qty: integer("qty").notNull(),
+    unitPrice: integer("unit_price").notNull(),
+    procedureId: uuid("procedure_id").references(() => procedures.id),
+  },
+  (t) => [
+    primaryKey({ columns: [t.billId, t.position] }),
+    check("bill_lines_name", sql`char_length(${t.name}) between 1 and 100`),
+    check("bill_lines_qty", sql`${t.qty} between 1 and 999`),
+    check("bill_lines_unit_price", sql`${t.unitPrice} between 0 and 100000000`),
+  ],
+).enableRLS();
+
+/** The last receipt sequence used per branch and day. Its row lock also orders issuing, voiding and closing a day. */
+export const billCounters = pgTable(
+  "bill_counters",
+  {
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    day: date("day").notNull(),
+    lastSeq: integer("last_seq").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.branchId, t.day] })],
+).enableRLS();
+
+/** A closed day: what the sales said, and what was counted. Never changed; a closed day stays closed. */
+export const cashCloses = pgTable(
+  "cash_closes",
+  {
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    day: date("day").notNull(),
+    expectedCash: integer("expected_cash").notNull(),
+    expectedQr: integer("expected_qr").notNull(),
+    countedCash: integer("counted_cash").notNull(),
+    closedBy: uuid("closed_by")
+      .notNull()
+      .references(() => users.id),
+    closedAt: timestamp("closed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.branchId, t.day] }),
+    check("cash_closes_amounts", sql`${t.expectedCash} >= 0 and ${t.expectedQr} >= 0 and ${t.countedCash} between 0 and 1000000000`),
   ],
 ).enableRLS();
