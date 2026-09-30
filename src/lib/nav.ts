@@ -7,6 +7,7 @@ export function navItems(staff: { role: Role; seesPatients: boolean }, branch: s
   const items: NavItem[] = [branch === "all" ? { href: "/all", label: "Overview" } : { href: `/${branch}/calendar`, label: "Calendar" }];
   if (staff.seesPatients) items.push({ href: `/${branch}/my-day`, label: "My day" });
   items.push({ href: `/${branch}/patients`, label: "Patients" });
+  if (staff.role !== "dentist" && branch !== "all") items.push({ href: `/${branch}/billing`, label: "Billing" });
   if (staff.role !== "dentist") items.push({ href: `/${branch}/staff`, label: "Staff" });
   items.push({ href: `/${branch}/settings`, label: staff.role === "owner" ? "Settings" : "Schedules" });
   return items;

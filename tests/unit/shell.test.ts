@@ -41,6 +41,7 @@ describe("shell helpers", () => {
     expect(navItems({ role: "manager", seesPatients: false }, "downtown").map((i) => i.href)).toEqual([
       "/downtown/calendar",
       "/downtown/patients",
+      "/downtown/billing",
       "/downtown/staff",
       "/downtown/settings",
     ]);
