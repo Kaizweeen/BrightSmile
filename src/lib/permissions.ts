@@ -18,6 +18,8 @@ export type Action =
   | "staff.view"
   | "staff.approve"
   | "staff.manage"
+  | "supplies.view"
+  | "supplies.edit"
   | "settings.edit"
   | "overview.view"
   | "audit.view";
@@ -71,6 +73,10 @@ export function can(s: Subject, action: Action, t: Target = {}): boolean {
       return owner || (manager && inBranch);
     case "staff.manage":
       return t.userId !== s.id && (owner || (manager && t.userRole !== "owner" && sharesBranch));
+    case "supplies.view":
+      return inBranch;
+    case "supplies.edit":
+      return owner || (manager && inBranch);
     case "settings.edit":
     case "audit.view":
       return owner;
