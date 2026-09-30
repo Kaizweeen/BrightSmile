@@ -52,6 +52,7 @@ export function CheckoutScreen({ branch, draft }: { branch: string; draft: Draft
       className="mx-auto grid max-w-3xl gap-6"
       onSubmit={(event) => {
         event.preventDefault();
+        if (issue.isPending || issue.isSuccess) return;
         setErrors({});
         issue.mutate();
       }}
@@ -117,8 +118,8 @@ export function CheckoutScreen({ branch, draft }: { branch: string; draft: Draft
 
       <FormAlert message={errors._ ?? null} />
       <div>
-        <Button type="submit" disabled={!canIssue || issue.isPending}>
-          {issue.isPending ? "Issuing..." : method === "qr" ? "Payment received, issue receipt" : "Issue receipt"}
+        <Button type="submit" disabled={!canIssue || issue.isPending || issue.isSuccess}>
+          {issue.isPending || issue.isSuccess ? "Issuing..." : method === "qr" ? "Payment received, issue receipt" : "Issue receipt"}
         </Button>
       </div>
     </form>

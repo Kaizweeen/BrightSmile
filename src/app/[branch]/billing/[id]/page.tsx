@@ -5,15 +5,22 @@ import { buttonVariants } from "@/components/ui/button";
 import { peso } from "@/lib/billing";
 import { formatDateTime } from "@/lib/time";
 import { getBill } from "@/server/billing";
+import { ApiError } from "@/server/errors";
 import { requireStaff } from "@/server/session";
 import { PrintButton } from "./print-button";
 
 export const metadata: Metadata = { title: "Receipt" };
 
+/** Only a missing or forbidden record is a Not Found page; a real failure still surfaces. */
+const missing = (error: unknown) => {
+  if (error instanceof ApiError && (error.status === 403 || error.status === 404)) return null;
+  throw error;
+};
+
 export default async function ReceiptPage({ params }: { params: Promise<{ branch: string; id: string }> }) {
   const staff = await requireStaff();
   const { branch, id } = await params;
-  const r = await getBill(staff, id).catch(() => null);
+  const r = await getBill(staff, id).catch(missing);
   if (!r || r.branch.code !== branch) notFound();
   const { bill } = r;
   return (

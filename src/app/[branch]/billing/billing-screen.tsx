@@ -57,8 +57,6 @@ export function BillingScreen({ branch, canIssue, canVoid, canClose }: { branch:
     onError: (error) => toast.error(errorMessage(error)),
   });
 
-  if (report.isPending) return <p className="text-muted-foreground">Loading sales...</p>;
-  if (report.isError) return <FormAlert message={errorMessage(report.error)} />;
   const r = report.data;
   const countedCash = toCentavos(counted);
 
@@ -67,7 +65,11 @@ export function BillingScreen({ branch, canIssue, canVoid, canClose }: { branch:
       <div className="flex flex-wrap items-end justify-between gap-3">
         <h1 className="text-xl font-semibold">Billing</h1>
         <div className="flex flex-wrap items-end gap-3">
-          <TextField label="Day" type="date" value={day} max={manilaDate(new Date())} onChange={(e) => e.target.value && setDay(e.target.value)} />
+          <TextField label="Day" type="date" value={day} max={manilaDate(new Date())} onChange={(e) => {
+              if (!e.target.value) return;
+              setDay(e.target.value);
+              setCounted("");
+            }} />
           {canIssue && (
             <Link href={`/${branch}/billing/new`} className={buttonVariants()}>
               New sale
@@ -76,6 +78,10 @@ export function BillingScreen({ branch, canIssue, canVoid, canClose }: { branch:
         </div>
       </div>
 
+      {report.isPending && <p className="text-muted-foreground">Loading sales...</p>}
+      {report.isError && <FormAlert message={errorMessage(report.error)} />}
+      {r && (
+        <>
       <div className="overflow-x-auto rounded-lg border">
         <Table>
           <TableHeader>
@@ -158,6 +164,8 @@ export function BillingScreen({ branch, canIssue, canVoid, canClose }: { branch:
           <p className="text-sm text-muted-foreground">This day is still open.</p>
         )}
       </section>
+        </>
+      )}
 
       <ConfirmDialog
         open={voiding !== null}
@@ -166,7 +174,11 @@ export function BillingScreen({ branch, canIssue, canVoid, canClose }: { branch:
         confirmLabel="Void receipt"
         pending={voidBill.isPending}
         onConfirm={() => voidBill.mutate()}
-        onOpenChange={(open) => !open && setVoiding(null)}
+        onOpenChange={(open) => {
+          if (open) return;
+          setVoiding(null);
+          setReason("");
+        }}
       >
         <Textarea aria-label="Reason for voiding" placeholder="Reason" maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} />
       </ConfirmDialog>
