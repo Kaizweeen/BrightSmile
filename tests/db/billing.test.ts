@@ -143,6 +143,20 @@ describe("voiding a bill", () => {
   });
 });
 
+describe("bad input", () => {
+  it("refuses impossible days and totals with a 400 or 422, never a 500", async () => {
+    const w = await setup();
+    expect((await report(w.desk, w.branch.code, "2026-02-30")).status).toBe(400);
+    expect((await close(w.desk, w.branch.code, 0, "2026-13-45")).status).toBe(400);
+    const big = Array.from({ length: 30 }, () => ({ name: "Big", qty: 999, unitPrice: 100_000_000 }));
+    for (const method of ["cash", "qr"] as const) {
+      const res = await issue(w.desk, { branch: w.branch.code, method, lines: big, ...(method === "cash" ? { tendered: 100_000_000 } : {}) });
+      expect(res.status).toBe(422);
+      expect((await res.json()).error.code).toBe("too_much");
+    }
+  });
+});
+
 describe("the day's record and closing it", () => {
   it("totals paid cash and QR per day, leaving voided bills out", async () => {
     const w = await setup();

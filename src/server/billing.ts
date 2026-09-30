@@ -18,13 +18,14 @@ import { billTotal, receiptNumber } from "@/lib/billing";
 import { fullName } from "@/lib/patients";
 import { manilaDate } from "@/lib/time";
 import { audit } from "./audit";
+import { requireBranch } from "./branches";
 import { ApiError, notFound } from "./errors";
 import { requireCan } from "./guard";
 import { practiceName } from "./practice";
 import type { Staff } from "./session";
 
 const money = z.number().int("Use whole centavos").min(0, "Use 0 or more").max(100_000_000, "That amount is too high");
-const dayText = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date like 2026-10-01");
+const dayText = z.iso.date("Use a date like 2026-10-01");
 
 export const lineSchema = z.object({
   name: z.string().trim().min(1, "Enter a name").max(100, "Use at most 100 characters"),
@@ -78,12 +79,6 @@ export type Draft = {
   lines: { name: string; qty: number; unitPrice: number; procedureId: string | null }[];
 };
 
-async function branchByCode(code: string) {
-  const [row] = await db.select().from(branches).where(eq(branches.code, code));
-  if (!row) throw notFound("That branch");
-  return row;
-}
-
 /** Takes the day's counter row lock (creating it at 0 when nothing was sold yet), so issuing, voiding and closing run one at a time. */
 async function lockDay(tx: Db, branchId: string, day: string): Promise<void> {
   await tx
@@ -108,6 +103,7 @@ async function closeOf(tx: Db, branchId: string, day: string): Promise<CloseView
 }
 
 /** What the day's paid bills add up to, by method. */
+// ponytail: sum()::int overflows past about ₱21M per branch per day; cast to bigint if a branch ever sells that much.
 async function daySums(tx: Db, branchId: string, day: string): Promise<{ cash: number; qr: number }> {
   const rows = await tx
     .select({ method: bills.method, sum: sql<number>`coalesce(sum(${bills.total}), 0)::int` })
@@ -121,10 +117,11 @@ const dayClosed = (status = 422) => new ApiError(status, "day_closed", "That day
 
 /** Billing spec 3: a bill is created paid, and only the server works out the total, the change and the receipt number. */
 export async function issueBill(actor: Staff, input: z.infer<typeof issueSchema>): Promise<{ id: string; receiptNo: string }> {
-  const branch = await branchByCode(input.branch);
+  const branch = await requireBranch(input.branch);
   requireCan(actor, "billing.issue", { branchId: branch.id });
   const total = billTotal(input.lines);
   if (total <= 0) throw new ApiError(422, "nothing_to_pay", "The total must be more than zero.");
+  if (total > 100_000_000) throw new ApiError(422, "too_much", "That total is too high.");
   if (input.method === "cash" && (input.tendered ?? 0) < total) {
     throw new ApiError(422, "short_cash", "Cash received is less than the total.", { fields: { tendered: "Less than the total due." } });
   }
@@ -135,16 +132,18 @@ export async function issueBill(actor: Staff, input: z.infer<typeof issueSchema>
       const [visit] = await tx.select().from(appointments).where(eq(appointments.id, input.appointmentId));
       if (!visit || visit.branchId !== branch.id) throw notFound("That visit");
       if (visit.status !== "completed") throw new ApiError(422, "not_completed", "Only a completed visit can be billed.");
-      const [paid] = await tx.select({ id: bills.id }).from(bills).where(and(eq(bills.appointmentId, visit.id), eq(bills.status, "paid")));
-      if (paid) throw new ApiError(409, "already_billed", "This visit already has a receipt.", { billId: paid.id });
       patientId = visit.patientId;
     }
-    // The counter's row lock comes first, so a close that is running finishes before this checks the day.
+    // The counter's row lock comes first, so a close or another receipt for the same day finishes before this checks the visit and the day.
     const [{ seq }] = await tx
       .insert(billCounters)
       .values({ branchId: branch.id, day, lastSeq: 1 })
       .onConflictDoUpdate({ target: [billCounters.branchId, billCounters.day], set: { lastSeq: sql`${billCounters.lastSeq} + 1` } })
       .returning({ seq: billCounters.lastSeq });
+    if (input.appointmentId) {
+      const [paid] = await tx.select({ id: bills.id }).from(bills).where(and(eq(bills.appointmentId, input.appointmentId), eq(bills.status, "paid")));
+      if (paid) throw new ApiError(409, "already_billed", "This visit already has a receipt.", { billId: paid.id });
+    }
     if (await closeOf(tx, branch.id, day)) throw dayClosed();
     const receiptNo = receiptNumber(branch.code, day, seq);
     const [bill] = await tx
@@ -190,7 +189,7 @@ export async function voidBill(actor: Staff, id: string, input: z.infer<typeof v
 
 /** Billing spec 5: a branch's bills for a day, what cash and QR should add up to, and how the day was closed, if it was. */
 export async function dayReport(actor: Staff, q: z.infer<typeof dayQuery>): Promise<DayReport> {
-  const branch = await branchByCode(q.branch);
+  const branch = await requireBranch(q.branch);
   requireCan(actor, "billing.view", { branchId: branch.id });
   const rows = await db
     .select({
@@ -224,7 +223,7 @@ export async function dayReport(actor: Staff, q: z.infer<typeof dayQuery>): Prom
 }
 
 export async function closeDay(actor: Staff, input: z.infer<typeof closeSchema>): Promise<CloseView> {
-  const branch = await branchByCode(input.branch);
+  const branch = await requireBranch(input.branch);
   requireCan(actor, "billing.close", { branchId: branch.id });
   if (input.day > manilaDate(new Date())) throw new ApiError(422, "future_day", "That day has not happened yet.");
   return db.transaction(async (tx) => {
@@ -266,7 +265,7 @@ export async function practiceQr(): Promise<string | null> {
 
 /** Billing spec 5: what the checkout starts from: the visit's services at their default prices, and the clinic's QR image. */
 export async function checkoutDraft(actor: Staff, branchCode: string, appointmentId: string | null): Promise<Draft> {
-  const branch = await branchByCode(branchCode);
+  const branch = await requireBranch(branchCode);
   requireCan(actor, "billing.issue", { branchId: branch.id });
   const qrImage = await practiceQr();
   if (!appointmentId) return { appointmentId: null, patientName: null, billedId: null, qrImage, lines: [] };

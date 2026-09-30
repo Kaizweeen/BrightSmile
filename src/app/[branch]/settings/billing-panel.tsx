@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { api, errorMessage } from "@/lib/fetcher";
 
-const MAX_BYTES = 200 * 1024;
+const MAX_BYTES = 200_000;
 
 /** The clinic's payment QR image, shown to patients at checkout (billing spec 5). */
 export function BillingPanel({ initialImage }: { initialImage: string | null }) {
@@ -25,6 +25,7 @@ export function BillingPanel({ initialImage }: { initialImage: string | null }) 
     if (file.size > MAX_BYTES) return void toast.error("Use an image under 200 KB.");
     const reader = new FileReader();
     reader.onload = () => save.mutate(String(reader.result));
+    reader.onerror = () => toast.error("Could not read that file.");
     reader.readAsDataURL(file);
   };
   return (
@@ -39,7 +40,10 @@ export function BillingPanel({ initialImage }: { initialImage: string | null }) 
       <div className="flex flex-wrap items-center gap-2">
         <label className="cursor-pointer">
           <span className="sr-only">Choose a QR image</span>
-          <input type="file" accept="image/png,image/jpeg" className="text-sm" disabled={save.isPending} onChange={(event) => choose(event.target.files?.[0])} />
+          <input type="file" accept="image/png,image/jpeg" className="text-sm" disabled={save.isPending} onChange={(event) => {
+              choose(event.target.files?.[0]);
+              event.target.value = "";
+            }} />
         </label>
         {image && (
           <Button variant="outline" disabled={save.isPending} onClick={() => save.mutate(null)}>

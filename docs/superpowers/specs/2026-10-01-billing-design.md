@@ -36,7 +36,7 @@ Money is integer centavos everywhere.
 
 ## 4. Permissions
 
-New actions `billing.view`, `billing.issue`, `billing.void`, `billing.close`. The owner and a manager covering the branch may do all four; a dentist may do none. Audit entries: `bill.issue`, `bill.void`, `day.close` (amounts and receipt numbers only, no health data).
+New actions `billing.view`, `billing.issue`, `billing.void`, `billing.close`. The owner and a manager covering the branch may do all four; a dentist may do none. Audit entries: `bill.issued`, `bill.voided`, `day.closed` (amounts and receipt numbers only, no health data).
 
 ## 5. Screens
 
