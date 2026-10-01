@@ -50,6 +50,20 @@
       "when": 1790790217433,
       "tag": "0006_supplies",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790795441709,
+      "tag": "0007_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790795449091,
+      "tag": "0008_billing_rules",
+      "breakpoints": true
     }
   ]
 }

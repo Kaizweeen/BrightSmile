@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { appUrl } from "@/lib/env";
 import { can } from "@/lib/permissions";
+import { practiceQr } from "@/server/billing";
 import { requireStaff } from "@/server/session";
 import { SettingsScreen } from "./settings-screen";
 
@@ -17,6 +18,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ branc
       me={{ id: staff.id, role: staff.role, branchIds: [...staff.branchIds] }}
       currentBranch={branch}
       bookingUrl={`${appUrl()}/book`}
+      qrImage={owner ? await practiceQr() : null}
     />
   );
 }

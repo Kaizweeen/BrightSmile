@@ -380,7 +380,7 @@ A seed script, which refuses to run in production or against anything but PGlite
 ## 17. Out of scope for part 1
 
 - Inventory (part 2), the patient portal and email (part 3), analytics beyond today's counts (part 4), and SMS (part 5).
-- Billing, fees, and payments (the PDA treatment record's money columns); treatment plans; prescriptions; X-ray and photo files; printing the chart.
+- Billing is built separately (see `2026-10-01-billing-design.md`); treatment plans; prescriptions; X-ray and photo files; printing the chart.
 - Drag and drop on the calendar; recurring visits; a waitlist; holiday closures; recording a visit after it happened.
 - Two-factor sign-in; several owners and ownership transfer; importing old records; deleting or anonymizing a patient (erasure requests are handled by the owner with the database until a later part).
 

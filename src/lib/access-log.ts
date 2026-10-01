@@ -37,6 +37,10 @@ const ACTIONS: Record<string, string> = {
   "schedule.replaced": "Changed a weekly schedule",
   "time_off.added": "Added time off",
   "time_off.removed": "Removed time off",
+  "bill.issued": "Issued a receipt",
+  "bill.voided": "Voided a receipt",
+  "day.closed": "Closed a day",
+  "practice.qr_changed": "Changed the clinic QR code",
 };
 
 /** An audit row in words, with the part of the record viewed, the fields changed, or the username a failed sign-in tried. */

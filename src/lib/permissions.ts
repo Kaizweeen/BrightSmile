@@ -22,7 +22,11 @@ export type Action =
   | "supplies.edit"
   | "settings.edit"
   | "overview.view"
-  | "audit.view";
+  | "audit.view"
+  | "billing.view"
+  | "billing.issue"
+  | "billing.void"
+  | "billing.close";
 
 /** What the action is about: a branch, a dentist's visit or schedule, or a staff member. */
 export type Target = {
@@ -82,5 +86,10 @@ export function can(s: Subject, action: Action, t: Target = {}): boolean {
       return owner;
     case "overview.view":
       return owner || (manager && s.branchIds.length >= 2);
+    case "billing.view":
+    case "billing.issue":
+    case "billing.void":
+    case "billing.close":
+      return owner || (manager && inBranch);
   }
 }

@@ -240,3 +240,19 @@ describe("procedures", () => {
     expect((await off.json()).error).toMatchObject({ code: "has_visits", message: "This branch has 1 upcoming visit. Move or cancel it first." });
   });
 });
+
+describe("service prices", () => {
+  it("stores a default price in centavos and refuses a bad one", async () => {
+    const { cookie } = await ownerCookie();
+    const made = await call(proceduresRoute.POST, request("/api/v1/procedures", { method: "POST", cookie, body: { name: "Price test filling", price: 150000 } }));
+    expect(made.status).toBe(201);
+    const { id, price } = await made.json();
+    expect(price).toBe(150000);
+    const patched = await call(procedureRoute.PATCH, request(`/api/v1/procedures/${id}`, { method: "PATCH", cookie, body: { price: 175050 } }), { id });
+    expect((await patched.json()).price).toBe(175050);
+    const bad = await call(procedureRoute.PATCH, request(`/api/v1/procedures/${id}`, { method: "PATCH", cookie, body: { price: -1 } }), { id });
+    expect(bad.status).toBe(400);
+    const fraction = await call(procedureRoute.PATCH, request(`/api/v1/procedures/${id}`, { method: "PATCH", cookie, body: { price: 10.5 } }), { id });
+    expect(fraction.status).toBe(400);
+  });
+});

@@ -132,3 +132,15 @@ describe("owner-only areas", () => {
     expect(can(dentist, "overview.view")).toBe(false);
   });
 });
+
+describe("billing", () => {
+  it("lets the owner and the branch's managers take payments, void and close, and never a dentist", () => {
+    for (const action of ["billing.view", "billing.issue", "billing.void", "billing.close"] as const) {
+      expect(can(owner, action, { branchId: MN })).toBe(true);
+      expect(can(manager, action, { branchId: DT })).toBe(true);
+      expect(can(manager, action, { branchId: WS })).toBe(false);
+      expect(can(manager, action)).toBe(false);
+      expect(can(dentist, action, { branchId: DT })).toBe(false);
+    }
+  });
+});
