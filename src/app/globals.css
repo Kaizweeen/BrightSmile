@@ -96,3 +96,14 @@
     @apply font-sans;
   }
 }
+
+/* Brand colors for the public clinic page (src/app/clinic). */
+@theme {
+  --color-brand-50: #effcfa;
+  --color-brand-100: #d0f7f0;
+  --color-brand-200: #a3ede2;
+  --color-brand-500: #12a39a;
+  --color-brand-600: #0d8781;
+  --color-brand-700: #0f6b68;
+  --color-brand-900: #0b3d4a;
+}

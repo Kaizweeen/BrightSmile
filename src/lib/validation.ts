@@ -33,7 +33,7 @@ export const mobileSchema = z
  * A branch lives at /{code}, so its code may not be "all" (every branch at once) or one of the app's own top-level pages.
  * tests/unit/branch-codes.test.ts keeps this list complete: it fails when a folder is added under src/app without a code here.
  */
-export const RESERVED_CODES = new Set(["all", "api", "book", "join", "login", "poster", "reset", "setup", "waiting", "welcome"]);
+export const RESERVED_CODES = new Set(["all", "api", "book", "join", "login", "poster", "reset", "setup", "waiting", "welcome", "clinic"]);
 
 export const branchCodeSchema = z
   .string()
