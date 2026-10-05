@@ -5,6 +5,7 @@ import { useId, useState } from "react";
 import { FormAlert } from "@/components/form-alert";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { api, errorMessage, fieldErrors, RequestError } from "@/lib/fetcher";
@@ -43,7 +44,6 @@ export function BookForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [done, setDone] = useState<Done | null>(null);
   const consentErrorId = useId();
-  const days = Array.from({ length: BOOKING_DAYS + 1 }, (_, i) => addDays(today, i));
   // A service is offered where its dentists work (online booking spec 3); every service until a branch is chosen.
   const offeredAt = (s: ServiceOption, code: string) => code === "" || s.branches === null || s.branches.includes(code);
   const times = useQuery({
@@ -127,13 +127,14 @@ export function BookForm({
       </label>
       <label className="grid gap-1.5 text-sm font-medium">
         Day
-        <NativeSelect className="w-full" value={date} onChange={(event) => setDate(event.target.value)}>
-          {days.map((d) => (
-            <NativeSelectOption key={d} value={d}>
-              {formatDay(d)}
-            </NativeSelectOption>
-          ))}
-        </NativeSelect>
+        <Input
+          type="date"
+          className="w-full"
+          value={date}
+          min={today}
+          max={addDays(today, BOOKING_DAYS)}
+          onChange={(event) => event.target.value && setDate(event.target.value)}
+        />
       </label>
       <fieldset className="grid gap-2">
         <legend className="mb-1 text-sm font-medium">Time</legend>

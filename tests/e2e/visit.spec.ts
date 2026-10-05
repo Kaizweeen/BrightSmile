@@ -137,7 +137,7 @@ test("a visit from setup to completion", async ({ page, browser }) => {
   await patient.getByLabel("Branch").selectOption({ label: "Downtown" });
   await expect(braces).toHaveCount(1);
   await service.selectOption({ label: "Consultation" });
-  await patient.getByLabel("Day").selectOption(tomorrow);
+  await patient.getByLabel("Day").fill(tomorrow);
   await patient.getByRole("group", { name: "Open times" }).getByRole("button").first().click();
   await patient.getByLabel("First name").fill("Ben");
   await patient.getByLabel("Last name").fill("Cruz");
