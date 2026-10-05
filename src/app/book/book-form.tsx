@@ -19,6 +19,9 @@ type Done = { branch: string; service: string; start: string };
 
 const EMPTY = { firstName: "", lastName: "", mobile: "", note: "", consent: false, website: "" };
 
+/** A service is offered where its dentists work (online booking spec 3); every service when there is no branch to go by. */
+const offeredAt = (s: ServiceOption, code: string) => code === "" || s.branches === null || s.branches.includes(code);
+
 /** Moves focus to the heading when it appears, so screen readers announce the outcome. One function for every render, so it runs on mount only. */
 const focusHeading = (heading: HTMLHeadingElement | null) => heading?.focus();
 
@@ -36,16 +39,17 @@ export function BookForm({
   today: string;
   initialBranch?: string;
 }) {
-  const [branch, setBranch] = useState(initialBranch ?? (branches.length === 1 ? branches[0].value : ""));
-  const [service, setService] = useState("");
+  // Both lists open on a real choice, so the form never offers a "Pick a..." row that books nothing.
+  const firstBranch = initialBranch ?? branches[0]?.value ?? "";
+  const firstServiceAt = (code: string) => services.find((s) => offeredAt(s, code))?.value ?? "";
+  const [branch, setBranch] = useState(firstBranch);
+  const [service, setService] = useState(() => firstServiceAt(firstBranch));
   const [date, setDate] = useState(today);
   const [start, setStart] = useState("");
   const [details, setDetails] = useState(EMPTY);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [done, setDone] = useState<Done | null>(null);
   const consentErrorId = useId();
-  // A service is offered where its dentists work (online booking spec 3); every service until a branch is chosen.
-  const offeredAt = (s: ServiceOption, code: string) => code === "" || s.branches === null || s.branches.includes(code);
   const times = useQuery({
     queryKey: ["portal-times", branch, service, date],
     queryFn: () => api<{ times: string[] }>(`/portal/times?branch=${encodeURIComponent(branch)}&service=${service}&date=${date}`),
@@ -102,11 +106,12 @@ export function BookForm({
           value={branch}
           onChange={(event) => {
             setBranch(event.target.value);
-            // A service the new branch does not offer is dropped.
-            if (!services.some((s) => s.value === service && offeredAt(s, event.target.value))) setService("");
+            // A service the new branch does not offer gives way to the first one it does.
+            if (!services.some((s) => s.value === service && offeredAt(s, event.target.value))) {
+              setService(firstServiceAt(event.target.value));
+            }
           }}
         >
-          <NativeSelectOption value="">Pick a branch</NativeSelectOption>
           {branches.map((b) => (
             <NativeSelectOption key={b.value} value={b.value}>
               {b.label}
@@ -117,7 +122,6 @@ export function BookForm({
       <label className="grid gap-1.5 text-sm font-medium">
         Service
         <NativeSelect className="w-full" value={service} onChange={(event) => setService(event.target.value)}>
-          <NativeSelectOption value="">Pick a service</NativeSelectOption>
           {services.filter((s) => offeredAt(s, branch)).map((s) => (
             <NativeSelectOption key={s.value} value={s.value}>
               {s.label}

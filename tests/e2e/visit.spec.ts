@@ -123,9 +123,11 @@ test("a visit from setup to completion", async ({ page, browser }) => {
   await patient.goto("/book?branch=uptown");
   await expect(patient.getByLabel("Branch")).toHaveValue("uptown");
   await patient.goto("/book?branch=nowhere");
-  await expect(patient.getByLabel("Branch")).toHaveValue("");
+  // An unknown branch is ignored, and the form opens on the first branch, as it does with no branch at all.
+  await expect(patient.getByLabel("Branch")).toHaveValue("downtown");
   await patient.goto("/book");
-  // The Service list follows the branch: every service before one is chosen, and a picked service goes when the new branch lacks it.
+  await expect(patient.getByLabel("Branch")).toHaveValue("downtown");
+  // The Service list follows the branch: a picked service the new branch lacks gives way to one it offers.
   const service = patient.getByLabel("Service");
   const braces = service.getByRole("option", { name: "Braces and Retainers" });
   await expect(braces).toHaveCount(1);
@@ -133,7 +135,7 @@ test("a visit from setup to completion", async ({ page, browser }) => {
   await service.selectOption({ label: "Braces and Retainers" });
   await patient.getByLabel("Branch").selectOption({ label: "Uptown" });
   await expect(braces).toHaveCount(0);
-  await expect(service).toHaveValue("");
+  await expect(service).not.toHaveValue("");
   await patient.getByLabel("Branch").selectOption({ label: "Downtown" });
   await expect(braces).toHaveCount(1);
   await service.selectOption({ label: "Consultation" });
