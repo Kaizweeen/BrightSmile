@@ -22,11 +22,11 @@ export default async function WelcomePage({ params }: { params: Promise<{ code: 
   const info = await welcomeInfo(code);
   if (!info) notFound();
   if (!info.booking && !info.forms) {
-    return <AuthCard title={info.practiceName} description={`${info.branch.name}. Please ask at the front desk.`} />;
+    return <AuthCard title={info.practiceName} description="Please ask at the front desk." />;
   }
   const branch = encodeURIComponent(info.branch.code);
   return (
-    <AuthCard title={info.practiceName} description={info.branch.name}>
+    <AuthCard title={info.practiceName}>
       <div className="grid gap-3">
         {info.booking && (
           <Link href={`/book?branch=${branch}`} className={buttonVariants({ size: "lg" })}>
