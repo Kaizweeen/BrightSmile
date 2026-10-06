@@ -81,9 +81,9 @@ export function AppShell({ practice, branch, branches, nav, user, children }: Pr
   );
 }
 
-function BrandMark() {
+function BrandMark({ className }: { className?: string }) {
   return (
-    <span aria-hidden className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-xs">
+    <span aria-hidden className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg shadow-xs", className ?? "bg-primary text-primary-foreground")}>
       <Smile className="size-5" />
     </span>
   );
@@ -94,8 +94,8 @@ function SidebarContent({ practice, branch, branches, nav, user, onNavigate }: O
   const here = branches.find((b) => b.code === branch)?.name ?? branch;
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-3">
-      <Link href="/" onClick={onNavigate} className="flex items-center gap-2.5 rounded-lg px-2 py-2 font-heading text-base font-semibold text-white outline-none focus-visible:ring-3 focus-visible:ring-ring/60">
-        <BrandMark />
+      <Link href="/" onClick={onNavigate} className="flex items-center gap-2.5 rounded-lg px-2 py-2 font-heading text-base font-semibold text-sidebar-foreground outline-none focus-visible:ring-3 focus-visible:ring-white/80">
+        <BrandMark className="bg-white text-primary" />
         <span className="truncate">{practice}</span>
       </Link>
 
@@ -103,7 +103,7 @@ function SidebarContent({ practice, branch, branches, nav, user, onNavigate }: O
         <p className="px-2 text-[11px] font-semibold tracking-wider text-sidebar-muted uppercase">Branch</p>
         {/* A menu of links rather than a select, so arrowing through the branches never leaves the page (WCAG 3.2.2). */}
         <DropdownMenu>
-          <DropdownMenuTrigger className="flex h-11 w-full cursor-pointer items-center gap-2 rounded-lg border border-sidebar-border bg-sidebar-accent px-2.5 text-left text-sm font-medium text-sidebar-foreground outline-none transition-colors hover:bg-white/15 focus-visible:ring-3 focus-visible:ring-ring/60 lg:h-10">
+          <DropdownMenuTrigger className="flex h-11 w-full cursor-pointer items-center gap-2 rounded-lg border border-sidebar-border bg-sidebar-accent px-2.5 text-left text-sm font-medium text-sidebar-foreground outline-none transition-colors hover:bg-white/20 focus-visible:ring-3 focus-visible:ring-white/80 lg:h-10">
             <Building2 aria-hidden className="size-4 shrink-0 text-sidebar-muted" />
             <span className="min-w-0 flex-1 truncate">
               <span className="sr-only">Branch: </span>
@@ -133,8 +133,8 @@ function SidebarContent({ practice, branch, branches, nav, user, onNavigate }: O
                   onClick={onNavigate}
                   aria-current={current ? "page" : undefined}
                   className={cn(
-                    "relative flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/60 lg:h-10",
-                    current ? "bg-sidebar-accent text-white" : "text-sidebar-muted hover:bg-sidebar-accent hover:text-white",
+                    "relative flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-white/80 lg:h-10",
+                    current ? "bg-white/15 font-semibold text-sidebar-foreground" : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground",
                   )}
                 >
                   {current && <span aria-hidden className="absolute top-2 bottom-2 left-0 w-1 rounded-r-full bg-highlight" />}

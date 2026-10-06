@@ -19,7 +19,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   await connection();
   return (
     <html lang="en" className={`${display.variable} ${sans.variable} ${mono.variable} h-full antialiased`}>
-      <body className="min-h-full">
+      {/* Extensions such as Grammarly add attributes to <body> before React loads; this keeps dev from warning about them. */}
+      <body className="min-h-full" suppressHydrationWarning>
         <Providers>{children}</Providers>
       </body>
     </html>

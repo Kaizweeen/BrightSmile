@@ -34,13 +34,13 @@ export function UserMenu({ name, role, variant = "header" }: { name: string; rol
     <>
       <DropdownMenu>
         {variant === "sidebar" ? (
-          <DropdownMenuTrigger className="flex h-14 w-full cursor-pointer items-center gap-3 rounded-lg px-2 text-left outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-3 focus-visible:ring-ring/60">
-            <span aria-hidden className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
+          <DropdownMenuTrigger className="flex h-14 w-full cursor-pointer items-center gap-3 rounded-lg px-2 text-left outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-3 focus-visible:ring-white/80">
+            <span aria-hidden className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white text-sm font-semibold text-primary">
               {initials(name)}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium text-white">{name}</span>
-              <span className="block truncate text-xs text-sidebar-muted">{role}</span>
+              <span className="block truncate text-sm font-medium text-sidebar-foreground">{name}</span>
+              <span className="block truncate text-xs text-sidebar-foreground">{role}</span>
               <span className="sr-only">. Open the account menu.</span>
             </span>
             <ChevronsUpDownIcon aria-hidden className="size-4 shrink-0 text-sidebar-muted" />

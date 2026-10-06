@@ -2,8 +2,8 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-/* Dark mode follows the device (spec section 10), so there is no theme switch. */
-@custom-variant dark (@media (prefers-color-scheme: dark));
+/* The staff app is always light: dark: styles apply only under a .dark class, which nothing sets. */
+@custom-variant dark (&:where(.dark, .dark *));
 
 /* The staff QR poster (src/app/poster) prints on A4 (spec 6.2). */
 @page {
@@ -49,49 +49,51 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.4);
   --radius-2xl: calc(var(--radius) * 1.8);
-  --shadow-xs: 0 1px 2px 0 rgb(12 42 63 / 0.06);
-  --shadow-sm: 0 1px 3px 0 rgb(12 42 63 / 0.08), 0 1px 2px -1px rgb(12 42 63 / 0.06);
-  --shadow-md: 0 4px 10px -2px rgb(12 42 63 / 0.1), 0 2px 4px -2px rgb(12 42 63 / 0.06);
-  --shadow-lg: 0 12px 28px -6px rgb(12 42 63 / 0.16), 0 4px 8px -4px rgb(12 42 63 / 0.08);
+  --shadow-xs: 0 1px 2px 0 rgb(20 33 29 / 0.06);
+  --shadow-sm: 0 1px 3px 0 rgb(20 33 29 / 0.08), 0 1px 2px -1px rgb(20 33 29 / 0.06);
+  --shadow-md: 0 4px 10px -2px rgb(20 33 29 / 0.1), 0 2px 4px -2px rgb(20 33 29 / 0.06);
+  --shadow-lg: 0 12px 28px -6px rgb(20 33 29 / 0.16), 0 4px 8px -4px rgb(20 33 29 / 0.08);
 }
 
 /*
- * Staff app palette: fresh sky blue on cool neutrals, warm amber as the one accent.
- * Every text pair is 4.5:1 or better; field borders (--input) are 3:1 against their surface.
+ * Staff app palette: one deep green on white and light neutrals, yellow only as a small accent.
+ * Every text pair is 4.5:1 or better (checked); field borders (--input) are 3:1 against their surface.
  */
 :root {
-  --background: #f4f8fb;
-  --foreground: #0c2a3f;
+  --background: #f4f6f5;
+  --foreground: #14211d;
   --card: #ffffff;
-  --card-foreground: #0c2a3f;
+  --card-foreground: #14211d;
   --popover: #ffffff;
-  --popover-foreground: #0c2a3f;
-  --primary: #0369a1;
+  --popover-foreground: #14211d;
+  --primary: #1f7a64;
   --primary-foreground: #ffffff;
-  --secondary: #e6eff6;
-  --secondary-foreground: #0c2a3f;
-  --muted: #eaf1f7;
-  --muted-foreground: #4a5e70;
-  --accent: #dcebf6;
-  --accent-foreground: #0c2a3f;
-  --destructive: #dc2626;
-  --border: #d5e3ee;
-  --input: #7b96ab;
-  --ring: #0ea5e9;
-  --radius: 0.5rem;
+  --secondary: #eaf2ef;
+  --secondary-foreground: #14211d;
+  --muted: #eef2f0;
+  --muted-foreground: #51625c;
+  --accent: #e4f0ec;
+  --accent-foreground: #14211d;
+  --destructive: #c62828;
+  --border: #dce4e0;
+  --input: #7a8c85;
+  --ring: #1f7a64;
+  --radius: 0.625rem;
+  color-scheme: light;
 
-  --highlight: #f59e0b;
-  --highlight-foreground: #3b2a00;
-  --success: #047857;
+  --highlight: #f5b301;
+  --highlight-foreground: #2b2000;
+  --success: #1f7a64;
   --success-foreground: #ffffff;
-  --warning: #b45309;
+  --warning: #9a5b00;
   --warning-foreground: #ffffff;
 
-  --sidebar: #0b2b40;
-  --sidebar-foreground: #e3eef6;
-  --sidebar-muted: #9db6c8;
-  --sidebar-accent: rgb(255 255 255 / 0.1);
-  --sidebar-border: rgb(255 255 255 / 0.12);
+  /* The sidebar is solid green with white text; hover and the current page are lighter green tints. */
+  --sidebar: #1a6b58;
+  --sidebar-foreground: #ffffff;
+  --sidebar-muted: rgb(255 255 255 / 0.92);
+  --sidebar-accent: rgb(255 255 255 / 0.12);
+  --sidebar-border: rgb(255 255 255 / 0.2);
 
   /* A visit's status: tinted chip, its text, and a solid bar for calendar cards. */
   --status-requested-bg: #fef3c7;
@@ -115,57 +117,6 @@
   --status-cancelled-bg: #e2e8f0;
   --status-cancelled-fg: #1e293b;
   --status-cancelled-bar: #94a3b8;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0b1722;
-    --foreground: #e6f0f7;
-    --card: #12212f;
-    --card-foreground: #e6f0f7;
-    --popover: #162738;
-    --popover-foreground: #e6f0f7;
-    --primary: #38bdf8;
-    --primary-foreground: #04202f;
-    --secondary: #1a2e40;
-    --secondary-foreground: #e6f0f7;
-    --muted: #172a3a;
-    --muted-foreground: #9fb4c5;
-    --accent: #1e3a52;
-    --accent-foreground: #e6f0f7;
-    --destructive: #f87171;
-    --border: #25394a;
-    --input: #5b7a92;
-    --ring: #38bdf8;
-
-    --highlight: #fbbf24;
-    --highlight-foreground: #2b1f00;
-    --success: #34d399;
-    --success-foreground: #032b1f;
-    --warning: #fbbf24;
-    --warning-foreground: #2b1f00;
-
-    --sidebar: #08121b;
-    --sidebar-foreground: #e3eef6;
-    --sidebar-muted: #8ea8bb;
-    --sidebar-accent: rgb(255 255 255 / 0.08);
-    --sidebar-border: rgb(255 255 255 / 0.1);
-
-    --status-requested-bg: rgb(245 158 11 / 0.2);
-    --status-requested-fg: #fde68a;
-    --status-confirmed-bg: rgb(14 165 233 / 0.2);
-    --status-confirmed-fg: #bae6fd;
-    --status-checked_in-bg: rgb(139 92 246 / 0.22);
-    --status-checked_in-fg: #ddd6fe;
-    --status-in_treatment-bg: rgb(20 184 166 / 0.2);
-    --status-in_treatment-fg: #99f6e4;
-    --status-completed-bg: rgb(16 185 129 / 0.2);
-    --status-completed-fg: #a7f3d0;
-    --status-no_show-bg: rgb(244 63 94 / 0.22);
-    --status-no_show-fg: #fecdd3;
-    --status-cancelled-bg: rgb(148 163 184 / 0.2);
-    --status-cancelled-fg: #e2e8f0;
-  }
 }
 
 @layer base {
