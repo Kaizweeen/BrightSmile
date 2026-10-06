@@ -1,11 +1,14 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { CalendarClockIcon, CalendarX2Icon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AlertBanner } from "@/components/alert-banner";
+import { EmptyState } from "@/components/empty-state";
 import { FormAlert } from "@/components/form-alert";
+import { LoadingRows } from "@/components/loading";
 import { EMPTY_PATIENT, PatientFields, type PatientDraft } from "@/components/patient-fields";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -49,17 +52,22 @@ export function PatientScreen({ patient, canEdit, staff, initialTab }: { patient
   const age = patient.birthday ? ageOn(patient.birthday, manilaDate(new Date())) : null;
   return (
     <div className="grid gap-4">
-      <div className="grid gap-1">
-        <h1 className="text-2xl font-semibold">{fullName(patient)}</h1>
-        <p className="text-muted-foreground">
-          {[`Chart ${patient.chartNo}`, age !== null ? `${age} years old` : null, patient.hmoProvider ? `HMO: ${patient.hmoProvider}` : null]
-            .filter(Boolean)
-            .join(" · ")}
-        </p>
+      <div className="flex items-center gap-4 rounded-xl border bg-card p-4 shadow-xs">
+        <span aria-hidden className="flex size-14 shrink-0 items-center justify-center rounded-full bg-primary/10 font-heading text-xl font-semibold text-primary">
+          {`${patient.firstName[0] ?? ""}${patient.lastName[0] ?? ""}`.toUpperCase()}
+        </span>
+        <div className="grid min-w-0 gap-1">
+          <h1 className="truncate text-2xl leading-tight font-semibold">{fullName(patient)}</h1>
+          <p className="text-sm text-muted-foreground">
+            {[`Chart ${patient.chartNo}`, age !== null ? `${age} years old` : null, patient.hmoProvider ? `HMO: ${patient.hmoProvider}` : null]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        </div>
       </div>
       <AlertBanner lines={alertLines(patient)} />
       <Tabs defaultValue={initialTab}>
-        <TabsList>
+        <TabsList variant="line" className="w-full justify-start border-b [&_[data-slot=tabs-trigger]]:flex-none [&_[data-slot=tabs-trigger]]:px-4">
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="visits">Visits</TabsTrigger>
           <TabsTrigger value="chart">Chart</TabsTrigger>
@@ -156,14 +164,14 @@ function DetailsPanel({ patient, canEdit }: { patient: PatientJson; canEdit: boo
     );
   }
   const row = (label: string, value: string | null | undefined) => (
-    <div className="grid gap-0.5 sm:grid-cols-[12rem_1fr]">
+    <div className="grid gap-0.5 px-4 py-3 sm:grid-cols-[12rem_1fr]">
       <dt className="text-sm text-muted-foreground">{label}</dt>
-      <dd>{value || "Not given"}</dd>
+      <dd className={value ? undefined : "text-muted-foreground"}>{value || "Not given"}</dd>
     </div>
   );
   return (
     <div className="grid max-w-3xl gap-4">
-      <dl className="grid gap-2">
+      <dl className="divide-y rounded-xl border bg-card shadow-xs">
         {row("Birthday", patient.birthday)}
         {row("Sex", patient.sex === "female" ? "Female" : patient.sex === "male" ? "Male" : null)}
         {row("Mobile", patient.mobile)}
@@ -200,16 +208,19 @@ function VisitsPanel({ patientId }: { patientId: string }) {
     queryKey: ["patient-visits", patientId],
     queryFn: () => api<{ visits: PatientVisitJson[]; next: PatientVisitJson | null }>(`/patients/${patientId}/visits`),
   });
-  if (visits.isPending) return <p className="text-muted-foreground">Loading visits...</p>;
+  if (visits.isPending) return <LoadingRows rows={3} label="Loading visits..." />;
   if (visits.isError) return <FormAlert message={errorMessage(visits.error)} />;
   const { next } = visits.data;
   return (
     <div className="grid gap-3">
-      <p>{next ? `Next visit: ${formatDateTime(new Date(next.start))} at ${next.branchName} with ${next.dentistName}.` : "No upcoming visit."}</p>
+      <p className="flex items-center gap-2 rounded-lg bg-primary/10 px-3 py-2 text-sm font-medium text-primary dark:text-foreground">
+        <CalendarClockIcon aria-hidden className="size-4 shrink-0" />
+        {next ? `Next visit: ${formatDateTime(new Date(next.start))} at ${next.branchName} with ${next.dentistName}.` : "No upcoming visit."}
+      </p>
       {visits.data.visits.length === 0 ? (
-        <p className="text-muted-foreground">No visits yet.</p>
+        <EmptyState icon={CalendarX2Icon} title="No visits yet" />
       ) : (
-        <div className="overflow-x-auto rounded-lg border">
+        <div className="overflow-x-auto rounded-xl border bg-card shadow-xs">
           <Table>
             <TableHeader>
               <TableRow>

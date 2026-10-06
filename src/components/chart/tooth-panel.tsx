@@ -90,7 +90,7 @@ export function ToothPanel({ patientId, tooth, entries, staff, onClose }: Props)
                 <legend className="mb-1 text-sm font-medium">Surfaces</legend>
                 <div className="flex flex-wrap gap-2">
                   {SURFACES.map((s) => (
-                    <label key={s} className="flex min-h-11 items-center gap-2 rounded-md border px-3 text-sm sm:min-h-9">
+                    <label key={s} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 text-sm transition-colors hover:bg-accent has-[:checked]:border-primary has-[:checked]:bg-primary/5 sm:min-h-9">
                       <input
                         type="checkbox"
                         className="size-4 accent-primary"

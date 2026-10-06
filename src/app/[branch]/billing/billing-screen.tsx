@@ -1,11 +1,15 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Ban, BanknoteIcon, CircleCheck, PlusIcon, QrCodeIcon, ReceiptIcon } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { FormAlert } from "@/components/form-alert";
+import { LoadingRows } from "@/components/loading";
+import { PageHeader } from "@/components/page-header";
+import { StatCard } from "@/components/stat-card";
 import { TextField } from "@/components/text-field";
 import { buttonVariants, Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -58,31 +62,59 @@ export function BillingScreen({ branch, canIssue, canVoid, canClose }: { branch:
   });
 
   const r = report.data;
+  const paid = r?.rows.filter((row) => row.status === "paid") ?? [];
   const countedCash = toCentavos(counted);
 
   return (
     <div className="grid gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <h1 className="text-xl font-semibold">Billing</h1>
-        <div className="flex flex-wrap items-end gap-3">
-          <TextField label="Day" type="date" value={day} max={manilaDate(new Date())} onChange={(e) => {
-              if (!e.target.value) return;
-              setDay(e.target.value);
-              setCounted("");
-            }} />
-          {canIssue && (
-            <Link href={`/${branch}/billing/new`} className={buttonVariants()}>
-              New sale
-            </Link>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Billing"
+        description="The day's sales, and counting the cash before closing."
+        actions={
+          <>
+            <TextField
+              label="Day"
+              type="date"
+              className="grid-cols-[auto_1fr] items-center gap-2"
+              value={day}
+              max={manilaDate(new Date())}
+              onChange={(e) => {
+                if (!e.target.value) return;
+                setDay(e.target.value);
+                setCounted("");
+              }}
+            />
+            {canIssue && (
+              <Link href={`/${branch}/billing/new`} className={buttonVariants()}>
+                <PlusIcon aria-hidden data-icon="inline-start" />
+                New sale
+              </Link>
+            )}
+          </>
+        }
+      />
 
-      {report.isPending && <p className="text-muted-foreground">Loading sales...</p>}
+      {report.isPending && <LoadingRows rows={5} label="Loading sales..." />}
       {report.isError && <FormAlert message={errorMessage(report.error)} />}
       {r && (
         <>
-          <div className="overflow-x-auto rounded-lg border">
+          <ul aria-label="Totals for the day" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <li>
+              <StatCard className="h-full" label="Sales" value={peso(paid.reduce((n, x) => n + x.total, 0))} hint={`${paid.length} ${paid.length === 1 ? "receipt" : "receipts"}`} icon={ReceiptIcon} />
+            </li>
+            <li>
+              <StatCard className="h-full" label="Cash" value={peso(r.close?.expectedCash ?? r.expectedCash)} hint="expected in the drawer" icon={BanknoteIcon} />
+            </li>
+            <li>
+              <StatCard className="h-full" label="QR" value={peso(r.close?.expectedQr ?? r.expectedQr)} hint="expected in the account" icon={QrCodeIcon} />
+            </li>
+            <li>
+              <StatCard className="h-full" label="Voided" value={r.rows.length - paid.length} hint="receipts" icon={Ban} />
+            </li>
+          </ul>
+
+          <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
+          <div className="overflow-x-auto rounded-xl border bg-card shadow-xs">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -100,7 +132,7 @@ export function BillingScreen({ branch, canIssue, canVoid, canClose }: { branch:
               <TableBody>
                 {r.rows.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-muted-foreground">
+                    <TableCell colSpan={7} className="whitespace-normal py-10 text-center text-muted-foreground">
                       No sales on this day.
                     </TableCell>
                   </TableRow>
@@ -108,15 +140,27 @@ export function BillingScreen({ branch, canIssue, canVoid, canClose }: { branch:
                 {r.rows.map((row) => (
                   <TableRow key={row.id}>
                     <TableCell>
-                      <Link href={`/${branch}/billing/${row.id}`} className="underline">
+                      <Link href={`/${branch}/billing/${row.id}`} className="font-medium text-primary underline-offset-4 hover:underline">
                         {row.receiptNo}
                       </Link>
                     </TableCell>
-                    <TableCell>{formatTime(new Date(row.issuedAt))}</TableCell>
+                    <TableCell className="tabular-nums">{formatTime(new Date(row.issuedAt))}</TableCell>
                     <TableCell>{row.patientName ?? "Walk-in"}</TableCell>
                     <TableCell>{row.method === "cash" ? "Cash" : "QR"}</TableCell>
-                    <TableCell className="text-right">{peso(row.total)}</TableCell>
-                    <TableCell>{row.status === "void" ? `Void: ${row.voidReason}` : "Paid"}</TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">{peso(row.total)}</TableCell>
+                    <TableCell>
+                      {row.status === "void" ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+                          <Ban aria-hidden className="size-3.5" />
+                          {`Void: ${row.voidReason}`}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-(--status-completed-bg) px-2 py-0.5 text-xs font-medium text-(--status-completed-fg)">
+                          <CircleCheck aria-hidden className="size-3.5" />
+                          Paid
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right">
                       {canVoid && row.status === "paid" && !r.close && (
                         <Button variant="ghost" onClick={() => setVoiding(row)}>
@@ -130,11 +174,11 @@ export function BillingScreen({ branch, canIssue, canVoid, canClose }: { branch:
             </Table>
           </div>
 
-          <section className="grid max-w-md gap-3 rounded-lg border p-4" aria-labelledby="reconcile">
+          <section className="grid gap-3 rounded-xl border bg-card p-4 shadow-xs" aria-labelledby="reconcile">
             <h2 id="reconcile" className="font-semibold">
               End of day: reconcile cash and QR
             </h2>
-            <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
+            <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 tabular-nums">
               <dt>Expected cash</dt>
               <dd className="text-right">{peso(r.close?.expectedCash ?? r.expectedCash)}</dd>
               <dt>Expected QR</dt>
@@ -142,7 +186,7 @@ export function BillingScreen({ branch, canIssue, canVoid, canClose }: { branch:
             </dl>
             {r.close ? (
               <>
-                <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
+                <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 border-t pt-3 tabular-nums">
                   <dt>Counted cash</dt>
                   <dd className="text-right">{peso(r.close.countedCash)}</dd>
                   <dt>Result</dt>
@@ -164,6 +208,7 @@ export function BillingScreen({ branch, canIssue, canVoid, canClose }: { branch:
               <p className="text-sm text-muted-foreground">This day is still open.</p>
             )}
           </section>
+          </div>
         </>
       )}
 

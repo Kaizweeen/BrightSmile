@@ -1,5 +1,6 @@
 "use client";
 
+import { PageHeader } from "@/components/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Role } from "@/lib/permissions";
 import { AccessLogPanel } from "./access-log-panel";
@@ -31,9 +32,12 @@ export function SettingsScreen({
 }) {
   return (
     <div className="grid gap-4">
-      <h1 className="text-xl font-semibold">{owner ? "Settings" : "Schedules"}</h1>
+      <PageHeader
+        title={owner ? "Settings" : "Schedules"}
+        description={owner ? "The practice, its branches and chairs, services, billing, and who works when." : "Dentists' weekly hours and time off."}
+      />
       <Tabs defaultValue={owner ? "branches" : "schedules"}>
-        <TabsList className="h-auto flex-wrap">
+        <TabsList variant="line" className="w-full justify-start overflow-x-auto overflow-y-hidden border-b pb-1.5 [&_[data-slot=tabs-trigger]]:flex-none [&_[data-slot=tabs-trigger]]:px-3.5">
           {owner && <TabsTrigger value="practice">Practice</TabsTrigger>}
           {owner && <TabsTrigger value="branches">Branches</TabsTrigger>}
           {owner && <TabsTrigger value="chairs">Chairs</TabsTrigger>}

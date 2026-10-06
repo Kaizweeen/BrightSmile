@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AlertMark } from "@/components/alert-mark";
-import { StatusBadge } from "@/components/status-badge";
+import { StatusBadge, statusBar } from "@/components/status-badge";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { formatDay, formatTime, manilaDate } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -53,16 +53,16 @@ export function WeekGrid({ days, today, chairs, visits, onOpen, onDay }: Props) 
         {days.map((day) => {
           const list = shown.filter((v) => manilaDate(new Date(v.start)) === day);
           return (
-            <section key={day} aria-labelledby={`day-${day}`} className={cn("min-w-0 rounded-lg border p-2", day === today && "border-primary")}>
-              <h2 id={`day-${day}`} className="mb-2 text-sm font-medium">
+            <section key={day} aria-labelledby={`day-${day}`} className={cn("min-w-0 rounded-xl border bg-card p-2 shadow-xs", day === today && "border-primary ring-1 ring-primary/40")}>
+              <h2 id={`day-${day}`} className="mb-2 flex flex-wrap items-center gap-x-1.5 text-sm font-semibold">
                 <button
                   type="button"
                   onClick={() => onDay(day)}
-                  className="min-h-11 rounded-sm text-left underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-0"
+                  className="min-h-11 cursor-pointer rounded-sm text-left underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-0"
                 >
                   {formatDay(day)}
                 </button>
-                {day === today && <span className="ml-1 text-xs font-normal text-primary">Today</span>}
+                {day === today && <span className="rounded-full bg-highlight px-1.5 py-0.5 text-[11px] font-semibold text-highlight-foreground">Today</span>}
               </h2>
               <ul className="grid gap-1">
                 {list.map((v) => (
@@ -70,10 +70,11 @@ export function WeekGrid({ days, today, chairs, visits, onOpen, onDay }: Props) 
                     <button
                       type="button"
                       onClick={() => onOpen(v)}
-                      className="grid w-full gap-0.5 rounded-md border px-2 py-1 text-left text-xs outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+                      className="relative grid w-full cursor-pointer gap-0.5 overflow-hidden rounded-md border py-1 pr-2 pl-3 text-left text-xs outline-none transition-colors hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50"
                     >
+                      <span aria-hidden className={cn("absolute inset-y-0 left-0 w-1", statusBar(v.status))} />
                       <span className="flex items-center justify-between gap-1">
-                        <span className="font-medium">{formatTime(new Date(v.start))}</span>
+                        <span className="font-medium tabular-nums">{formatTime(new Date(v.start))}</span>
                         {v.hasAlerts && <AlertMark />}
                       </span>
                       <span className="truncate">{v.patientName}</span>

@@ -9,9 +9,9 @@ export const metadata: Metadata = { title: "Join" };
 export default async function JoinPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
   const branch = await branchForJoinCode(code);
-  if (!branch) return <AuthCard title="This QR code no longer works" description="Ask the owner for the current one." />;
+  if (!branch) return <AuthCard brand title="This QR code no longer works" description="Ask the owner for the current one." />;
   return (
-    <AuthCard
+    <AuthCard brand
       title="Ask for a staff account"
       description={`${await practiceName()}, ${branch.name}. The owner or a manager here approves your account.`}
     >

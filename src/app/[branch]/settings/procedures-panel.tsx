@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingRows } from "@/components/loading";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -20,7 +21,7 @@ export function ProceduresPanel() {
   const services = useQuery({ queryKey: ["procedures"], queryFn: () => api<Service[]>("/procedures") });
   const dentists = useDentists();
   const [editing, setEditing] = useState<Service | "new" | null>(null);
-  if (services.isPending || dentists.isPending) return <p className="text-muted-foreground">Loading services...</p>;
+  if (services.isPending || dentists.isPending) return <LoadingRows rows={3} label="Loading services..." />;
   if (services.isError) return <FormAlert message={errorMessage(services.error)} />;
   if (dentists.isError) return <FormAlert message={errorMessage(dentists.error)} />;
   const names = new Map(dentists.data.map((d) => [d.id, d.name]));
@@ -30,7 +31,7 @@ export function ProceduresPanel() {
         <p className="text-muted-foreground">Visits start at the standard length on the Practice tab. Online, a service goes only to its dentists.</p>
         <Button onClick={() => setEditing("new")}>Add service</Button>
       </div>
-      <div className="overflow-x-auto rounded-lg border">
+      <div className="overflow-x-auto rounded-xl border bg-card shadow-xs">
         <Table>
           <TableHeader>
             <TableRow>

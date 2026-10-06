@@ -1,5 +1,8 @@
 "use client";
 
+import { ClipboardListIcon } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
+import { LoadingRows } from "@/components/loading";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -101,18 +104,18 @@ export function PatientForms({ branchCode, onOpenPatient }: { branchCode: string
             <DialogDescription>Forms patients sent from this branch&apos;s poster. Check each one with the patient at the desk.</DialogDescription>
           </DialogHeader>
           {list.isPending ? (
-            <p className="text-sm text-muted-foreground">Loading patient forms...</p>
+            <LoadingRows rows={3} label="Loading patient forms..." />
           ) : list.isError ? (
             <FormAlert message={errorMessage(list.error)} />
           ) : count === 0 ? (
-            <p className="text-sm text-muted-foreground">No patient forms are waiting.</p>
+            <EmptyState icon={ClipboardListIcon} title="No patient forms are waiting" />
           ) : (
             <ul className="grid gap-2">
               {list.data.map((f) => (
                 <li key={f.id}>
                   <button
                     type="button"
-                    className="grid min-h-11 w-full gap-1 rounded-md border p-3 text-left text-sm wrap-anywhere outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+                    className="grid min-h-11 w-full cursor-pointer gap-1 rounded-xl border bg-card p-3 text-left text-sm wrap-anywhere shadow-xs outline-none transition-colors hover:border-primary/40 hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50"
                     onClick={() => {
                       setListOpen(false);
                       choose(f);
@@ -136,7 +139,7 @@ export function PatientForms({ branchCode, onOpenPatient }: { branchCode: string
                 <DialogTitle>{`${chosen.lastName}, ${chosen.firstName}`}</DialogTitle>
                 <DialogDescription>{`Sent ${formatDateTime(new Date(chosen.createdAt))}. Check it with the patient.`}</DialogDescription>
               </DialogHeader>
-              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-xl border bg-muted/40 p-3 text-sm">
                 <dt className="text-muted-foreground">Name</dt>
                 <dd>{[chosen.firstName, chosen.middleName, chosen.lastName].filter(Boolean).join(" ")}</dd>
                 <dt className="text-muted-foreground">Birthday</dt>
@@ -158,10 +161,10 @@ export function PatientForms({ branchCode, onOpenPatient }: { branchCode: string
               ) : (
                 chosen.matches.length > 0 && (
                   <div className="grid gap-2">
-                    <p className="text-sm font-medium">May already be on file</p>
+                    <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">May already be on file</p>
                     <ul className="grid gap-2">
                       {chosen.matches.map((m) => (
-                        <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2">
+                        <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-card p-3 shadow-xs">
                           <span>
                             {`${m.lastName}, ${m.firstName}`}
                             <span className="block text-sm text-muted-foreground">{[`Chart ${m.chartNo}`, m.birthday, m.mobile].filter(Boolean).join(" · ")}</span>

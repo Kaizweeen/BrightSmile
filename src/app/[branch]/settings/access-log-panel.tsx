@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingRows } from "@/components/loading";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { FormAlert } from "@/components/form-alert";
@@ -71,11 +72,11 @@ export function AccessLogPanel() {
       </div>
       {log.isError && <FormAlert message={errorMessage(log.error)} />}
       {log.isPending ? (
-        <p className="text-muted-foreground">Loading the access log...</p>
+        <LoadingRows rows={3} label="Loading the access log..." />
       ) : rows.length === 0 ? (
         <p className="text-muted-foreground">Nothing recorded for this choice.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border">
+        <div className="overflow-x-auto rounded-xl border bg-card shadow-xs">
           <Table>
             <TableHeader>
               <TableRow>

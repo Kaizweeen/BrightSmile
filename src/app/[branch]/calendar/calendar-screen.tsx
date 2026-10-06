@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { Armchair, FootprintsIcon, PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { BookingPanel, type BookingIntent } from "@/components/calendar/booking-panel";
@@ -8,10 +9,13 @@ import { DayGrid } from "@/components/calendar/day-grid";
 import { OnlineRequests } from "@/components/calendar/online-requests";
 import { VisitPanel } from "@/components/calendar/visit-panel";
 import { WeekGrid } from "@/components/calendar/week-grid";
+import { DateNav } from "@/components/date-nav";
+import { EmptyState } from "@/components/empty-state";
 import { FormAlert } from "@/components/form-alert";
+import { LoadingRows } from "@/components/loading";
+import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import type { OperatingHours } from "@/db/schema";
 import { api, errorMessage } from "@/lib/fetcher";
 import type { Subject } from "@/lib/permissions";
@@ -54,45 +58,49 @@ export function CalendarScreen({ branch, chairs, date, view, today, staff, canBo
 
   return (
     <div className="grid gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">{view === "week" ? `Week of ${formatDay(days[0])}` : formatDay(date)}</h1>
-          <p className="text-sm text-muted-foreground">{`${branch.name}${view === "day" && date === today ? ", today" : ""}`}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {canBook && (
-            <>
-              <Button onClick={() => setIntent({ kind: "new", date: date < today ? today : date })}>New booking</Button>
-              <Button variant="outline" onClick={() => setIntent({ kind: "new", date: today, walkIn: true })}>
-                Walk-in
-              </Button>
-            </>
-          )}
-          {canManage && <OnlineRequests branchCode={branch.code} onOpen={setOpenId} />}
-          <Button variant="outline" onClick={() => go(addDays(date, -step))}>
-            Previous
-          </Button>
-          <Button variant="outline" onClick={() => go(today)}>
-            Today
-          </Button>
-          <Button variant="outline" onClick={() => go(addDays(date, step))}>
-            Next
-          </Button>
-          <Input type="date" aria-label="Date" className="w-auto" value={date} onChange={(event) => event.target.value && go(event.target.value)} />
-          <div role="group" aria-label="View" className="flex gap-1">
-            <Button variant={view === "day" ? "default" : "outline"} aria-pressed={view === "day"} onClick={() => go(date, "day")}>
-              Day
+      <PageHeader
+        title={view === "week" ? `Week of ${formatDay(days[0])}` : formatDay(date)}
+        description={`${branch.name}${view === "day" && date === today ? ", today" : ""}`}
+        actions={
+          <>
+            {canBook && (
+              <>
+                <Button onClick={() => setIntent({ kind: "new", date: date < today ? today : date })}>
+                  <PlusIcon aria-hidden data-icon="inline-start" />
+                  New booking
+                </Button>
+                <Button variant="outline" onClick={() => setIntent({ kind: "new", date: today, walkIn: true })}>
+                  <FootprintsIcon aria-hidden data-icon="inline-start" />
+                  Walk-in
+                </Button>
+              </>
+            )}
+            {canManage && <OnlineRequests branchCode={branch.code} onOpen={setOpenId} />}
+          </>
+        }
+      />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <DateNav date={date} today={today} step={step} unit={view} onGo={(next) => go(next)} />
+        <div role="group" aria-label="View" className="inline-flex gap-0.5 rounded-lg bg-muted p-0.5">
+          {(["day", "week"] as const).map((v) => (
+            <Button
+              key={v}
+              variant="ghost"
+              aria-pressed={view === v}
+              onClick={() => go(date, v)}
+              className={view === v ? "bg-card text-foreground shadow-xs hover:bg-card" : "text-muted-foreground"}
+            >
+              {v === "day" ? "Day" : "Week"}
             </Button>
-            <Button variant={view === "week" ? "default" : "outline"} aria-pressed={view === "week"} onClick={() => go(date, "week")}>
-              Week
-            </Button>
-          </div>
+          ))}
         </div>
       </div>
       {visits.isError && <FormAlert message={errorMessage(visits.error)} />}
-      {visits.isPending && <p className="text-sm text-muted-foreground">Loading visits...</p>}
+      {visits.isPending && <LoadingRows rows={6} label="Loading visits..." />}
       {columns.length === 0 ? (
-        <p className="text-muted-foreground">This branch has no chairs yet. The owner adds them in Settings.</p>
+        <EmptyState icon={Armchair} title="This branch has no chairs yet">
+          The owner adds them in Settings.
+        </EmptyState>
       ) : view === "week" ? (
         <WeekGrid days={days} today={today} chairs={chairs} visits={list} onOpen={(v) => setOpenId(v.id)} onDay={(day) => go(day, "day")} />
       ) : (
@@ -114,7 +122,7 @@ export function CalendarScreen({ branch, chairs, date, view, today, staff, canBo
                 <button
                   type="button"
                   onClick={() => setOpenId(v.id)}
-                  className="flex min-h-11 items-center gap-2 rounded-md border px-3 text-sm outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-9"
+                  className="flex min-h-11 items-center gap-2 rounded-md border px-3 text-sm outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-9"
                 >
                   {`${formatTime(new Date(v.start))} ${v.patientName}`}
                   <StatusBadge status={v.status} online={v.source === "portal"} />

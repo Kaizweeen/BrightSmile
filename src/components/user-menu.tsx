@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronsUpDownIcon, KeyRoundIcon, LogOutIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -10,7 +11,16 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { authClient } from "@/lib/auth-client";
 
-export function UserMenu({ name, role }: { name: string; role: string }) {
+const initials = (name: string) =>
+  name
+    .replace(/^(dr|mr|mrs|ms)\.?\s+/i, "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join("");
+
+export function UserMenu({ name, role, variant = "header" }: { name: string; role: string; variant?: "header" | "sidebar" }) {
   const router = useRouter();
   const [changing, setChanging] = useState(false);
 
@@ -23,15 +33,36 @@ export function UserMenu({ name, role }: { name: string; role: string }) {
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger className={buttonVariants({ variant: "ghost" })}>
-          {name}
-          <span className="sr-only">{`, ${role}. Open the account menu.`}</span>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        {variant === "sidebar" ? (
+          <DropdownMenuTrigger className="flex h-14 w-full cursor-pointer items-center gap-3 rounded-lg px-2 text-left outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-3 focus-visible:ring-ring/60">
+            <span aria-hidden className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
+              {initials(name)}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-white">{name}</span>
+              <span className="block truncate text-xs text-sidebar-muted">{role}</span>
+              <span className="sr-only">. Open the account menu.</span>
+            </span>
+            <ChevronsUpDownIcon aria-hidden className="size-4 shrink-0 text-sidebar-muted" />
+          </DropdownMenuTrigger>
+        ) : (
+          <DropdownMenuTrigger className={buttonVariants({ variant: "ghost" })}>
+            {name}
+            <span className="sr-only">{`, ${role}. Open the account menu.`}</span>
+          </DropdownMenuTrigger>
+        )}
+        <DropdownMenuContent align={variant === "sidebar" ? "start" : "end"} side={variant === "sidebar" ? "top" : "bottom"}>
           <p className="px-2 py-1.5 text-xs text-muted-foreground">{role}</p>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => setChanging(true)}>Change password</DropdownMenuItem>
-          <DropdownMenuItem onClick={signOut}>Sign out</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setChanging(true)}>
+            <KeyRoundIcon aria-hidden />
+            Change password
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" onClick={signOut}>
+            <LogOutIcon aria-hidden />
+            Sign out
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
       <ChangePasswordDialog open={changing} onOpenChange={setChanging} />

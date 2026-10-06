@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingRows } from "@/components/loading";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -30,7 +31,7 @@ export function ChairsPanel({ initialBranch }: { initialBranch: string }) {
     onError: (error) => toast.error(errorMessage(error)),
   });
 
-  if (branches.isPending) return <p className="text-muted-foreground">Loading...</p>;
+  if (branches.isPending) return <LoadingRows rows={3} label="Loading..." />;
   if (branches.isError) return <FormAlert message={errorMessage(branches.error)} />;
   if (code === null) return <p>Add a branch first.</p>;
   return (
@@ -46,7 +47,7 @@ export function ChairsPanel({ initialBranch }: { initialBranch: string }) {
         </NativeSelect>
       </label>
       {chairs.isPending ? (
-        <p className="text-muted-foreground">Loading chairs...</p>
+        <LoadingRows rows={3} label="Loading chairs..." />
       ) : chairs.isError ? (
         <FormAlert message={errorMessage(chairs.error)} />
       ) : (
@@ -87,7 +88,7 @@ function ChairRow({ code, chair, onChanged }: { code: string; chair: Chair; onCh
     onError: (error) => toast.error(errorMessage(error)),
   });
   return (
-    <li className="flex flex-wrap items-center gap-2 rounded-md border p-2">
+    <li className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-3 shadow-xs">
       <span className="w-20 font-medium">{`Chair ${chair.number}`}</span>
       <label className="sr-only" htmlFor={`chair-${chair.number}`}>{`Label of chair ${chair.number}`}</label>
       <Input id={`chair-${chair.number}`} value={label} onChange={(event) => setLabel(event.target.value)} maxLength={30} className="w-48" />

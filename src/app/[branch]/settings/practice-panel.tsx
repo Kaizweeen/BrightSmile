@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingRows } from "@/components/loading";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
@@ -19,7 +20,7 @@ const CLEANING = Array.from({ length: 13 }, (_, i) => i * 5); // none to 60 minu
 /** Online booking spec 11: the practice's name, standard visit length, cleaning time, and online booking. */
 export function PracticePanel({ bookingUrl }: { bookingUrl: string }) {
   const settings = usePractice();
-  if (settings.isPending) return <p className="text-muted-foreground">Loading the practice settings...</p>;
+  if (settings.isPending) return <LoadingRows rows={3} label="Loading the practice settings..." />;
   if (settings.isError) return <FormAlert message={errorMessage(settings.error)} />;
   return <PracticeForm initial={settings.data} bookingUrl={bookingUrl} />;
 }
@@ -47,7 +48,7 @@ function PracticeForm({ initial, bookingUrl }: { initial: PracticeSettings; book
   });
   return (
     <form
-      className="grid max-w-xl gap-4"
+      className="grid max-w-2xl gap-4 rounded-xl border bg-card p-5 shadow-xs"
       onSubmit={(event) => {
         event.preventDefault();
         save.mutate();

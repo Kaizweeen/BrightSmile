@@ -13,7 +13,7 @@ export default async function SetupPage() {
   // Spec 6.1: once an owner exists, /setup answers 404; the owner's own reset lives at /setup/recover.
   if (await ownerExists()) notFound();
   return (
-    <AuthCard
+    <AuthCard brand
       title="Set up DentaSync"
       description="Name the practice and create the owner's account. You add the branches next."
     >

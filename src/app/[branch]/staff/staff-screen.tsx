@@ -1,5 +1,9 @@
 "use client";
 
+import { LoadingRows } from "@/components/loading";
+import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/components/empty-state";
+import { UserPlusIcon } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -65,16 +69,19 @@ export function StaffScreen({ me, branches }: { me: Me; branches: BranchOption[]
 
   return (
     <div className="grid gap-8">
+      <PageHeader title="Staff" description="Approve new accounts, and manage who can sign in and where." />
       <section aria-labelledby="requests-title" className="grid gap-3">
-        <h1 id="requests-title" className="text-xl font-semibold">
+        <h2 id="requests-title" className="text-lg font-semibold">
           Join requests
-        </h1>
+        </h2>
         {requests.isPending ? (
-          <p className="text-muted-foreground">Loading requests...</p>
+          <LoadingRows rows={3} label="Loading requests..." />
         ) : requests.isError ? (
           <FormAlert message={errorMessage(requests.error)} />
         ) : requests.data.length === 0 ? (
-          <p className="text-muted-foreground">No one is waiting. New staff scan the QR poster at their branch to ask for an account.</p>
+          <EmptyState icon={UserPlusIcon} title="No one is waiting">
+            New staff scan the QR poster at their branch to ask for an account.
+          </EmptyState>
         ) : (
           <ul className="grid gap-3 md:grid-cols-2">
             {requests.data.map((r) => (
@@ -100,15 +107,15 @@ export function StaffScreen({ me, branches }: { me: Me; branches: BranchOption[]
       </section>
 
       <section aria-labelledby="staff-title" className="grid gap-3">
-        <h2 id="staff-title" className="text-xl font-semibold">
-          Staff
+        <h2 id="staff-title" className="text-lg font-semibold">
+          Team members
         </h2>
         {staff.isPending ? (
-          <p className="text-muted-foreground">Loading staff...</p>
+          <LoadingRows rows={3} label="Loading staff..." />
         ) : staff.isError ? (
           <FormAlert message={errorMessage(staff.error)} />
         ) : (
-          <div className="overflow-x-auto rounded-lg border">
+          <div className="overflow-x-auto rounded-xl border bg-card shadow-xs">
             <Table>
               <TableHeader>
                 <TableRow>

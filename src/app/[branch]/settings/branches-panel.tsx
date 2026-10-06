@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingRows } from "@/components/loading";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
@@ -41,7 +42,7 @@ export function BranchesPanel() {
     onError: (error) => toast.error(errorMessage(error)),
   });
 
-  if (branches.isPending) return <p className="text-muted-foreground">Loading branches...</p>;
+  if (branches.isPending) return <LoadingRows rows={3} label="Loading branches..." />;
   if (branches.isError) return <FormAlert message={errorMessage(branches.error)} />;
   return (
     <div className="grid gap-4">
@@ -52,7 +53,7 @@ export function BranchesPanel() {
       {branches.data.length === 0 ? (
         <p>No branches yet. Add the first one.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border">
+        <div className="overflow-x-auto rounded-xl border bg-card shadow-xs">
           <Table>
             <TableHeader>
               <TableRow>

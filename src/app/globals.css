@@ -14,9 +14,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-display), var(--font-body), ui-sans-serif, system-ui, sans-serif;
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -33,55 +33,138 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-highlight: var(--highlight);
+  --color-highlight-foreground: var(--highlight-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-border: var(--sidebar-border);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.4);
   --radius-2xl: calc(var(--radius) * 1.8);
+  --shadow-xs: 0 1px 2px 0 rgb(12 42 63 / 0.06);
+  --shadow-sm: 0 1px 3px 0 rgb(12 42 63 / 0.08), 0 1px 2px -1px rgb(12 42 63 / 0.06);
+  --shadow-md: 0 4px 10px -2px rgb(12 42 63 / 0.1), 0 2px 4px -2px rgb(12 42 63 / 0.06);
+  --shadow-lg: 0 12px 28px -6px rgb(12 42 63 / 0.16), 0 4px 8px -4px rgb(12 42 63 / 0.08);
 }
 
+/*
+ * Staff app palette: fresh sky blue on cool neutrals, warm amber as the one accent.
+ * Every text pair is 4.5:1 or better; field borders (--input) are 3:1 against their surface.
+ */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.49 0.09 200);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.5 0 0);
-  --accent: oklch(0.96 0.02 200);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.87 0 0);
-  --ring: oklch(0.49 0.09 200);
-  --radius: 0.625rem;
+  --background: #f4f8fb;
+  --foreground: #0c2a3f;
+  --card: #ffffff;
+  --card-foreground: #0c2a3f;
+  --popover: #ffffff;
+  --popover-foreground: #0c2a3f;
+  --primary: #0369a1;
+  --primary-foreground: #ffffff;
+  --secondary: #e6eff6;
+  --secondary-foreground: #0c2a3f;
+  --muted: #eaf1f7;
+  --muted-foreground: #4a5e70;
+  --accent: #dcebf6;
+  --accent-foreground: #0c2a3f;
+  --destructive: #dc2626;
+  --border: #d5e3ee;
+  --input: #7b96ab;
+  --ring: #0ea5e9;
+  --radius: 0.5rem;
+
+  --highlight: #f59e0b;
+  --highlight-foreground: #3b2a00;
+  --success: #047857;
+  --success-foreground: #ffffff;
+  --warning: #b45309;
+  --warning-foreground: #ffffff;
+
+  --sidebar: #0b2b40;
+  --sidebar-foreground: #e3eef6;
+  --sidebar-muted: #9db6c8;
+  --sidebar-accent: rgb(255 255 255 / 0.1);
+  --sidebar-border: rgb(255 255 255 / 0.12);
+
+  /* A visit's status: tinted chip, its text, and a solid bar for calendar cards. */
+  --status-requested-bg: #fef3c7;
+  --status-requested-fg: #78350f;
+  --status-requested-bar: #f59e0b;
+  --status-confirmed-bg: #e0f2fe;
+  --status-confirmed-fg: #0c4a6e;
+  --status-confirmed-bar: #0ea5e9;
+  --status-checked_in-bg: #ede9fe;
+  --status-checked_in-fg: #4c1d95;
+  --status-checked_in-bar: #8b5cf6;
+  --status-in_treatment-bg: #ccfbf1;
+  --status-in_treatment-fg: #134e4a;
+  --status-in_treatment-bar: #14b8a6;
+  --status-completed-bg: #d1fae5;
+  --status-completed-fg: #064e3b;
+  --status-completed-bar: #10b981;
+  --status-no_show-bg: #ffe4e6;
+  --status-no_show-fg: #881337;
+  --status-no_show-bar: #f43f5e;
+  --status-cancelled-bg: #e2e8f0;
+  --status-cancelled-fg: #1e293b;
+  --status-cancelled-bar: #94a3b8;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: oklch(0.16 0.01 220);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.21 0.01 220);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.21 0.01 220);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.74 0.1 195);
-    --primary-foreground: oklch(0.2 0.03 200);
-    --secondary: oklch(0.27 0.01 220);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.27 0.01 220);
-    --muted-foreground: oklch(0.75 0 0);
-    --accent: oklch(0.3 0.03 200);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 12%);
-    --input: oklch(1 0 0 / 20%);
-    --ring: oklch(0.74 0.1 195);
+    --background: #0b1722;
+    --foreground: #e6f0f7;
+    --card: #12212f;
+    --card-foreground: #e6f0f7;
+    --popover: #162738;
+    --popover-foreground: #e6f0f7;
+    --primary: #38bdf8;
+    --primary-foreground: #04202f;
+    --secondary: #1a2e40;
+    --secondary-foreground: #e6f0f7;
+    --muted: #172a3a;
+    --muted-foreground: #9fb4c5;
+    --accent: #1e3a52;
+    --accent-foreground: #e6f0f7;
+    --destructive: #f87171;
+    --border: #25394a;
+    --input: #5b7a92;
+    --ring: #38bdf8;
+
+    --highlight: #fbbf24;
+    --highlight-foreground: #2b1f00;
+    --success: #34d399;
+    --success-foreground: #032b1f;
+    --warning: #fbbf24;
+    --warning-foreground: #2b1f00;
+
+    --sidebar: #08121b;
+    --sidebar-foreground: #e3eef6;
+    --sidebar-muted: #8ea8bb;
+    --sidebar-accent: rgb(255 255 255 / 0.08);
+    --sidebar-border: rgb(255 255 255 / 0.1);
+
+    --status-requested-bg: rgb(245 158 11 / 0.2);
+    --status-requested-fg: #fde68a;
+    --status-confirmed-bg: rgb(14 165 233 / 0.2);
+    --status-confirmed-fg: #bae6fd;
+    --status-checked_in-bg: rgb(139 92 246 / 0.22);
+    --status-checked_in-fg: #ddd6fe;
+    --status-in_treatment-bg: rgb(20 184 166 / 0.2);
+    --status-in_treatment-fg: #99f6e4;
+    --status-completed-bg: rgb(16 185 129 / 0.2);
+    --status-completed-fg: #a7f3d0;
+    --status-no_show-bg: rgb(244 63 94 / 0.22);
+    --status-no_show-fg: #fecdd3;
+    --status-cancelled-bg: rgb(148 163 184 / 0.2);
+    --status-cancelled-fg: #e2e8f0;
   }
 }
 
@@ -94,6 +177,28 @@
   }
   html {
     @apply font-sans;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-heading tracking-tight;
+  }
+  /* Times, receipts, pesos and counts line up in columns. */
+  table,
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Motion is feedback, never decoration: honour a request for less of it. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 

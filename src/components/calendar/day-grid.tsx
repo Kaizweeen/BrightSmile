@@ -2,7 +2,7 @@
 
 import { Fragment, useState, useSyncExternalStore } from "react";
 import { AlertMark } from "@/components/alert-mark";
-import { StatusBadge } from "@/components/status-badge";
+import { StatusBadge, statusBar } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { formatTime, manilaInstant } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -49,9 +49,9 @@ export function DayGrid({ date, range, chairs, visits, onOpen, onSlot }: Props) 
           </Button>
         ))}
       </div>
-      <div className="flex overflow-x-auto rounded-lg border">
-        <div className="w-20 shrink-0 border-r text-xs text-muted-foreground">
-          <div className="h-10 border-b" />
+      <div className="flex overflow-x-auto rounded-xl border bg-card shadow-xs">
+        <div className="w-20 shrink-0 border-r text-xs text-muted-foreground tabular-nums">
+          <div className="h-10 border-b bg-muted/60" />
           <div className="relative" style={{ height }}>
             {labels.map((m) => (
               <span key={m} className="absolute right-2 pt-0.5" style={{ top: px(m - range.start) }}>
@@ -62,7 +62,7 @@ export function DayGrid({ date, range, chairs, visits, onOpen, onSlot }: Props) 
         </div>
         {chairs.map((c) => (
           <div key={c.number} className={cn("min-w-40 flex-1 border-r last:border-r-0", c.number !== shown && "hidden sm:block")}>
-            <div className="flex h-10 items-center border-b px-2 text-sm font-medium">{chairName(c.number, c.label)}</div>
+            <div className="flex h-10 items-center border-b bg-muted/60 px-3 text-sm font-semibold">{chairName(c.number, c.label)}</div>
             <div
               className={cn("relative", onSlot && "cursor-pointer")}
               style={{ height, backgroundImage: "linear-gradient(to bottom, var(--border) 1px, transparent 1px)", backgroundSize: `100% ${px(30)}px` }}
@@ -83,11 +83,12 @@ export function DayGrid({ date, range, chairs, visits, onOpen, onSlot }: Props) 
                         type="button"
                         onClick={() => onOpen(v)}
                         className={cn(
-                          "absolute inset-x-1 flex min-h-11 flex-col items-start overflow-hidden rounded-md border bg-card px-2 py-1 text-left text-xs shadow-sm outline-none hover:bg-muted focus-visible:z-20 focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-0",
-                          v.status === "completed" && "opacity-70",
+                          "absolute inset-x-1 flex min-h-11 cursor-pointer flex-col items-start overflow-hidden rounded-md border bg-card py-1 pr-2 pl-3 text-left text-xs shadow-sm outline-none transition-colors hover:bg-accent focus-visible:z-20 focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-0",
+                          v.status === "completed" && "bg-muted/70",
                         )}
                         style={{ top: px(at.top), height: Math.max(px(at.height), ROW_PX) }}
                       >
+                        <span aria-hidden className={cn("absolute inset-y-0 left-0 w-1", statusBar(v.status))} />
                         <span className="flex w-full items-start justify-between gap-1">
                           <span className="truncate font-medium">{`${formatTime(new Date(v.start))} ${v.patientName}`}</span>
                           {v.hasAlerts && <AlertMark />}

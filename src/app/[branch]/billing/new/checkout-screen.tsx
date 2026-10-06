@@ -4,6 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { FormAlert } from "@/components/form-alert";
+import { PageHeader } from "@/components/page-header";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { billTotal, changeDue, peso, toCentavos } from "@/lib/billing";
@@ -57,12 +58,9 @@ export function CheckoutScreen({ branch, draft }: { branch: string; draft: Draft
         issue.mutate();
       }}
     >
-      <div>
-        <h1 className="text-xl font-semibold">Take payment</h1>
-        <p className="text-muted-foreground">{draft.patientName ?? "Walk-in sale"}</p>
-      </div>
+      <PageHeader title="Take payment" description={draft.patientName ?? "Walk-in sale"} />
 
-      <fieldset className="grid gap-3">
+      <fieldset className="grid gap-3 rounded-xl border bg-card p-4 shadow-xs">
         <legend className="mb-1 text-sm font-medium">Services and items</legend>
         {lines.map((l, i) => (
           <div key={i} className="grid grid-cols-[1fr_5rem_8rem_auto] items-end gap-2">
@@ -81,11 +79,11 @@ export function CheckoutScreen({ branch, draft }: { branch: string; draft: Draft
         </div>
       </fieldset>
 
-      <p className="text-3xl font-semibold" aria-live="polite">
+      <p className="rounded-xl bg-primary px-5 py-4 font-heading text-3xl font-semibold text-primary-foreground tabular-nums shadow-sm" aria-live="polite">
         Total {peso(total)}
       </p>
 
-      <fieldset className="grid gap-2">
+      <fieldset className="grid gap-2 rounded-xl border bg-card p-4 shadow-xs">
         <legend className="mb-1 text-sm font-medium">Payment method</legend>
         <label className="flex min-h-11 items-center gap-3">
           <input type="radio" name="method" checked={method === "cash"} onChange={() => setMethod("cash")} className="size-4 accent-primary" />
@@ -110,7 +108,7 @@ export function CheckoutScreen({ branch, draft }: { branch: string; draft: Draft
             // eslint-disable-next-line @next/next/no-img-element
             <img src={draft.qrImage} alt="The clinic's payment QR code" className="size-64 rounded-lg border bg-white object-contain p-2" />
           ) : (
-            <p className="rounded-lg border p-4 text-muted-foreground">No QR code is set up. The owner can upload one in Settings, Billing.</p>
+            <p className="rounded-xl border bg-card p-4 text-muted-foreground">No QR code is set up. The owner can upload one in Settings, Billing.</p>
           )}
           <TextField label="Reference number (optional)" value={reference} maxLength={60} onChange={(e) => setReference(e.target.value)} hint="From the banking or e-wallet app." />
         </div>

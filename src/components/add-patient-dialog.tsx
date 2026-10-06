@@ -114,7 +114,7 @@ export function AddPatientDialog({
             </Alert>
             <ul className="grid gap-2">
               {candidates.map((c) => (
-                <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2">
+                <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-card p-3 shadow-xs">
                   <span>
                     {`${c.lastName}, ${c.firstName}`}
                     <span className="block text-sm text-muted-foreground">{[`Chart ${c.chartNo}`, c.birthday, c.mobile].filter(Boolean).join(" · ")}</span>
