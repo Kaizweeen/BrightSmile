@@ -2,6 +2,7 @@ import { ArrowRight, ArrowUpRight, CalendarCheck, Check, Clock, MapPin, MessageS
 import type { Metadata } from "next";
 import { Figtree } from "next/font/google";
 import Image from "next/image";
+import Link from "next/link";
 import { Header } from "./header";
 import { CLINIC, CLINICS, DOCTORS, PRACTICE, QR_ROWS, SERVICES } from "./data";
 
@@ -11,6 +12,8 @@ export const metadata: Metadata = {
   title: "Bright Smile Dental Clinic | Makati City",
   description:
     "Bright Smile Dental Clinic in Makati City. Open 9:00 AM to 5:00 PM. Cleaning, fillings, braces, root canal and more. Book a visit online.",
+  // The one page here meant for search engines; the rest of DentaSync stays out (robots.ts, and the root layout).
+  robots: { index: true, follow: true },
 };
 
 // One shape rule for the page: buttons and chips are pills, every container is rounded-3xl (big) or rounded-2xl (small).
@@ -55,7 +58,7 @@ function Qr() {
   );
 }
 
-export default function ClinicPage() {
+export function Landing() {
   return (
     <div className={`${figtree.className} bg-white text-slate-700 antialiased`}>
       <Header />
@@ -242,7 +245,8 @@ export default function ClinicPage() {
           </div>
         </div>
         <div className="border-t border-white/10 py-4 text-center text-xs text-slate-400">
-          &copy; {new Date().getFullYear()} {CLINIC.name}. All rights reserved.
+          &copy; {new Date().getFullYear()} {CLINIC.name}. All rights reserved.{" "}
+          <Link href="/login" className="underline hover:text-slate-200">Staff sign in</Link>
         </div>
       </footer>
     </div>
