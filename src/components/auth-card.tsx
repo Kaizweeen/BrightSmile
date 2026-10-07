@@ -1,4 +1,4 @@
-import { Smile } from "lucide-react";
+import { LogoGlyph } from "@/components/logo-glyph";
 
 /**
  * The page around the account forms. Staff pages (brand) sit on a green background with the form on a white card;
@@ -16,7 +16,7 @@ export function AuthCard({ title, description, brand = false, children }: { titl
     >
       <p className="flex items-center gap-2 font-heading text-lg font-semibold text-primary">
         <span aria-hidden className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-          <Smile className="size-5" />
+          <LogoGlyph className="size-5" />
         </span>
         DentaSync
       </p>

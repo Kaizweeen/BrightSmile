@@ -82,7 +82,6 @@ export const QR_ROWS = [
 ];
 
 export const NAV = [
-  { href: "#hours", label: "Hours" },
   { href: "#doctors", label: "Doctors" },
   { href: "#services", label: "Services" },
   { href: "#locations", label: "Locations" },

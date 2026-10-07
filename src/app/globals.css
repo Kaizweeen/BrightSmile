@@ -163,3 +163,16 @@
   --color-brand-700: #0f6b68;
   --color-brand-900: #0b3d4a;
 }
+
+/* Clinic landing page: one entrance moment, off when the visitor prefers reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .rise {
+    animation: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+  }
+}

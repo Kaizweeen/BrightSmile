@@ -11,8 +11,11 @@ export function Header() {
     <header className="sticky top-0 z-40 border-b border-slate-100 bg-white/90 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5">
         <a href="#top" className="flex items-center gap-2 font-extrabold text-brand-900">
-          <Image src="/clinic/logo.webp" alt="Bright Smile Dental Clinic logo" width={40} height={40} unoptimized className="size-10 rounded-full object-cover" />
-          <span>Bright Smile</span>
+          <Image src="/clinic/emblem.png" alt="Bright Smile Dental Clinic logo" width={356} height={341} unoptimized className="h-10 w-auto object-contain" />
+          <span className="flex flex-col leading-tight">
+            <span>Bright Smile</span>
+            <span className="text-[11px] font-semibold tracking-[0.18em] text-brand-500 uppercase">Dental Clinic</span>
+          </span>
         </a>
         <nav className="hidden items-center gap-7 text-sm font-medium md:flex">
           {NAV.map((n) => (
