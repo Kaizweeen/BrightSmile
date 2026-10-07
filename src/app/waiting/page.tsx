@@ -16,7 +16,7 @@ export default async function WaitingPage() {
   if (staff.status !== "pending") redirect("/");
   const branch = (await listBranches()).find((b) => b.id === staff.primaryBranchId);
   return (
-    <AuthCard
+    <AuthCard brand
       title="Waiting for approval"
       description={`Ask the owner or a manager at ${branch?.name ?? "your branch"} to approve you. Requests expire after 7 days.`}
     >

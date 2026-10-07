@@ -8,7 +8,7 @@ import { AlertBanner } from "@/components/alert-banner";
 import { FormAlert } from "@/components/form-alert";
 import { StatusBadge } from "@/components/status-badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { api, errorMessage } from "@/lib/fetcher";
 import { actionFor, actionLabel, changeProblem, NEXT, type Status } from "@/lib/lifecycle";
@@ -61,7 +61,7 @@ export function VisitPanel({ visitId, branch, staff, onClose, onMove }: Props) {
   const canMove = v !== undefined && ["requested", "confirmed", "checked_in"].includes(v.status) && can(staff, "appointment.manage", { branchId: v.branchId });
 
   return (
-    <Dialog
+    <Sheet
       open={visitId !== null}
       onOpenChange={(open) => {
         if (open) return;
@@ -70,20 +70,21 @@ export function VisitPanel({ visitId, branch, staff, onClose, onMove }: Props) {
         onClose();
       }}
     >
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
+      <SheetContent side="right" className="sm:max-w-lg">
         {!v ? (
-          <DialogHeader>
-            <DialogTitle>Visit</DialogTitle>
-            {detail.isError ? <FormAlert message={errorMessage(detail.error)} /> : <DialogDescription>Loading...</DialogDescription>}
-          </DialogHeader>
+          <SheetHeader>
+            <SheetTitle>Visit</SheetTitle>
+            {detail.isError ? <FormAlert message={errorMessage(detail.error)} /> : <SheetDescription>Loading...</SheetDescription>}
+          </SheetHeader>
         ) : (
-          <div className="grid gap-4">
-            <DialogHeader>
-              <DialogTitle>{v.patientName}</DialogTitle>
-              <DialogDescription>
+          <>
+            <SheetHeader>
+              <SheetTitle>{v.patientName}</SheetTitle>
+              <SheetDescription>
                 {`${formatDateTime(new Date(v.start))} to ${formatTime(new Date(v.end))}, ${chairName(v.chairNumber, v.chairLabel)}, ${v.branchName}`}
-              </DialogDescription>
-            </DialogHeader>
+              </SheetDescription>
+            </SheetHeader>
+            <SheetBody className="grid content-start gap-4">
             <AlertBanner lines={v.alerts} />
             <dl className="grid gap-x-3 gap-y-2 text-sm sm:grid-cols-[8rem_1fr]">
               <dt className="text-muted-foreground">Status</dt>
@@ -144,7 +145,7 @@ export function VisitPanel({ visitId, branch, staff, onClose, onMove }: Props) {
             </div>
             {cancelling && (
               <form
-                className="grid gap-2 rounded-lg border p-3"
+                className="grid gap-2 rounded-xl border bg-card p-3 shadow-xs"
                 onSubmit={(event) => {
                   event.preventDefault();
                   change.mutate({ to: "cancelled", reason });
@@ -165,7 +166,7 @@ export function VisitPanel({ visitId, branch, staff, onClose, onMove }: Props) {
               </form>
             )}
             <section className="grid gap-1 text-sm">
-              <h3 className="font-medium">History</h3>
+              <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">History</h3>
               {v.history.length === 0 ? (
                 <p className="text-muted-foreground">No changes recorded.</p>
               ) : (
@@ -179,9 +180,10 @@ export function VisitPanel({ visitId, branch, staff, onClose, onMove }: Props) {
                 </ol>
               )}
             </section>
-          </div>
+            </SheetBody>
+          </>
         )}
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }

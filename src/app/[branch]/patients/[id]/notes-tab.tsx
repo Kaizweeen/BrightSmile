@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingRows } from "@/components/loading";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -90,9 +91,9 @@ export function NotesTab({ patientId, staff }: { patientId: string; staff: Subje
     <div className="grid max-w-3xl gap-6">
       {/* The note form needs the visits: say so while they load, or if they fail, to anyone who may write notes. */}
       {can(staff, "clinical.write") && visits.isError && <FormAlert message={errorMessage(visits.error)} />}
-      {can(staff, "clinical.write") && visits.isPending && <p className="text-muted-foreground">Loading visits...</p>}
+      {can(staff, "clinical.write") && visits.isPending && <LoadingRows rows={3} label="Loading visits..." />}
       {chosen && (
-        <section aria-labelledby="new-note-title" className="grid gap-3 rounded-lg border p-3">
+        <section aria-labelledby="new-note-title" className="grid gap-3 rounded-xl border bg-card p-3 shadow-xs">
           <h2 id="new-note-title" className="font-semibold">
             Add a treatment note
           </h2>
@@ -116,7 +117,7 @@ export function NotesTab({ patientId, staff }: { patientId: string; staff: Subje
         {notes.isError ? (
           <FormAlert message={errorMessage(notes.error)} />
         ) : notes.isPending ? (
-          <p className="text-muted-foreground">Loading notes...</p>
+          <LoadingRows rows={3} label="Loading notes..." />
         ) : notes.data.length === 0 ? (
           <p className="text-muted-foreground">No notes yet.</p>
         ) : (
@@ -124,7 +125,7 @@ export function NotesTab({ patientId, staff }: { patientId: string; staff: Subje
             {notes.data.map((n) => {
               const original = n.amendsId ? byId.get(n.amendsId) : undefined;
               return (
-                <li key={n.id} className="grid gap-2 rounded-lg border p-3">
+                <li key={n.id} className="grid gap-2 rounded-xl border bg-card p-3 shadow-xs">
                   <p className="text-sm text-muted-foreground">
                     {[formatDateTime(new Date(n.createdAt)), n.authorName, n.branchName, chairName(n.chairNumber, n.chairLabel), `visit of ${formatDate(new Date(n.visitStart))}`].join(", ")}
                   </p>

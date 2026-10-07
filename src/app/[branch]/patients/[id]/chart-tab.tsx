@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingRows } from "@/components/loading";
 import { useQuery } from "@tanstack/react-query";
 import { Fragment, useState } from "react";
 import { ExamForm } from "@/components/chart/exam-form";
@@ -44,7 +45,7 @@ export function ChartTab({ patientId, staff }: { patientId: string; staff: Subje
         {chart.isError ? (
           <FormAlert message={errorMessage(chart.error)} />
         ) : chart.isPending ? (
-          <p className="text-muted-foreground">Loading the chart...</p>
+          <LoadingRows rows={3} label="Loading the chart..." />
         ) : (
           <ToothChart entries={chart.data} selected={tooth} onPick={setTooth} />
         )}
@@ -67,7 +68,7 @@ export function ChartTab({ patientId, staff }: { patientId: string; staff: Subje
         {visits.isError ? (
           <FormAlert message={errorMessage(visits.error)} />
         ) : visits.isPending ? (
-          <p className="text-muted-foreground">Loading visits...</p>
+          <LoadingRows rows={3} label="Loading visits..." />
         ) : allVisits.length === 0 ? (
           <p className="text-muted-foreground">No visits yet.</p>
         ) : (

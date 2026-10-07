@@ -1,9 +1,12 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PlusIcon, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { FormAlert } from "@/components/form-alert";
+import { LoadingRows } from "@/components/loading";
+import { PageHeader } from "@/components/page-header";
 import { StateBadge } from "@/components/state-badge";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
@@ -18,18 +21,34 @@ export function SuppliesScreen({ branch, canEdit }: { branch: string; canEdit: b
   const queryKey = ["supplies", branch];
   const supplies = useQuery({ queryKey, queryFn: () => api<Supply[]>(`/supplies?branch=${encodeURIComponent(branch)}`) });
   const [dialog, setDialog] = useState<{ supply: Supply | null; mode: "edit" | "adjust" } | null>(null);
-  if (supplies.isPending) return <p className="text-muted-foreground">Loading supplies...</p>;
+  if (supplies.isPending) return <LoadingRows rows={3} label="Loading supplies..." />;
   if (supplies.isError) return <FormAlert message={errorMessage(supplies.error)} />;
   const low = supplies.data.filter((s) => s.active && s.quantity <= s.reorderLevel);
   const close = () => setDialog(null);
   return (
-    <div className="grid max-w-4xl gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">Supplies</h1>
-        {canEdit && <Button onClick={() => setDialog({ supply: null, mode: "edit" })}>Add supply</Button>}
-      </div>
-      {low.length > 0 && <FormAlert message={`Running low: ${low.map((s) => s.name).join(", ")}.`} />}
-      <div className="overflow-x-auto rounded-lg border">
+    <div className="grid max-w-5xl gap-4">
+      <PageHeader
+        title="Supplies"
+        description="What is on the shelf at this branch, and what needs ordering."
+        actions={
+          canEdit && (
+            <Button onClick={() => setDialog({ supply: null, mode: "edit" })}>
+              <PlusIcon aria-hidden data-icon="inline-start" />
+              Add supply
+            </Button>
+          )
+        }
+      />
+      {low.length > 0 && (
+        <div role="status" className="flex gap-3 rounded-xl border border-warning/40 bg-warning/10 p-3 text-sm">
+          <TriangleAlert aria-hidden className="mt-0.5 size-5 shrink-0 text-warning" />
+          <p>
+            <span className="font-semibold">Running low: </span>
+            {low.map((s) => s.name).join(", ")}.
+          </p>
+        </div>
+      )}
+      <div className="overflow-x-auto rounded-xl border bg-card shadow-xs">
         <Table>
           <TableHeader>
             <TableRow>
@@ -45,7 +64,7 @@ export function SuppliesScreen({ branch, canEdit }: { branch: string; canEdit: b
           <TableBody>
             {supplies.data.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-muted-foreground">
+                <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
                   No supplies yet.
                 </TableCell>
               </TableRow>
@@ -53,10 +72,10 @@ export function SuppliesScreen({ branch, canEdit }: { branch: string; canEdit: b
             {supplies.data.map((s) => (
               <TableRow key={s.id} className={s.active ? undefined : "text-muted-foreground"}>
                 <TableCell className="font-medium">{s.name}</TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-right tabular-nums">
                   {s.quantity} {s.unit}
                 </TableCell>
-                <TableCell className="text-right">{s.reorderLevel}</TableCell>
+                <TableCell className="text-right tabular-nums">{s.reorderLevel}</TableCell>
                 <TableCell>
                   {s.active ? <StateBadge on={s.quantity > s.reorderLevel} yes="In stock" no="Low" warn /> : <StateBadge on={false} yes="" no="Retired" />}
                 </TableCell>

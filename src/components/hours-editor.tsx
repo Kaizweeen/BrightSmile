@@ -31,7 +31,7 @@ export function HoursEditor({
         const error = errors[String(day)];
         const errorId = error ? `${id}-${day}` : undefined;
         return (
-          <div key={day} className="flex flex-wrap items-end gap-x-3 gap-y-1 rounded-md border p-2">
+          <div key={day} className="flex flex-wrap items-end gap-x-3 gap-y-1 rounded-lg border bg-muted/40 p-2">
             <label className="flex min-h-11 w-40 items-center gap-2 sm:min-h-9">
               <input type="checkbox" checked={today !== null} onChange={(event) => set(event.target.checked ? { open: "09:00", close: "18:00" } : null)} className="size-4 accent-primary" />
               <span className="font-medium">{WEEKDAYS[day]}</span>

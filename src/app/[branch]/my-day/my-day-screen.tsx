@@ -4,12 +4,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { CalendarCheck } from "lucide-react";
 import { AlertMark } from "@/components/alert-mark";
+import { DateNav } from "@/components/date-nav";
+import { EmptyState } from "@/components/empty-state";
 import { FormAlert } from "@/components/form-alert";
-import { StatusBadge } from "@/components/status-badge";
+import { LoadingRows } from "@/components/loading";
+import { PageHeader } from "@/components/page-header";
+import { StatusBadge, statusBar } from "@/components/status-badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, errorMessage } from "@/lib/fetcher";
+import { cn } from "@/lib/utils";
 import { actionLabel, type Status } from "@/lib/lifecycle";
 import { addDays, formatDay, formatTime, manilaInstant } from "@/lib/time";
 import { chairName, type VisitJson } from "@/lib/visits";
@@ -46,34 +52,23 @@ export function MyDayScreen({ branch, date, today, staffId }: { branch: string; 
 
   return (
     <div className="grid max-w-3xl gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">My day</h1>
-          <p className="text-sm text-muted-foreground">{`${formatDay(date)}${date === today ? ", today" : ""}`}</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => go(addDays(date, -1))}>
-            Previous
-          </Button>
-          <Button variant="outline" onClick={() => go(today)}>
-            Today
-          </Button>
-          <Button variant="outline" onClick={() => go(addDays(date, 1))}>
-            Next
-          </Button>
-        </div>
-      </div>
+      <PageHeader title="My day" description={`${formatDay(date)}${date === today ? ", today" : ""}`} actions={<DateNav date={date} today={today} onGo={go} />} />
       {visits.isError && <FormAlert message={errorMessage(visits.error)} />}
-      {visits.isPending && <p className="text-muted-foreground">Loading visits...</p>}
-      {visits.data?.length === 0 && <p className="text-muted-foreground">No visits on this day.</p>}
+      {visits.isPending && <LoadingRows rows={3} label="Loading visits..." />}
+      {visits.data?.length === 0 && (
+        <EmptyState icon={CalendarCheck} title="No visits on this day">
+          Pick another day with the arrows above.
+        </EmptyState>
+      )}
       <ul className="grid gap-3">
         {sorted.map((v) => {
           const next = NEXT_STEP[v.status];
           return (
             <li key={v.id}>
-              <Card>
+              <Card className="relative">
+                <span aria-hidden className={cn("absolute inset-y-0 left-0 w-1", statusBar(v.status))} />
                 <CardHeader>
-                  <CardTitle className="flex flex-wrap items-center gap-2">
+                  <CardTitle className="flex flex-wrap items-center gap-2 tabular-nums">
                     {`${formatTime(new Date(v.start))} ${v.patientName}`}
                     {v.hasAlerts && <AlertMark />}
                   </CardTitle>

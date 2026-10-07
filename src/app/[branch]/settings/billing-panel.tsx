@@ -35,7 +35,7 @@ export function BillingPanel({ initialImage }: { initialImage: string | null }) 
         // eslint-disable-next-line @next/next/no-img-element
         <img src={image} alt="The clinic's payment QR code" className="size-64 rounded-lg border bg-white object-contain p-2" />
       ) : (
-        <p className="rounded-lg border p-4 text-muted-foreground">No QR code yet.</p>
+        <p className="rounded-xl border bg-card p-4 text-muted-foreground shadow-xs">No QR code yet.</p>
       )}
       <div className="flex flex-wrap items-center gap-2">
         <label className="cursor-pointer">

@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingRows } from "@/components/loading";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { toast } from "sonner";
@@ -25,7 +26,7 @@ export function SchedulePanel({ me, canEdit }: { me: Me; canEdit: boolean }) {
   const dentist = dentists.data?.find((d) => d.id === picked) ?? dentists.data?.[0];
   const week = useQuery({ queryKey: ["schedule", dentist?.id], queryFn: () => api<WeekBlock[]>(`/dentists/${dentist?.id}/schedule`), enabled: dentist !== undefined });
 
-  if (dentists.isPending || branches.isPending) return <p className="text-muted-foreground">Loading schedules...</p>;
+  if (dentists.isPending || branches.isPending) return <LoadingRows rows={3} label="Loading schedules..." />;
   if (dentists.isError) return <FormAlert message={errorMessage(dentists.error)} />;
   if (branches.isError) return <FormAlert message={errorMessage(branches.error)} />;
   if (!dentist) return <p>No one sees patients yet. Approve a dentist in Staff, or switch on seeing patients for the owner.</p>;
@@ -34,7 +35,7 @@ export function SchedulePanel({ me, canEdit }: { me: Me; canEdit: boolean }) {
     <div className="grid gap-4">
       <DentistPicker dentists={dentists.data} value={dentist.id} onChange={setPicked} />
       {week.isPending ? (
-        <p className="text-muted-foreground">Loading the week...</p>
+        <LoadingRows rows={3} label="Loading the week..." />
       ) : week.isError ? (
         <FormAlert message={errorMessage(week.error)} />
       ) : (
@@ -89,7 +90,7 @@ function WeekEditor({ dentist, blocks, branches, editable }: { dentist: Dentist;
       {MONDAY_FIRST.map((day) => {
         const rows = drafts.map((draft, index) => ({ draft, index })).filter(({ draft }) => draft.dayOfWeek === day);
         return (
-          <fieldset key={day} className="grid gap-2 rounded-lg border p-3">
+          <fieldset key={day} className="grid gap-2 rounded-xl border bg-card p-3 shadow-xs">
             <legend className="px-1 font-medium">{WEEKDAYS[day]}</legend>
             {rows.length === 0 && <p className="text-sm text-muted-foreground">Not working.</p>}
             {rows.map(({ draft, index }) => {

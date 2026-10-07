@@ -8,7 +8,7 @@ import { FormAlert } from "@/components/form-alert";
 import { PatientSearch } from "@/components/patient-search";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Sheet, SheetBody, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
@@ -41,7 +41,7 @@ const lowest = (numbers: number[] | undefined) => (numbers && numbers.length > 0
 const LENGTHS = Array.from({ length: 32 }, (_, i) => (i + 1) * 15); // 15 minutes to 8 hours
 const minutesBetween = (from: string, to: string) => Math.round((new Date(to).getTime() - new Date(from).getTime()) / 60_000);
 
-const toggleClass = "flex min-h-11 items-center gap-3 rounded-md border px-3 text-sm sm:min-h-9";
+const toggleClass = "flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border bg-card px-3 text-sm transition-colors hover:bg-accent has-[:checked]:border-primary has-[:checked]:bg-primary/5 sm:min-h-9";
 
 /** Spec 10, the booking panel. Moving uses the same checks as booking, with the visit itself left out (spec 8.7). */
 export function BookingPanel({ intent, branch, chairs, today, onClose }: Props) {
@@ -144,17 +144,17 @@ export function BookingPanel({ intent, branch, chairs, today, onClose }: Props) 
   };
 
   return (
-    <Dialog open onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{moving ? `Move ${moving.patientName}` : walkIn ? "Walk-in" : "New booking"}</DialogTitle>
-          <DialogDescription>
+    <Sheet open onOpenChange={(isOpen) => !isOpen && onClose()}>
+      <SheetContent side="right" className="sm:max-w-2xl">
+        <SheetHeader>
+          <SheetTitle>{moving ? `Move ${moving.patientName}` : walkIn ? "Walk-in" : "New booking"}</SheetTitle>
+          <SheetDescription>
             {moving
               ? `Now ${formatDay(manilaDate(new Date(moving.start)))}, ${formatTime(new Date(moving.start))}, ${chairName(moving.chairNumber, moving.chairLabel)}, with ${moving.dentistName}.`
               : `At ${branch.name}.`}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-5">
+          </SheetDescription>
+        </SheetHeader>
+        <SheetBody className="grid content-start gap-5">
           {!moving && (
             <section className="grid gap-2">
               <h3 className="text-sm font-medium">Patient</h3>
@@ -387,8 +387,8 @@ export function BookingPanel({ intent, branch, chairs, today, onClose }: Props) 
             </Alert>
           )}
           {failed && !(failed instanceof RequestError && failed.body.code === "warnings") && <FormAlert message={errorMessage(failed)} />}
-        </div>
-        <DialogFooter>
+        </SheetBody>
+        <SheetFooter>
           <Button variant="outline" onClick={onClose}>
             Go back
           </Button>
@@ -411,8 +411,8 @@ export function BookingPanel({ intent, branch, chairs, today, onClose }: Props) 
                     ? "Check in now"
                     : "Book"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }

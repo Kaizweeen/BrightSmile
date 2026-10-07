@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingRows } from "@/components/loading";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -17,7 +18,7 @@ type Exam = { findings: Findings; updatedAt: string | null; authorName: string |
 /** Spec 9.2: a visit's PDA exam. Its dentist (or the owner who sees patients) edits it until the visit closes. */
 export function ExamForm({ appointmentId, staff }: { appointmentId: string; staff: Subject }) {
   const exam = useQuery({ queryKey: ["exam", appointmentId], queryFn: () => api<Exam>(`/appointments/${appointmentId}/exam`) });
-  if (exam.isPending) return <p className="text-muted-foreground">Loading the exam...</p>;
+  if (exam.isPending) return <LoadingRows rows={3} label="Loading the exam..." />;
   if (exam.isError) return <FormAlert message={errorMessage(exam.error)} />;
   const { findings, editable, dentistId, authorName, updatedAt } = exam.data;
   const saved = authorName && updatedAt ? `Saved by ${authorName}, ${formatDateTime(new Date(updatedAt))}.` : "No exam saved for this visit yet.";

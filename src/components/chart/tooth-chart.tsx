@@ -30,11 +30,11 @@ const SIDES = { top: side(225, 315), right: side(315, 405), bottom: side(45, 135
 
 const ROW_NAMES = ["Upper temporary teeth", "Upper permanent teeth", "Lower permanent teeth", "Lower temporary teeth"];
 
-/** A surface's fill: decay red, restorations blue, missing or extracted grey. The code box carries the words. */
+/** A surface's fill: decay in the danger colour, restorations in the brand colour, missing or extracted grey. The code box carries the words. */
 function fill(code: string | undefined): string {
-  if (code === "D") return "fill-red-500/70";
-  if (code === "M" || code === "MO" || code === "X" || code === "XO") return "fill-zinc-400 dark:fill-zinc-600";
-  if (code && codeInfo(code)?.group === "Restorations and prosthetics") return "fill-sky-500/70";
+  if (code === "D") return "fill-destructive/70";
+  if (code === "M" || code === "MO" || code === "X" || code === "XO") return "fill-muted-foreground/50";
+  if (code && codeInfo(code)?.group === "Restorations and prosthetics") return "fill-primary/60";
   return "fill-background";
 }
 
@@ -55,8 +55,8 @@ function Tooth({ tooth, upper, state, selected, onPick }: { tooth: number; upper
       aria-label={describeTooth(tooth, state)}
       aria-pressed={selected}
       className={cn(
-        "flex w-10 flex-col items-center gap-0.5 rounded-md p-0.5 outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50",
-        selected && "bg-muted",
+        "flex w-10 cursor-pointer flex-col items-center gap-0.5 rounded-md p-0.5 outline-none transition-colors hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50",
+        selected && "bg-accent ring-1 ring-primary",
       )}
     >
       {upper && box}
@@ -78,7 +78,7 @@ export function ToothChart({ entries, selected, onPick }: { entries: ChartEntryJ
   const byTooth = new Map<number, ChartEntryJson[]>();
   for (const e of entries) byTooth.set(e.tooth, [...(byTooth.get(e.tooth) ?? []), e]);
   return (
-    <div className="overflow-x-auto rounded-lg border p-3">
+    <div className="overflow-x-auto rounded-xl border bg-card p-3 shadow-xs">
       <div className="mx-auto grid w-max gap-3">
         {CHART_ROWS.map((row, i) => {
           const half = row.teeth.length / 2;

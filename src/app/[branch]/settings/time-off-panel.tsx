@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingRows } from "@/components/loading";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -55,7 +56,7 @@ export function TimeOffPanel({ canEdit }: { canEdit: boolean }) {
     onError: (error) => toast.error(errorMessage(error)),
   });
 
-  if (dentists.isPending) return <p className="text-muted-foreground">Loading...</p>;
+  if (dentists.isPending) return <LoadingRows rows={3} label="Loading..." />;
   if (dentists.isError) return <FormAlert message={errorMessage(dentists.error)} />;
   if (!dentist) return <p>No one sees patients yet.</p>;
   return (
@@ -74,7 +75,7 @@ export function TimeOffPanel({ canEdit }: { canEdit: boolean }) {
         </Alert>
       )}
       {list.isPending ? (
-        <p className="text-muted-foreground">Loading time off...</p>
+        <LoadingRows rows={3} label="Loading time off..." />
       ) : list.isError ? (
         <FormAlert message={errorMessage(list.error)} />
       ) : list.data.length === 0 ? (
@@ -96,7 +97,7 @@ export function TimeOffPanel({ canEdit }: { canEdit: boolean }) {
       )}
       {canEdit && (
         <form
-          className="grid gap-3 rounded-lg border p-3"
+          className="grid gap-3 rounded-xl border bg-card p-3 shadow-xs"
           onSubmit={(event) => {
             event.preventDefault();
             add.mutate();

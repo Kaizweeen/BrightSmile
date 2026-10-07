@@ -2,8 +2,8 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-/* Dark mode follows the device (spec section 10), so there is no theme switch. */
-@custom-variant dark (@media (prefers-color-scheme: dark));
+/* The staff app is always light: dark: styles apply only under a .dark class, which nothing sets. */
+@custom-variant dark (&:where(.dark, .dark *));
 
 /* The staff QR poster (src/app/poster) prints on A4 (spec 6.2). */
 @page {
@@ -14,9 +14,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-display), var(--font-body), ui-sans-serif, system-ui, sans-serif;
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -33,56 +33,90 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-highlight: var(--highlight);
+  --color-highlight-foreground: var(--highlight-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-border: var(--sidebar-border);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.4);
   --radius-2xl: calc(var(--radius) * 1.8);
+  --shadow-xs: 0 1px 2px 0 rgb(20 33 29 / 0.06);
+  --shadow-sm: 0 1px 3px 0 rgb(20 33 29 / 0.08), 0 1px 2px -1px rgb(20 33 29 / 0.06);
+  --shadow-md: 0 4px 10px -2px rgb(20 33 29 / 0.1), 0 2px 4px -2px rgb(20 33 29 / 0.06);
+  --shadow-lg: 0 12px 28px -6px rgb(20 33 29 / 0.16), 0 4px 8px -4px rgb(20 33 29 / 0.08);
 }
 
+/*
+ * Staff app palette: one deep green on white and light neutrals, yellow only as a small accent.
+ * Every text pair is 4.5:1 or better (checked); field borders (--input) are 3:1 against their surface.
+ */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.49 0.09 200);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.5 0 0);
-  --accent: oklch(0.96 0.02 200);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.87 0 0);
-  --ring: oklch(0.49 0.09 200);
+  --background: #f4f6f5;
+  --foreground: #14211d;
+  --card: #ffffff;
+  --card-foreground: #14211d;
+  --popover: #ffffff;
+  --popover-foreground: #14211d;
+  --primary: #1f7a64;
+  --primary-foreground: #ffffff;
+  --secondary: #eaf2ef;
+  --secondary-foreground: #14211d;
+  --muted: #eef2f0;
+  --muted-foreground: #51625c;
+  --accent: #e4f0ec;
+  --accent-foreground: #14211d;
+  --destructive: #c62828;
+  --border: #dce4e0;
+  --input: #7a8c85;
+  --ring: #1f7a64;
   --radius: 0.625rem;
-}
+  color-scheme: light;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: oklch(0.16 0.01 220);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.21 0.01 220);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.21 0.01 220);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.74 0.1 195);
-    --primary-foreground: oklch(0.2 0.03 200);
-    --secondary: oklch(0.27 0.01 220);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.27 0.01 220);
-    --muted-foreground: oklch(0.75 0 0);
-    --accent: oklch(0.3 0.03 200);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 12%);
-    --input: oklch(1 0 0 / 20%);
-    --ring: oklch(0.74 0.1 195);
-  }
+  --highlight: #f5b301;
+  --highlight-foreground: #2b2000;
+  --success: #1f7a64;
+  --success-foreground: #ffffff;
+  --warning: #9a5b00;
+  --warning-foreground: #ffffff;
+
+  /* The sidebar is solid green with white text; hover and the current page are lighter green tints. */
+  --sidebar: #1a6b58;
+  --sidebar-foreground: #ffffff;
+  --sidebar-muted: rgb(255 255 255 / 0.92);
+  --sidebar-accent: rgb(255 255 255 / 0.12);
+  --sidebar-border: rgb(255 255 255 / 0.2);
+
+  /* A visit's status: tinted chip, its text, and a solid bar for calendar cards. */
+  --status-requested-bg: #fef3c7;
+  --status-requested-fg: #78350f;
+  --status-requested-bar: #f59e0b;
+  --status-confirmed-bg: #e0f2fe;
+  --status-confirmed-fg: #0c4a6e;
+  --status-confirmed-bar: #0ea5e9;
+  --status-checked_in-bg: #ede9fe;
+  --status-checked_in-fg: #4c1d95;
+  --status-checked_in-bar: #8b5cf6;
+  --status-in_treatment-bg: #ccfbf1;
+  --status-in_treatment-fg: #134e4a;
+  --status-in_treatment-bar: #14b8a6;
+  --status-completed-bg: #d1fae5;
+  --status-completed-fg: #064e3b;
+  --status-completed-bar: #10b981;
+  --status-no_show-bg: #ffe4e6;
+  --status-no_show-fg: #881337;
+  --status-no_show-bar: #f43f5e;
+  --status-cancelled-bg: #e2e8f0;
+  --status-cancelled-fg: #1e293b;
+  --status-cancelled-bar: #94a3b8;
 }
 
 @layer base {
@@ -94,6 +128,28 @@
   }
   html {
     @apply font-sans;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-heading tracking-tight;
+  }
+  /* Times, receipts, pesos and counts line up in columns. */
+  table,
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Motion is feedback, never decoration: honour a request for less of it. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 

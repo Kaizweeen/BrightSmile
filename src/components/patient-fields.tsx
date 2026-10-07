@@ -75,7 +75,7 @@ export function PatientFields({
       <legend className="mb-1 text-sm font-medium">Allergies and medical alerts</legend>
       <div className="grid gap-1 sm:grid-cols-2">
         {ALLERGY_KEYS.map((key) => (
-          <label key={key} className="flex min-h-11 items-center gap-3 rounded-md border px-3 text-sm sm:min-h-9">
+          <label key={key} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border bg-card px-3 text-sm transition-colors hover:bg-accent has-[:checked]:border-primary has-[:checked]:bg-primary/5 sm:min-h-9">
             <input
               type="checkbox"
               className="size-4 accent-primary"

@@ -1,7 +1,10 @@
 "use client";
 
+import { LoadingRows } from "@/components/loading";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { InboxIcon } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import { FormAlert } from "@/components/form-alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -38,11 +41,11 @@ export function OnlineRequests({ branchCode, onOpen }: { branchCode: string; onO
             <DialogDescription>Call or text each patient, then open the visit to confirm it, change it, or cancel it.</DialogDescription>
           </DialogHeader>
           {list.isPending ? (
-            <p className="text-sm text-muted-foreground">Loading online requests...</p>
+            <LoadingRows rows={3} label="Loading online requests..." />
           ) : list.isError ? (
             <FormAlert message={errorMessage(list.error)} />
           ) : count === 0 ? (
-            <p className="text-sm text-muted-foreground">No online requests are waiting.</p>
+            <EmptyState icon={InboxIcon} title="No online requests are waiting" />
           ) : (
             <ul className="grid gap-2">
               {list.data.map((r) => (
@@ -50,7 +53,7 @@ export function OnlineRequests({ branchCode, onOpen }: { branchCode: string; onO
                   {/* wrap-anywhere, not break-words: in this grid only "anywhere" lets a long unbroken word (a pasted link) shrink the row. */}
                   <button
                     type="button"
-                    className="grid min-h-11 w-full gap-1 rounded-md border p-3 text-left text-sm wrap-anywhere outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+                    className="grid min-h-11 w-full cursor-pointer gap-1 rounded-xl border bg-card p-3 text-left text-sm wrap-anywhere shadow-xs outline-none transition-colors hover:border-primary/40 hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50"
                     onClick={() => {
                       setOpen(false);
                       onOpen(r.id);
