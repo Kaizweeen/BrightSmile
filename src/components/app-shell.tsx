@@ -1,9 +1,10 @@
 "use client";
 
-import { Building2, CalendarDays, ChevronsUpDownIcon, Clock, LayoutDashboard, type LucideIcon, MenuIcon, Package, Receipt, Settings, Smile, Sun, UserCog, Users } from "lucide-react";
+import { Building2, CalendarDays, ChevronsUpDownIcon, Clock, LayoutDashboard, type LucideIcon, MenuIcon, Package, Receipt, Settings, Sun, UserCog, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { LogoGlyph } from "@/components/logo-glyph";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { UserMenu } from "@/components/user-menu";
@@ -84,7 +85,7 @@ export function AppShell({ practice, branch, branches, nav, user, children }: Pr
 function BrandMark({ className }: { className?: string }) {
   return (
     <span aria-hidden className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg shadow-xs", className ?? "bg-primary text-primary-foreground")}>
-      <Smile className="size-5" />
+      <LogoGlyph className="size-5" />
     </span>
   );
 }
