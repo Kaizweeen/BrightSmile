@@ -36,8 +36,8 @@
   .accent { color: var(--b600); }
 
   /* Caption band: the voiceover as on-screen subtitles, for the many who watch with sound off.
-     It sits at 69-77% height, above TikTok's and Reels' bottom bar and clear of the right-hand buttons. */
-  #captions { position: absolute; left: 36px; right: 96px; top: 664px; height: 80px; z-index: 50; }
+     Centred on the frame at 69-77% height, above TikTok's and Reels' bottom bar. */
+  #captions { position: absolute; left: 40px; right: 40px; top: 664px; height: 80px; z-index: 50; }
   .cap { position: absolute; left: 0; right: 0; top: 0; display: flex; justify-content: center; }
   .cap span { background: rgba(11, 61, 74, .92); color: #fff; font-weight: 700; font-size: 19px; line-height: 1.3; text-align: center; padding: 9px 16px; border-radius: 14px; box-shadow: 0 10px 24px -10px rgba(11,61,74,.5); }
   .cap b { color: var(--b200); }
@@ -251,7 +251,7 @@
   <section class="scene" style="background:var(--b900)" data-o="irisout 2.85 .5">
     <div class="blob" style="width:360px;height:360px;background:var(--b600);opacity:.5;top:-100px;right:-120px"></div>
     <div class="blob" style="width:300px;height:300px;background:var(--b500);opacity:.3;bottom:80px;left:-120px"></div>
-    <div class="abs" style="left:44px;right:44px;top:250px;color:#fff" data-o="fadeout 2.65 .2">
+    <div class="abs" style="left:30px;right:30px;top:250px;color:#fff;text-align:center" data-o="fadeout 2.65 .2">
       <div class="h1" style="font-size:68px">
         <span style="display:inline-block" data-a="word .05 .45">When</span>
         <span style="display:inline-block" data-a="word .2 .45">was</span>
@@ -260,7 +260,7 @@
         <span style="display:inline-block;color:var(--b200)" data-a="word .75 .5">dental</span>
         <span style="display:inline-block;color:var(--b200)" data-a="word .9 .5">check&#8209;up</span><span style="display:inline-block;color:var(--gold);font-size:96px;line-height:.5" data-a="bounce 1.25 .55">?</span>
       </div>
-      <div style="height:5px;width:120px;background:var(--b500);border-radius:9px;margin-top:30px;transform-origin:left" data-a="grow 1.5 .5"></div>
+      <div style="height:5px;width:120px;background:var(--b500);border-radius:9px;margin:30px auto 0" data-a="grow 1.5 .5"></div>
       <p style="font-size:26px;font-weight:700;color:var(--b100);margin-top:22px" data-a="up 1.7 .5">Kailan ka huling nagpa-check-up?</p>
     </div>
   </section>

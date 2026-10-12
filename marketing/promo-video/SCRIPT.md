@@ -4,7 +4,7 @@
 - **Made for:** TikTok, Facebook Reels and YouTube Shorts. The same file works on all three.
 - **Audience:** families and adults in Makati who are scrolling on their phones. Many watch with the sound off, so captions carry the voiceover.
 - **Look:** brand teal `#0d8781`, deep navy-teal `#0b3d4a`, logo cream `#fdf5ef`, Figtree type, the tooth emblem. Smooth iris and wipe transitions, with text that pops and slides in.
-- **Files:** `brightsmile-promo-9x16.mp4` (finished: picture, voiceover and sound effects), `promo-picture.mp4` (picture only), `promo.html` (animation source), `render.mjs` (renders the picture), `audio.py` (makes the voiceover and effects and mixes them on)
+- **Files:** `brightsmile-promo-9x16.mp4` (finished: picture, voiceover, sound effects and music), `promo-picture.mp4` (picture only), `promo.html` (animation source), `render.mjs` (renders the picture), `audio.py` (makes the voiceover, effects and music and mixes them on)
 
 ## Selling points, and what was left out
 
@@ -22,14 +22,14 @@ These were left out on purpose: "painless", "affordable packages" and "free cons
 
 | # | Time | Picture and motion | On-screen text | Voiceover |
 |---|---|---|---|---|
-| 1 | 0:00–0:03 | **Hook.** Navy screen. The words drop in one by one and a gold "?" bounces in. A teal underline draws, then the screen closes to a dot (iris out). | **When was your last dental check-up?** / *Kailan ka huling nagpa-check-up?* | "When was your last dental check-up?" |
+| 1 | 0:00–0:03 | **Hook.** Navy screen. The centred words drop in one by one and a gold "?" bounces in. A teal underline draws, then the screen closes to a dot (iris out). | **When was your last dental check-up?** / *Kailan ka huling nagpa-check-up?* | "When was your last dental check-up?" |
 | 2 | 0:03–0:07 | **Brand.** Cream screen. The tooth emblem pops out of the closing dot and two gold sparkles twinkle. The name and a "Makati City" pin pill slide up. | **Bright Smile** · DENTAL CLINIC · 📍 Makati City | "At Bright Smile in Makati, a healthy smile is easy." |
 | 3 | 0:07–0:15 | **Point 1: easy booking.** A phone rises into frame and time slots fade in. A tap picks 10:30 AM and a second tap presses "Book my visit". A text notification slides down ("Your visit … is confirmed") and a check badge bounces in. | 01 · Easy booking / **Book in a minute. No calls needed.** | "Book online in a minute. No calls needed. Pick a time, and we'll text to confirm your visit." |
 | 4 | 0:15–0:24 | **Point 2: gentle care.** "Kids" and "Adults" badges pop in, then service chips pop in two waves, each with the English name and the word patients search for. | 02 · Gentle care / **Friendly dentists for the whole family.** / Cleaning · Filling *(Pasta)* · Extraction *(Bunot)* · Braces · Whitening · Root canal / + dentures, crowns, veneers and more | "Gentle, friendly care for kids and adults, from cleaning and pasta to braces and root canal." |
 | 5 | 0:24–0:32 | **Point 3: near you.** The scene wipes across to white. A Makati map card pops in and three pins drop with ripples at the clinics' real positions (Olympia, Chino Roces Ave., Brgy. Rizal). A clock badge spins to "Open 9 AM – 5 PM". | 03 · Near you / **3 clinics in Makati. Same hours at all three.** | "Three clinics in Makati, open 9 to 5. There's one near you." |
 | 6 | 0:32–0:40 | **Call to action.** Navy opens from the bottom (iris). The emblem and headline come in, then the URL pill, which pulses gently, then the phone number and QR code. Hold on the sign-off. | **Book your visit today.** / **brightsmile.pro** / 0956-342-1673 / Scan to book / *Your bright smile starts here.* / 3 clinics in Makati · Open 9 AM – 5 PM | "Book your visit today at brightsmile.pro. Your bright smile starts here." |
 
-Captions for scenes 2–5 sit at 69–77% of the frame height. That is above the TikTok and Reels caption bar and clear of the buttons on the right. Scenes 1 and 6 skip the caption band because the large on-screen text already says the voiceover line.
+Captions for scenes 2–5 sit at 69–77% of the frame height. They are centred on the frame, above the TikTok and Reels caption bar. Scenes 1 and 6 skip the caption band because the large on-screen text already says the voiceover line.
 
 ## Voiceover script (about 75 words)
 
@@ -44,7 +44,7 @@ Read it warm and upbeat with a slight smile, like a friendly front-desk staffer.
 
 **Optional Tagalog hook:** open with "Kailan ka huling nagpa-check-up?" and keep the rest the same. The Tagalog line is already on screen.
 
-## Music
+## Music brief
 
 - **Mood:** bright, feel-good, modern. Light pop or tropical-house with a clean beat, about 110–120 BPM.
 - **Instruments:** plucked synths or ukulele, soft claps, airy pads, a light marimba or bell motif. Avoid heavy bass drops and vocals, which would compete with the voiceover.
@@ -82,13 +82,23 @@ To use a real voice artist instead, record the lines to these times and replace 
 
 The effects duck under the voice. The mix is normalised to −14 LUFS, the level TikTok, Reels and YouTube play at.
 
-**Music.** There is no music yet. Add a licensed track (see Music above) in the TikTok or CapCut editor at about 15–20% volume, or mix it in like this:
+**Music.** An original backing track is synthesised in `audio.py`, so it is free to use with no licence. It is bright C-major pop at about 116 BPM, built from:
+- a ukulele-like plucked arpeggio
+- a warm, wide pad
+- a bouncy bass
+- a light four-on-the-floor kick, claps and shakers
+- a marimba-bell hook from 0:24
 
-```bash
-ffmpeg -i brightsmile-promo-9x16.mp4 -i music.mp3 \
-  -filter_complex "[1:a]volume=0.15,afade=t=out:st=38.5:d=1.5[m];[0:a][m]amix=inputs=2:duration=first:normalize=0[a]" \
-  -map 0:v -map "[a]" -c:v copy -c:a aac -b:a 192k brightsmile-promo-with-music.mp4
-```
+The tempo puts bar lines on the scene changes:
+- **0:00–0:03:** the intro swells in and a riser lifts into the beat drop at the logo (0:03).
+- **0:07, 0:15 and 0:24:** new bars land on the scene changes, with a clap roll into the map wipe.
+- **0:31:** the kick drops out and a riser builds into the call to action.
+- **0:32:** the call to action lifts, with the bells louder and open hi-hats.
+- **0:38.2:** the track ends on one big ringing chord that fades out by 0:40.
+
+The music pumps gently with the kick, ducks under the voice, and comes up in the gaps between lines.
+
+To use a licensed track instead, replace `music.wav` with it (40 s, 48 kHz) and run the mix step again. You can also mix it on in the TikTok or CapCut editor at about 15–20% volume.
 
 ## Posting tips
 
@@ -104,7 +114,7 @@ Every motion in `promo.html` is one CSS animation, set with `data-a="name start 
 npm install                                          # once, from the repo root
 node marketing/promo-video/render.mjs --stills 2 10 34   # PNGs of single moments
 node marketing/promo-video/render.mjs                # promo-picture.mp4, about 5 minutes
-python marketing/promo-video/audio.py                # voiceover + effects -> brightsmile-promo-9x16.mp4
+python marketing/promo-video/audio.py                # voiceover + effects + music -> brightsmile-promo-9x16.mp4
 ```
 
 `audio.py` needs `pip install kokoro-onnx==0.4.9 soundfile scipy`. It also needs `kokoro-v1.0.onnx` and `voices-v1.0.bin` from [kokoro-onnx's model-files-v1.0 release](https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.0) in `marketing/promo-video/models/` (git ignores that folder), or set `KOKORO_DIR` to wherever they are. To change a voice line, edit `LINES` in `audio.py` and keep it inside its caption's time in `promo.html`.
