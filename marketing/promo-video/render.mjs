@@ -1,5 +1,5 @@
 // Renders promo.html to an MP4, one screenshot per frame piped into ffmpeg.
-//   node marketing/promo-video/render.mjs              -> brightsmile-promo-9x16.mp4
+//   node marketing/promo-video/render.mjs              -> promo-picture.mp4 (picture only; audio.py adds the sound)
 //   node marketing/promo-video/render.mjs --stills 1.5 9 20  -> PNGs of those moments, for checking a layout fast
 // Needs ffmpeg on the PATH and a Playwright Chromium (`npx playwright install chromium`), or PLAYWRIGHT_CHANNEL=chrome, or CHROMIUM_PATH=/path/to/chrome.
 import { chromium } from "@playwright/test";
@@ -34,11 +34,11 @@ if (args[0] === "--stills") {
     console.log(file);
   }
 } else {
-  const out = join(here, "brightsmile-promo-9x16.mp4");
+  const out = join(here, "promo-picture.mp4");
   const ffmpeg = spawn("ffmpeg", [
     "-y", "-loglevel", "error",
     "-f", "image2pipe", "-framerate", String(FPS), "-i", "-",
-    // A silent stereo track: some platforms reject uploads with no audio stream. Replace it with the voiceover and music mix.
+    // A silent stereo track keeps this file uploadable on its own; audio.py replaces it with the voiceover and effects.
     "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
     "-shortest", "-c:v", "libx264", "-preset", "slow", "-crf", "18", "-pix_fmt", "yuv420p",
     "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", out,

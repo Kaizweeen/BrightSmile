@@ -4,7 +4,7 @@
 - **Made for:** TikTok, Facebook Reels and YouTube Shorts. The same file works on all three.
 - **Audience:** families and adults in Makati who are scrolling on their phones. Many watch with the sound off, so captions carry the voiceover.
 - **Look:** brand teal `#0d8781`, deep navy-teal `#0b3d4a`, logo cream `#fdf5ef`, Figtree type, the tooth emblem. Smooth iris and wipe transitions, with text that pops and slides in.
-- **Files:** `brightsmile-promo-9x16.mp4` (picture plus a silent audio track), `promo.html` (the animation source), `render.mjs` (renders the MP4)
+- **Files:** `brightsmile-promo-9x16.mp4` (finished: picture, voiceover and sound effects), `promo-picture.mp4` (picture only), `promo.html` (animation source), `render.mjs` (renders the picture), `audio.py` (makes the voiceover and effects and mixes them on)
 
 ## Selling points, and what was left out
 
@@ -52,17 +52,43 @@ Read it warm and upbeat with a slight smile, like a friendly front-desk staffer.
 - **Accents:** a soft "ding" when the check badge lands (0:12), light pops on the chips (0:17–0:20) and the pins (0:25–0:27), and a whoosh on each transition (0:03, 0:15, 0:24, 0:32).
 - **Where to get it:** TikTok's and Facebook's own commercial music libraries, YouTube Audio Library, or a licensed stock track. Search terms: "upbeat corporate", "happy ukulele", "fresh tropical pop". A business account must use commercially licensed music.
 
-## Adding the voiceover and music
+## Sound in the finished video
 
-The MP4 has a silent audio track, so it uploads anywhere. To put the real audio on it, record the voiceover at the times above, choose a track, and run:
+**Voiceover.** The voice is Kokoro's `af_heart`, a warm American English voice, generated locally by `audio.py`. Two words are pronounced as they are in Makati: "Makati" with a real *t*, and "brightsmile" as two words. Each line starts with its caption:
+
+| Line | Starts | Ends |
+|---|---|---|
+| When was your last dental check-up? | 0:00.2 | 0:02.0 |
+| At Bright Smile in Makati, a healthy smile is easy. | 0:03.4 | 0:06.6 |
+| Book online in a minute. No calls needed. | 0:07.3 | 0:09.9 |
+| Pick a time, and we'll text to confirm your visit. | 0:11.3 | 0:14.0 |
+| Gentle, friendly care for kids and adults, | 0:15.8 | 0:18.3 |
+| from cleaning and pasta, to braces and root canal. | 0:19.7 | 0:22.6 |
+| Three clinics in Makati, open nine to five. | 0:24.4 | 0:27.0 |
+| There's one near you. | 0:28.2 | 0:29.4 |
+| Book your visit today, at brightsmile dot pro. | 0:32.7 | 0:35.5 |
+| Your bright smile starts here. | 0:36.2 | 0:37.8 |
+
+To use a real voice artist instead, record the lines to these times and replace `voiceover.wav` with the recording. Then run only the mix step (`main()` in `audio.py`) or mix in CapCut.
+
+**Sound effects.** The effects are synthesised in `audio.py`, so there is nothing to license:
+- soft ticks as the hook words land, and a bouncy pop for the "?"
+- whooshes on every transition (0:03, 0:07, 0:15, 0:24, 0:32)
+- a pop and sparkle for the logo
+- screen taps on the time slot and the button, a two-note text-message chime, and a "confirmed" arpeggio on the check badge
+- bubbly pops rising in pitch for the service chips
+- water-drop plips as the map pins land, and clock ticks
+- a rising swell into the URL, and a bright closing chime with a sparkle on "Your bright smile starts here"
+
+The effects duck under the voice. The mix is normalised to −14 LUFS, the level TikTok, Reels and YouTube play at.
+
+**Music.** There is no music yet. Add a licensed track (see Music above) in the TikTok or CapCut editor at about 15–20% volume, or mix it in like this:
 
 ```bash
-ffmpeg -i brightsmile-promo-9x16.mp4 -i voiceover.wav -i music.mp3 \
-  -filter_complex "[2:a]volume=0.18,afade=t=out:st=38.5:d=1.5[m];[1:a][m]amix=inputs=2:duration=first[a]" \
-  -map 0:v -map "[a]" -c:v copy -c:a aac -b:a 192k -t 40 -shortest brightsmile-promo-final.mp4
+ffmpeg -i brightsmile-promo-9x16.mp4 -i music.mp3 \
+  -filter_complex "[1:a]volume=0.15,afade=t=out:st=38.5:d=1.5[m];[0:a][m]amix=inputs=2:duration=first:normalize=0[a]" \
+  -map 0:v -map "[a]" -c:v copy -c:a aac -b:a 192k brightsmile-promo-with-music.mp4
 ```
-
-You can also bring the MP4 into CapCut or the TikTok editor and add the voiceover and music there.
 
 ## Posting tips
 
@@ -77,7 +103,10 @@ Every motion in `promo.html` is one CSS animation, set with `data-a="name start 
 ```bash
 npm install                                          # once, from the repo root
 node marketing/promo-video/render.mjs --stills 2 10 34   # PNGs of single moments
-node marketing/promo-video/render.mjs                # the MP4, about 5 minutes
+node marketing/promo-video/render.mjs                # promo-picture.mp4, about 5 minutes
+python marketing/promo-video/audio.py                # voiceover + effects -> brightsmile-promo-9x16.mp4
 ```
+
+`audio.py` needs `pip install kokoro-onnx==0.4.9 soundfile scipy`. It also needs `kokoro-v1.0.onnx` and `voices-v1.0.bin` from [kokoro-onnx's model-files-v1.0 release](https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.0) in `marketing/promo-video/models/` (git ignores that folder), or set `KOKORO_DIR` to wherever they are. To change a voice line, edit `LINES` in `audio.py` and keep it inside its caption's time in `promo.html`.
 
 You need ffmpeg and a Chromium: `npx playwright install chromium`, or set `PLAYWRIGHT_CHANNEL=chrome` or `CHROMIUM_PATH`. The QR code on the CTA screen is drawn from the same rows as the landing page (`src/app/clinic/data.ts`), so it opens the real booking page. If the booking link changes, update the rows in both places.
