@@ -37,8 +37,9 @@ The QR holds only the branch code, which is not secret (it is in every staff add
 
 With both off, it says "Please ask at the front desk." An unknown or closed branch answers 404.
 
-**Patient form,** `/welcome/{code}/form`, titled "Patient form" with the branch name:
+**Patient form,** `/welcome/{code}/form`, titled "Patient form" with the practice name:
 
+- the branch, from the practice's open branches, starting as the poster's branch (it can still be changed, as on `/book`; shown only when there is more than one), and kept when "Fill in another form" is used;
 - first name, middle name (optional), and last name, each 1 to 50 characters after trimming;
 - birthday (a date from 1900-01-01 to today in Manila);
 - sex (Female or Male, the chart's two values);

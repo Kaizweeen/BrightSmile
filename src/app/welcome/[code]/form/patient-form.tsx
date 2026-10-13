@@ -18,8 +18,15 @@ const focusHeading = (heading: HTMLHeadingElement | null) => heading?.focus();
 /** Moves focus to the First name field when it appears, so "Fill in another form" does not drop it to the top of the page. One function for every render, so it runs on mount only. */
 const focusField = (field: HTMLInputElement | null) => field?.focus();
 
-/** Patient forms spec 4: the patient's basic details and their agreement to the privacy notice, for the front desk to check. */
-export function PatientForm({ branch, booking, today }: { branch: string; booking: boolean; today: string }) {
+type Props = { branches: { value: string; label: string }[]; initialBranch: string; booking: boolean; today: string };
+
+/**
+ * Patient forms spec 4: the patient's basic details and their agreement to the privacy notice, for the front desk to check. The
+ * branch starts as the poster's and can be changed, like the booking page's.
+ */
+export function PatientForm({ branches, initialBranch, booking, today }: Props) {
+  // Kept apart from the details so "Fill in another form" stays at the branch just picked.
+  const [branch, setBranch] = useState(initialBranch);
   const [form, setForm] = useState(EMPTY);
   const [errors, setErrors] = useState<Record<string, string>>({});
   // Set once "Fill in another form" was used: only that fresh form takes focus, never the first page load.
@@ -71,6 +78,18 @@ export function PatientForm({ branch, booking, today }: { branch: string; bookin
         send.mutate();
       }}
     >
+      {branches.length > 1 && (
+        <label className="grid gap-1.5 text-sm font-medium">
+          Branch
+          <NativeSelect className="w-full" value={branch} onChange={(event) => setBranch(event.target.value)}>
+            {branches.map((b) => (
+              <NativeSelectOption key={b.value} value={b.value}>
+                {b.label}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </label>
+      )}
       <TextField label="First name" ref={again ? focusField : undefined} value={form.firstName} onChange={set("firstName")} maxLength={50} autoComplete="given-name" error={errors.firstName} />
       <TextField label="Middle name (optional)" value={form.middleName} onChange={set("middleName")} maxLength={50} autoComplete="additional-name" error={errors.middleName} />
       <TextField label="Last name" value={form.lastName} onChange={set("lastName")} maxLength={50} autoComplete="family-name" error={errors.lastName} />

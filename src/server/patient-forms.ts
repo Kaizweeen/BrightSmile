@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gt, lt, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, type Db } from "@/db";
 import { auditLog, branches, patientForms, patients } from "@/db/schema";
@@ -157,12 +157,21 @@ export async function discardPatientForm(actor: Staff, id: string): Promise<void
   });
 }
 
-export type WelcomeInfo = { practiceName: string; branch: { code: string; name: string }; booking: boolean; forms: boolean };
+type BranchOption = { code: string; name: string };
+export type WelcomeInfo = { practiceName: string; branch: BranchOption; branches: BranchOption[]; booking: boolean; forms: boolean };
 
-/** What /welcome/{code} shows (patient forms spec 4): null for an unknown or closed branch. */
+/**
+ * What /welcome/{code} shows (patient forms spec 4): null for an unknown or closed branch. `branches` is every open branch, in
+ * the switcher's order, for the form's branch picker; the poster's branch is chosen first.
+ */
 export async function welcomeInfo(code: string): Promise<WelcomeInfo | null> {
   const settings = await practiceSettings();
-  const [branch] = await db.select({ code: branches.code, name: branches.name, active: branches.active }).from(branches).where(eq(branches.code, code));
-  if (!branch?.active) return null;
-  return { practiceName: settings.name, branch: { code: branch.code, name: branch.name }, booking: settings.onlineBooking, forms: settings.patientForms };
+  const open = await db
+    .select({ code: branches.code, name: branches.name })
+    .from(branches)
+    .where(eq(branches.active, true))
+    .orderBy(asc(branches.sort), asc(branches.name));
+  const branch = open.find((b) => b.code === code);
+  if (!branch) return null;
+  return { practiceName: settings.name, branch, branches: open, booking: settings.onlineBooking, forms: settings.patientForms };
 }

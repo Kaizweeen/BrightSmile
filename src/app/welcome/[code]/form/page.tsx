@@ -25,8 +25,13 @@ export default async function PatientFormPage({ params }: { params: Promise<{ co
     return <AuthCard title={info.practiceName} description="Patient forms aren't available right now. Please ask at the front desk." />;
   }
   return (
-    <AuthCard title="Patient form" description={`${info.practiceName}, ${info.branch.name}. The front desk checks it with you at your visit.`}>
-      <PatientForm branch={info.branch.code} booking={info.booking} today={manilaDate(new Date())} />
+    <AuthCard title="Patient form" description={`${info.practiceName}. The front desk checks it with you at your visit.`}>
+      <PatientForm
+        branches={info.branches.map((b) => ({ value: b.code, label: b.name }))}
+        initialBranch={info.branch.code}
+        booking={info.booking}
+        today={manilaDate(new Date())}
+      />
     </AuthCard>
   );
 }

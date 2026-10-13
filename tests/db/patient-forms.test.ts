@@ -376,10 +376,21 @@ describe("the welcome page", () => {
   it("names the practice and the branch, and says what patients can do there", async () => {
     await world();
     await db.update(practice).set({ onlineBooking: false, patientForms: true });
-    expect(await welcomeInfo("downtown")).toEqual({ practiceName: "Smile Dental", branch: { code: "downtown", name: "Downtown" }, booking: false, forms: true });
+    expect(await welcomeInfo("downtown")).toMatchObject({ practiceName: "Smile Dental", branch: { code: "downtown", name: "Downtown" }, booking: false, forms: true });
     await db.update(practice).set({ onlineBooking: true, patientForms: false });
     expect(await welcomeInfo("downtown")).toMatchObject({ booking: true, forms: false });
     await db.update(practice).set({ onlineBooking: false, patientForms: true });
+  });
+
+  it("offers every open branch for the form, and a form sent to another branch waits there", async () => {
+    await world();
+    const bayside = await makeBranch({ code: "bayside", name: "Bayside" });
+    const codes = (await welcomeInfo("downtown"))!.branches.map((b) => b.code);
+    expect(codes).toEqual(expect.arrayContaining(["downtown", "bayside"]));
+    expect(codes).not.toContain("shut");
+    expect((await send(form({ branch: "bayside", lastName: "Elsewhere" }), 60)).status).toBe(201);
+    const [saved] = await db.select().from(patientForms).where(eq(patientForms.lastName, "Elsewhere"));
+    expect(saved.branchId).toBe(bayside.id);
   });
 
   it("knows no unknown or closed branch", async () => {
