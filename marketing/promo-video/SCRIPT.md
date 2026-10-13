@@ -1,10 +1,10 @@
 # Bright Smile Dental Clinic: 40-second promo
 
-- **Format:** 9:16 vertical, 1080 × 1920, 30 fps, 40 s
-- **Made for:** TikTok, Facebook Reels and YouTube Shorts. The same file works on all three.
+- **Format:** 9:16 vertical, 1080 × 1920, 30 fps, 40 s. There is also a 16:9 landscape cut (1920 × 1080) with the same scenes, words and soundtrack.
+- **Made for:** TikTok, Facebook Reels and YouTube Shorts (9:16). The same file works on all three. Use the 16:9 cut for YouTube, Facebook feed posts, the website and screens in the clinic.
 - **Audience:** families and adults in Makati who are scrolling on their phones. Many watch with the sound off, so captions carry the voiceover.
 - **Look:** brand teal `#0d8781`, deep navy-teal `#0b3d4a`, logo cream `#fdf5ef`, Figtree type, the tooth emblem. Smooth iris, wipe and teal-sweep transitions, with text that pops and slides in. Every scene pushes in slowly (about 6%), so no frame ever stands still.
-- **Files:** `brightsmile-promo-9x16.mp4` (finished: picture, voiceover, sound effects and music), `promo-picture.mp4` (picture only), `promo.html` (animation source), `render.mjs` (renders the picture), `audio.py` (makes the voiceover, effects and music and mixes them on)
+- **Files:** `brightsmile-promo-9x16.mp4` and `brightsmile-promo-16x9.mp4` (finished: picture, voiceover, sound effects and music), `promo-picture.mp4` and `promo-picture-16x9.mp4` (picture only), `promo.html` and `promo-16x9.html` (animation source), `render.mjs` (renders the picture), `audio.py` (makes the voiceover, effects and music and mixes them on)
 
 ## Selling points, and what was left out
 
@@ -104,7 +104,7 @@ To use a licensed track instead, replace `music.wav` with it (40 s, 48 kHz) and 
 
 - **TikTok / Reels:** post it natively; don't share it as a YouTube link. Use the video's own captions and turn auto-captions off so the text doesn't double. Choose 0:33 (the call-to-action screen) as the cover frame. Suggested caption: *"Kailan ka huling nagpa-check-up? 🦷✨ Book online in a minute at brightsmile.pro. 3 clinics in Makati, open 9 AM–5 PM. #MakatiDentist #DentalClinicMakati #BrightSmile"*
 - **YouTube Shorts:** keep it under 60 s (it is 40 s) and put brightsmile.pro in the description.
-- **Facebook / YouTube feed (16:9):** this cut is vertical. For a landscape version, the scenes can be laid out side by side (headline left, visual right) in a copy of `promo.html` at 960 × 540.
+- **Facebook / YouTube feed (16:9):** post `brightsmile-promo-16x9.mp4`. Each scene puts the headline on the left and the visual on the right, and the captions run along the bottom. Choose 0:36 as the YouTube thumbnail, or design one with the hook line.
 
 ## Changing and rendering
 
@@ -115,13 +115,18 @@ npm install                                          # once, from the repo root
 node marketing/promo-video/render.mjs --stills 2 10 34   # PNGs of single moments
 node marketing/promo-video/render.mjs                # promo-picture.mp4, about 5 minutes
 python marketing/promo-video/audio.py                # voiceover + effects + music -> brightsmile-promo-9x16.mp4
+node marketing/promo-video/render.mjs --wide         # promo-picture-16x9.mp4 (add --stills to check moments)
 ```
+
+`promo-16x9.html` uses the same `data-a` times as `promo.html`. When you change a time or a line in one, change the other to match.
 
 If you change only the picture and keep every time the same, you don't need the voice models. Copy the finished soundtrack onto the new picture instead:
 
 ```bash
 cd marketing/promo-video
 ffmpeg -i promo-picture.mp4 -i brightsmile-promo-9x16.mp4 -map 0:v -map 1:a -c copy -movflags +faststart new.mp4 && mv new.mp4 brightsmile-promo-9x16.mp4
+# the 16:9 cut takes the same soundtrack:
+ffmpeg -i promo-picture-16x9.mp4 -i brightsmile-promo-9x16.mp4 -map 0:v -map 1:a -c copy -movflags +faststart brightsmile-promo-16x9.mp4
 ```
 
 `audio.py` needs `pip install kokoro-onnx==0.4.9 soundfile scipy`. It also needs `kokoro-v1.0.onnx` and `voices-v1.0.bin` from [kokoro-onnx's model-files-v1.0 release](https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.0) in `marketing/promo-video/models/` (git ignores that folder), or set `KOKORO_DIR` to wherever they are. To change a voice line, edit `LINES` in `audio.py` and keep it inside its caption's time in `promo.html`.

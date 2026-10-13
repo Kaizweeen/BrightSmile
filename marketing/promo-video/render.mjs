@@ -1,6 +1,7 @@
 // Renders promo.html to an MP4, one screenshot per frame piped into ffmpeg.
 //   node marketing/promo-video/render.mjs              -> promo-picture.mp4 (picture only; audio.py adds the sound)
 //   node marketing/promo-video/render.mjs --stills 1.5 9 20  -> PNGs of those moments, for checking a layout fast
+//   add --wide first for the 16:9 cut (promo-16x9.html -> promo-picture-16x9.mp4, still-16x9-*.png)
 // Needs ffmpeg on the PATH and a Playwright Chromium (`npx playwright install chromium`), or PLAYWRIGHT_CHANNEL=chrome, or CHROMIUM_PATH=/path/to/chrome.
 import { chromium } from "@playwright/test";
 import { spawn } from "node:child_process";
@@ -10,11 +11,16 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const FPS = 30;
 const args = process.argv.slice(2);
+const wide = args[0] === "--wide";
+if (wide) args.shift();
+const source = wide ? "promo-16x9.html" : "promo.html";
+const suffix = wide ? "-16x9" : "";
 
 const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL, executablePath: process.env.CHROMIUM_PATH });
-// 540 x 960 CSS pixels at 2x gives a 1080 x 1920 frame.
-const page = await browser.newPage({ viewport: { width: 540, height: 960 }, deviceScaleFactor: 2 });
-await page.goto(pathToFileURL(join(here, "promo.html")).href);
+// 540 x 960 CSS pixels at 2x gives a 1080 x 1920 frame; 960 x 540 gives 1920 x 1080.
+const viewport = wide ? { width: 960, height: 540 } : { width: 540, height: 960 };
+const page = await browser.newPage({ viewport, deviceScaleFactor: 2 });
+await page.goto(pathToFileURL(join(here, source)).href);
 await page.evaluate(async () => {
   await document.fonts.ready;
   await Promise.all([...document.images].map((img) => img.decode()));
@@ -28,13 +34,13 @@ async function frameAt(t) {
 
 if (args[0] === "--stills") {
   for (const t of args.slice(1).map(Number)) {
-    const file = join(here, `still-${t}.png`);
+    const file = join(here, `still${suffix}-${t}.png`);
     await page.evaluate((s) => window.seek(s), t);
     await page.screenshot({ path: file });
     console.log(file);
   }
 } else {
-  const out = join(here, "promo-picture.mp4");
+  const out = join(here, `promo-picture${suffix}.mp4`);
   const ffmpeg = spawn("ffmpeg", [
     "-y", "-loglevel", "error",
     "-f", "image2pipe", "-framerate", String(FPS), "-i", "-",
