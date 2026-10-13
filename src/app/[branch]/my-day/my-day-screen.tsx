@@ -17,6 +17,7 @@ import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/comp
 import { api, errorMessage } from "@/lib/fetcher";
 import { cn } from "@/lib/utils";
 import { actionLabel, type Status } from "@/lib/lifecycle";
+import { shortageMessage, type Shortage } from "@/lib/shortages";
 import { addDays, formatDay, formatTime, manilaInstant } from "@/lib/time";
 import { chairName, type VisitJson } from "@/lib/visits";
 
@@ -36,9 +37,11 @@ export function MyDayScreen({ branch, date, today, staffId }: { branch: string; 
     refetchInterval: 30_000,
   });
   const change = useMutation({
-    mutationFn: ({ id, to: next }: { id: string; to: Status }) => api(`/appointments/${id}/transitions`, { method: "POST", body: { to: next } }),
-    onSuccess: async () => {
+    mutationFn: ({ id, to: next }: { id: string; to: Status }) => api<{ shortages?: Shortage[] }>(`/appointments/${id}/transitions`, { method: "POST", body: { to: next } }),
+    onSuccess: async (result) => {
       toast.success("Saved.");
+      const short = shortageMessage(result.shortages);
+      if (short) toast.warning(short);
       await client.invalidateQueries({ queryKey: ["appointments"] });
     },
     onError: async (error) => {
