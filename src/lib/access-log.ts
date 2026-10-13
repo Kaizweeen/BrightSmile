@@ -15,6 +15,8 @@ const ACTIONS: Record<string, string> = {
   "chart.voided": "Voided a chart entry",
   "exam.saved": "Saved an exam",
   "note.added": "Added a treatment note",
+  "file.added": "Added a file to the record",
+  "file.removed": "Removed a file from the record",
   "appointment.created": "Booked a visit",
   "appointment.requested_online": "Booked a visit online",
   "appointment.moved": "Moved a visit",

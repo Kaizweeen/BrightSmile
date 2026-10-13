@@ -1,5 +1,5 @@
 {
-  "id": "1e2a8bc5-4462-4147-915b-d5ee1964df61",
+  "id": "f57123e9-76ab-43c3-a256-c7e01638cc1c",
   "prevId": "076e1b51-2c31-4e66-86d7-7232be959f11",
   "version": "7",
   "dialect": "postgresql",
@@ -1895,6 +1895,152 @@
       },
       "isRLSEnabled": true
     },
+    "public.patient_files": {
+      "name": "patient_files",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_type": {
+          "name": "content_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "size": {
+          "name": "size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "data": {
+          "name": "data",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "uploaded_by": {
+          "name": "uploaded_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "patient_files_patient": {
+          "name": "patient_files_patient",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "patient_files_patient_id_patients_id_fk": {
+          "name": "patient_files_patient_id_patients_id_fk",
+          "tableFrom": "patient_files",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "patient_files_uploaded_by_users_id_fk": {
+          "name": "patient_files_uploaded_by_users_id_fk",
+          "tableFrom": "patient_files",
+          "tableTo": "users",
+          "columnsFrom": [
+            "uploaded_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "patient_files_name": {
+          "name": "patient_files_name",
+          "value": "char_length(\"patient_files\".\"name\") between 1 and 120"
+        },
+        "patient_files_content_type": {
+          "name": "patient_files_content_type",
+          "value": "\"patient_files\".\"content_type\" in ('application/pdf', 'image/jpeg', 'image/png', 'image/webp')"
+        },
+        "patient_files_size": {
+          "name": "patient_files_size",
+          "value": "\"patient_files\".\"size\" between 1 and 4194304 and \"patient_files\".\"size\" = octet_length(\"patient_files\".\"data\")"
+        },
+        "patient_files_category": {
+          "name": "patient_files_category",
+          "value": "\"patient_files\".\"category\" in ('xray', 'photo', 'consent', 'id', 'lab', 'referral', 'other')"
+        },
+        "patient_files_description": {
+          "name": "patient_files_description",
+          "value": "char_length(\"patient_files\".\"description\") <= 200"
+        }
+      },
+      "isRLSEnabled": true
+    },
     "public.patient_forms": {
       "name": "patient_forms",
       "schema": "",
@@ -2548,93 +2694,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": true
-    },
-    "public.procedure_supplies": {
-      "name": "procedure_supplies",
-      "schema": "",
-      "columns": {
-        "procedure_id": {
-          "name": "procedure_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "supply_id": {
-          "name": "supply_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "quantity": {
-          "name": "quantity",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "procedure_supplies_supply": {
-          "name": "procedure_supplies_supply",
-          "columns": [
-            {
-              "expression": "supply_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "procedure_supplies_procedure_id_procedures_id_fk": {
-          "name": "procedure_supplies_procedure_id_procedures_id_fk",
-          "tableFrom": "procedure_supplies",
-          "tableTo": "procedures",
-          "columnsFrom": [
-            "procedure_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "procedure_supplies_supply_id_supplies_id_fk": {
-          "name": "procedure_supplies_supply_id_supplies_id_fk",
-          "tableFrom": "procedure_supplies",
-          "tableTo": "supplies",
-          "columnsFrom": [
-            "supply_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "procedure_supplies_procedure_id_supply_id_pk": {
-          "name": "procedure_supplies_procedure_id_supply_id_pk",
-          "columns": [
-            "procedure_id",
-            "supply_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "procedure_supplies_quantity": {
-          "name": "procedure_supplies_quantity",
-          "value": "\"procedure_supplies\".\"quantity\" between 1 and 1000"
-        }
-      },
       "isRLSEnabled": true
     },
     "public.procedures": {
