@@ -7,6 +7,9 @@ Appointments, chairs, and dental charts for a dental practice with three branche
 - Plans: `docs/superpowers/plans/`
 
 ## Run it
+## Run it
+## Run it
+## Run it
 
 1. `npm install`
 2. Copy `.env.example` to `.env.local` and set `BETTER_AUTH_SECRET` and `SETUP_TOKEN`.
