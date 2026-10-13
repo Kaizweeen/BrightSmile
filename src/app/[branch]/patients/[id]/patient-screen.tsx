@@ -20,6 +20,7 @@ import { formatDateTime, manilaDate } from "@/lib/time";
 import type { PatientVisitJson } from "@/lib/visits";
 import type { Subject } from "@/lib/permissions";
 import { ChartTab } from "./chart-tab";
+import { FilesTab } from "./files-tab";
 import { NotesTab } from "./notes-tab";
 
 export type PatientJson = {
@@ -72,6 +73,7 @@ export function PatientScreen({ patient, canEdit, staff, initialTab }: { patient
           <TabsTrigger value="visits">Visits</TabsTrigger>
           <TabsTrigger value="chart">Chart</TabsTrigger>
           <TabsTrigger value="notes">Notes</TabsTrigger>
+          <TabsTrigger value="files">Files</TabsTrigger>
         </TabsList>
         <TabsContent value="details" className="pt-4">
           <DetailsPanel patient={patient} canEdit={canEdit} />
@@ -84,6 +86,9 @@ export function PatientScreen({ patient, canEdit, staff, initialTab }: { patient
         </TabsContent>
         <TabsContent value="notes" className="pt-4">
           <NotesTab patientId={patient.id} staff={staff} />
+        </TabsContent>
+        <TabsContent value="files" className="pt-4">
+          <FilesTab patientId={patient.id} staff={staff} />
         </TabsContent>
       </Tabs>
     </div>
