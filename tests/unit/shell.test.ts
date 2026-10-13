@@ -1,10 +1,22 @@
+import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
 import { describe, expect, it } from "vitest";
+import { config } from "@/proxy";
 import { roleLabel } from "@/lib/labels";
 import { navItems } from "@/lib/nav";
 import { withBranch } from "@/lib/paths";
 import { contentSecurityPolicy } from "@/lib/security";
 
 describe("content security policy", () => {
+  it("is set on every page, including a branch whose code starts with api, but not on the API", () => {
+    const runs = (url: string) => unstable_doesMiddlewareMatch({ config, url });
+    expect(runs("/downtown/calendar")).toBe(true);
+    expect(runs("/api-north/calendar")).toBe(true);
+    expect(runs("/apizone")).toBe(true);
+    expect(runs("/api")).toBe(false);
+    expect(runs("/api/v1/practice")).toBe(false);
+    expect(runs("/_next/static/chunks/app.js")).toBe(false);
+  });
+
   it("allows only scripts with this request's nonce", () => {
     const csp = contentSecurityPolicy("abc123", { dev: false, https: true });
     expect(csp).toContain("script-src 'self' 'nonce-abc123' 'strict-dynamic'");
