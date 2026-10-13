@@ -1,0 +1,461 @@
+"""Voiceover and sound effects for the promo, mixed onto the picture.
+
+    python marketing/promo-video/audio.py
+
+Reads promo-picture.mp4 (render.mjs makes it) and writes brightsmile-promo-9x16.mp4 with sound,
+plus voiceover.wav, sfx.wav and music.wav for anyone who wants to remix in an editor.
+
+The voice is Kokoro (https://github.com/thewh1teagle/kokoro-onnx, Apache 2.0), run locally. It needs
+`pip install kokoro-onnx==0.4.9 soundfile scipy` and the two model files from that project's
+model-files-v1.0 release (kokoro-v1.0.onnx, voices-v1.0.bin) in KOKORO_DIR (default: ./models next to this file).
+Sound effects and music are synthesised here, so there is nothing to license. ffmpeg must be on the PATH.
+
+Cue times are seconds from the start and follow the data-a times in promo.html: move both together.
+"""
+
+import os
+import subprocess
+from pathlib import Path
+
+import numpy as np
+import soundfile as sf
+from scipy.signal import fftconvolve
+
+HERE = Path(__file__).resolve().parent
+SR = 48_000
+DURATION = 40.0
+rng = np.random.default_rng(7)  # fixed seed: the same noise, so the same mix, every run
+
+# ---------------------------------------------------------------- voiceover
+
+VOICE = "af_heart"  # warm, friendly American English. Kokoro's best-rated voice.
+SPEED = 1.0
+
+# (start, text). Each line lands inside its caption's time in promo.html.
+LINES = [
+    (0.20, "When was your last dental check-up?"),
+    (3.35, "At Bright Smile in Makati, a healthy smile is easy."),
+    (7.30, "Book online in a minute. No calls needed."),
+    (11.30, "Pick a time, and we'll text to confirm your visit."),
+    (15.75, "Gentle, friendly care for kids and adults,"),
+    (19.65, "from cleaning and pasta, to braces and root canal."),
+    (24.35, "Three clinics in Makati, open nine to five."),
+    (28.20, "There's one near you."),
+    (32.70, "Book your visit today, at brightsmile dot pro."),
+    (36.20, "Your bright smile starts here."),
+]
+
+# The phonemizer reads these the American way; say them the way Makati does.
+PRONOUNCE = {
+    "mækˈɑːɾi": "məkˈɑːti",  # Makati with a real t, not "Mak-AH-dee"
+    "bɹˈaɪtsmaɪl": "bɹˈaɪt smˈaɪl",  # the domain as two clear words
+}
+
+
+def voiceover() -> np.ndarray:
+    from kokoro_onnx import Kokoro
+
+    models = Path(os.environ.get("KOKORO_DIR", HERE / "models"))
+    kokoro = Kokoro(str(models / "kokoro-v1.0.onnx"), str(models / "voices-v1.0.bin"))
+    track = np.zeros(int(DURATION * SR), dtype=np.float32)
+    for i, (start, text) in enumerate(LINES):
+        phonemes = kokoro.tokenizer.phonemize(text, "en-us")
+        for american, local in PRONOUNCE.items():
+            phonemes = phonemes.replace(american, local)
+        audio, sr = kokoro.create(phonemes, voice=VOICE, speed=SPEED, is_phonemes=True)
+        audio = resample(audio, sr, SR)
+        end = start + len(audio) / SR
+        next_start = LINES[i + 1][0] if i + 1 < len(LINES) else DURATION
+        assert end <= next_start, f'"{text}" runs to {end:.2f}s, past the next line at {next_start}s'
+        a = int(start * SR)
+        track[a : a + len(audio)] += audio
+        print(f"  {start:5.2f}-{end:5.2f}s  {text}")
+    return track
+
+
+def resample(audio: np.ndarray, src: int, dst: int) -> np.ndarray:
+    if src == dst:
+        return audio.astype(np.float32)
+    from scipy.signal import resample_poly
+
+    g = np.gcd(src, dst)
+    return resample_poly(audio, dst // g, src // g).astype(np.float32)
+
+
+# ---------------------------------------------------------------- sound effects
+
+
+def t(seconds: float) -> np.ndarray:
+    return np.arange(int(seconds * SR)) / SR
+
+
+def env(n: int, attack: float, decay: float) -> np.ndarray:
+    """Quick attack, exponential decay (decay = time constant in seconds)."""
+    x = np.arange(n) / SR
+    return np.minimum(1, x / max(attack, 1e-4)) * np.exp(-x / decay)
+
+
+def tone(freq_from: float, freq_to: float, seconds: float, glide: float) -> np.ndarray:
+    """A sine whose pitch glides exponentially from freq_from to freq_to over `glide` seconds."""
+    x = t(seconds)
+    freq = freq_to + (freq_from - freq_to) * np.exp(-x / glide)
+    return np.sin(2 * np.pi * np.cumsum(freq) / SR)
+
+
+def svf_bandpass(signal: np.ndarray, centre: np.ndarray, q: float) -> np.ndarray:
+    """State-variable band-pass with a moving centre frequency, for whooshes."""
+    out = np.empty_like(signal)
+    low = band = 0.0
+    damp = 1 / q
+    for i, s in enumerate(signal):
+        f = 2 * np.sin(np.pi * min(centre[i], SR / 6) / SR)
+        high = s - low - damp * band
+        band += f * high
+        low += f * band
+        out[i] = band
+    return out
+
+
+def pop(pitch: float = 520) -> np.ndarray:
+    """Soft bubbly pop for things that scale in."""
+    n = int(0.12 * SR)
+    body = tone(pitch * 1.9, pitch, 0.12, 0.018) * env(n, 0.002, 0.035)
+    click = rng.standard_normal(n) * env(n, 0.0005, 0.003) * 0.15
+    return (body + click) * 0.7
+
+
+def tap() -> np.ndarray:
+    """Glassy screen tap."""
+    n = int(0.06 * SR)
+    return (np.sin(2 * np.pi * 2400 * t(0.06)) * env(n, 0.0005, 0.008) * 0.5
+            + rng.standard_normal(n) * env(n, 0.0003, 0.002) * 0.25)
+
+
+def chime(notes: list[tuple[float, float]], decay: float = 0.45, level: float = 0.35) -> np.ndarray:
+    """Bell notes (offset, frequency) with a few inharmonic partials."""
+    length = max(o for o, _ in notes) + decay * 5
+    out = np.zeros(int(length * SR))
+    for offset, f in notes:
+        n = int(decay * 5 * SR)
+        x = t(decay * 5)
+        bell = sum(a * np.sin(2 * np.pi * f * m * x) * np.exp(-x / (decay / m ** 0.7))
+                   for m, a in [(1, 1.0), (2.01, 0.35), (3.02, 0.12), (4.17, 0.06)])
+        a = int(offset * SR)
+        out[a : a + n] += bell * env(n, 0.002, 1e9)
+    return out * level
+
+
+def sparkle(seconds: float = 0.6, count: int = 9, level: float = 0.12) -> np.ndarray:
+    """A shimmer of tiny high plinks."""
+    out = np.zeros(int((seconds + 0.4) * SR))
+    for k in range(count):
+        offset = seconds * k / count + rng.uniform(0, 0.03)
+        f = rng.uniform(2600, 5200)
+        n = int(0.35 * SR)
+        a = int(offset * SR)
+        out[a : a + n] += np.sin(2 * np.pi * f * t(0.35)) * env(n, 0.001, 0.06) * (1 - 0.5 * k / count)
+    return out * level
+
+
+def whoosh(seconds: float = 0.55, f_from: float = 300, f_to: float = 3200, level: float = 0.5) -> np.ndarray:
+    """Air moving past: noise through a sweeping band-pass, swelling then fading."""
+    n = int(seconds * SR)
+    x = np.linspace(0, 1, n)
+    centre = f_from * (f_to / f_from) ** x
+    shape = np.sin(np.pi * x) ** 1.6
+    return svf_bandpass(rng.standard_normal(n) * 0.6, centre, 1.4) * shape * level
+
+
+def drop() -> np.ndarray:
+    """Water-drop "plip" for a map pin landing."""
+    n = int(0.14 * SR)
+    return tone(1100, 420, 0.14, 0.025) * env(n, 0.001, 0.03) * 0.55
+
+
+def tick() -> np.ndarray:
+    n = int(0.03 * SR)
+    return np.sin(2 * np.pi * 3200 * t(0.03)) * env(n, 0.0003, 0.004) * 0.35
+
+
+def swell(seconds: float = 0.7) -> np.ndarray:
+    """Rising airy swell into the URL reveal."""
+    n = int(seconds * SR)
+    x = np.linspace(0, 1, n)
+    noise = svf_bandpass(rng.standard_normal(n) * 0.5, 800 * 6 ** x, 2.0)
+    return noise * x ** 2.5 * 0.35
+
+
+# (time, sound, pan -1 left .. 1 right). Times match the visuals in promo.html.
+def cues():
+    c = []
+    # Scene 1, the hook: soft ticks as the words land, a bouncy pop for the "?"
+    for i, s in enumerate([0.05, 0.2, 0.35, 0.5, 0.75, 0.9]):
+        c.append((s + 0.12, pop(700 + 60 * i) * 0.45, -0.3 + 0.12 * i))
+    c.append((1.33, pop(380) * 1.1, 0.2))
+    c.append((2.75, whoosh(0.55, 2600, 250, 0.55), 0))  # iris closes to a dot
+    # Scene 2, brand: the emblem pops out of the dot, sparkles twinkle
+    c.append((3.2, pop(300) * 1.1, 0))
+    c.append((3.3, sparkle(0.7), 0.2))
+    c.append((3.85, chime([(0, 2637)], 0.25, 0.08), -0.4))
+    c.append((4.35, chime([(0, 3136)], 0.25, 0.08), 0.4))
+    c.append((6.85, whoosh(0.5, 400, 3000, 0.45), 0))  # brand slides up and away
+    # Scene 3, booking
+    c.append((7.55, whoosh(0.8, 200, 1400, 0.35), 0))  # phone rises
+    for k, s in enumerate([8.3, 8.4, 8.5, 8.6, 8.7, 8.8]):
+        c.append((s + 0.03, tick() * 0.6, -0.2 + 0.08 * k))
+    c.append((9.70, tap(), 0.25))  # picks 10:30 AM
+    c.append((10.62, tap(), -0.05))  # presses Book my visit
+    c.append((11.55, chime([(0, 1318.5), (0.13, 1975.5)], 0.3, 0.22), 0.1))  # text arrives
+    c.append((12.12, chime([(0, 1046.5), (0.09, 1318.5), (0.18, 1568)], 0.4, 0.26), 0.35))  # confirmed
+    c.append((15.15, whoosh(0.5, 500, 3500, 0.45), 0))
+    # Scene 4, family care: badges, then chips in two rising waves
+    c.append((16.65, pop(440), -0.3))
+    c.append((16.85, pop(520), 0.3))
+    for k, s in enumerate([17.6, 17.85, 18.1]):
+        c.append((s + 0.08, pop(560 + 70 * k), -0.4 + 0.4 * k))
+    for k, s in enumerate([19.8, 20.05, 20.3]):
+        c.append((s + 0.08, pop(700 + 80 * k), -0.4 + 0.4 * k))
+    c.append((21.0, sparkle(0.5, 6, 0.07), 0))
+    # Scene 5, map: a sideways wipe, pins drop in, the clock spins
+    c.append((23.7, whoosh(0.65, 250, 4000, 0.5), 0))
+    c.append((24.95, pop(330), 0))
+    for k, (s, pan) in enumerate([(25.6, -0.3), (26.1, -0.5), (26.6, 0.6)]):
+        c.append((s + 0.36, drop(), pan))
+    c.append((27.85, pop(480), 0.2))
+    for k in range(4):
+        c.append((27.95 + 0.11 * k, tick() * 0.7, 0.2))
+    c.append((31.95, whoosh(0.7, 200, 2400, 0.5), 0))
+    # Scene 6, call to action
+    c.append((32.45, pop(300) * 1.1, 0))
+    c.append((33.0, swell(0.65), 0))
+    c.append((33.68, pop(420), 0))
+    c.append((33.7, sparkle(0.6, 8, 0.1), 0.1))
+    c.append((34.68, pop(520), 0))
+    c.append((36.25, chime([(0, 1046.5), (0.12, 1318.5), (0.24, 1568), (0.36, 2093)], 0.55, 0.22), 0))
+    c.append((36.3, sparkle(1.0, 12, 0.1), 0))
+    return c
+
+
+def sfx() -> np.ndarray:
+    track = np.zeros((int(DURATION * SR), 2), dtype=np.float64)
+    for start, sound, pan in cues():
+        a = int(start * SR)
+        sound = sound[: len(track) - a]
+        left, right = np.cos((pan + 1) * np.pi / 4), np.sin((pan + 1) * np.pi / 4)  # equal-power pan
+        track[a : a + len(sound), 0] += sound * left
+        track[a : a + len(sound), 1] += sound * right
+    # A short airy room so the effects sit together instead of feeling pasted on.
+    n = int(0.6 * SR)
+    ir = rng.standard_normal((n, 2)) * np.exp(-np.arange(n) / (0.12 * SR))[:, None]
+    ir /= np.abs(ir).sum(axis=0) / 6
+    wet = np.stack([fftconvolve(track[:, ch], ir[:, ch])[: len(track)] for ch in range(2)], axis=1)
+    return (track + 0.18 * wet).astype(np.float32)
+
+
+# ---------------------------------------------------------------- music
+
+# Bright, feel-good pop in C major, about 116 BPM. The tempo is chosen so bar lines land on the scene changes:
+# the beat drops at 3.0s (the brand reveal), and bars start at 7.1 (booking), 15.4 (family care),
+# 23.7 (the map wipe) and 32.0 (the call to action). 17 bars of groove end on a final chord at 38.2s.
+BAR = 29 / 14
+BEAT = BAR / 4
+DROP = 3.0
+GROOVE_BARS = 17
+END = DROP + GROOVE_BARS * BAR
+
+# I - V - vi - IV, one chord a bar, voiced close together so the pad moves smoothly.
+CHORDS = [(60, 64, 67), (59, 62, 67), (60, 64, 69), (60, 65, 69)]  # C, G/B, Am, F
+ROOTS = [48, 43, 45, 41]
+# A marimba-bell hook for the second half: (beat, note) per chord.
+MELODY = [
+    [(0, 76), (1, 79), (1.5, 81), (2, 79), (3, 76)],
+    [(0, 74), (1, 79), (2, 74), (2.5, 72), (3, 71)],
+    [(0, 76), (1, 81), (2, 79), (3, 76), (3.5, 72)],
+    [(0, 77), (1, 76), (2, 72), (3, 74)],
+]
+
+
+def hz(midi: float) -> float:
+    return 440 * 2 ** ((midi - 69) / 12)
+
+
+def bar_time(bar: float) -> float:
+    return DROP + bar * BAR
+
+
+def pluck(f: float, seconds: float = 0.7) -> np.ndarray:
+    """Ukulele-like pluck: bright harmonics that die away faster than the fundamental."""
+    x = t(seconds)
+    out = sum(np.sin(2 * np.pi * f * n * x) * np.exp(-x / (0.38 / n ** 0.9)) / n for n in range(1, 11) if f * n < 12_000)
+    return out * np.minimum(1, x / 0.002) * 0.5
+
+
+def bell(f: float, seconds: float = 1.2) -> np.ndarray:
+    """Soft marimba-bell for the melody."""
+    x = t(seconds)
+    out = sum(a * np.sin(2 * np.pi * f * m * x) * np.exp(-x / (0.5 / m)) for m, a in [(1, 1.0), (2.0, 0.25), (3.0, 0.1), (4.2, 0.05)])
+    return out * np.minimum(1, x / 0.003) * 0.4
+
+
+def kick() -> np.ndarray:
+    n = int(0.35 * SR)
+    return tone(170, 48, 0.35, 0.035) * env(n, 0.001, 0.13) + rng.standard_normal(n) * env(n, 0.0003, 0.002) * 0.2
+
+
+def clap() -> np.ndarray:
+    n = int(0.25 * SR)
+    burst = np.zeros(n)
+    for offset in (0, 0.011, 0.023):
+        a = int(offset * SR)
+        burst[a:] += rng.standard_normal(n - a) * env(n - a, 0.0005, 0.006 if offset < 0.02 else 0.07)
+    return svf_bandpass(burst, np.full(n, 1400.0), 1.2) * 0.9
+
+
+def hat(decay: float = 0.025) -> np.ndarray:
+    n = int(max(0.08, decay * 5) * SR)
+    return np.diff(rng.standard_normal(n + 1)) * env(n, 0.0005, decay) * 0.12
+
+
+def bass(f: float, seconds: float) -> np.ndarray:
+    x = t(seconds)
+    wave = np.sin(2 * np.pi * f * x) + 0.35 * np.sin(4 * np.pi * f * x) + 0.15 * np.sin(6 * np.pi * f * x)
+    shape = np.minimum(1, x / 0.006) * np.minimum(1, (seconds - x) / 0.04) * np.exp(-x / 0.6)
+    return np.tanh(1.4 * wave * shape) * 0.45
+
+
+def pad(notes: tuple[int, ...], seconds: float) -> np.ndarray:
+    """Warm, wide chord: two soft saw-ish voices a few cents apart, one per side."""
+    x = t(seconds)
+    shape = np.minimum(1, x / 0.35) * np.minimum(1, (seconds - x) / 0.35)
+    sides = []
+    for detune in (-7, 7):
+        side = np.zeros_like(x)
+        for m in notes:
+            f = hz(m) * 2 ** (detune / 1200)
+            side += sum(np.sin(2 * np.pi * f * n * x + n) / n ** 1.6 for n in range(1, 7))
+        sides.append(side * shape * 0.06)
+    return np.stack(sides, axis=1)
+
+
+def music() -> np.ndarray:
+    track = np.zeros((int(DURATION * SR), 2))
+    duck = np.zeros(len(track))  # what the kick pushes the pad and plucks down by: the modern "pump"
+
+    def add(start: float, sound: np.ndarray, pan: float = 0.0, gain: float = 1.0, target=track) -> None:
+        a = int(start * SR)
+        if a >= len(target):
+            return
+        sound = sound[: len(target) - a] * gain
+        if sound.ndim == 2:
+            target[a : a + len(sound)] += sound
+        else:
+            left, right = np.cos((pan + 1) * np.pi / 4), np.sin((pan + 1) * np.pi / 4)
+            target[a : a + len(sound), 0] += sound * left
+            target[a : a + len(sound), 1] += sound * right
+
+    tonal = np.zeros_like(track)  # pad, plucks and bells, which get the pump
+
+    # Intro (0-3.0s): the C chord swells in, plucks tiptoe, a riser lifts into the drop.
+    add(0.0, pad(CHORDS[0], DROP + 0.2) * np.linspace(0.2, 1, int((DROP + 0.2) * SR))[:, None], target=tonal)
+    for k in range(int(DROP / BEAT * 2)):
+        start = DROP - (k + 1) * BEAT / 2
+        if start > 0.5:
+            note = CHORDS[0][k % 3] + 12
+            add(start, pluck(hz(note)), 0.3 if k % 2 else -0.3, 0.25 + 0.25 * (1 - start / DROP), target=tonal)
+    n = int(1.8 * SR)
+    add(DROP - 1.8, svf_bandpass(rng.standard_normal(n) * 0.5, 300 * 20 ** np.linspace(0, 1, n), 1.5) * np.linspace(0, 1, n) ** 2 * 0.5, 0)
+
+    for b in range(GROOVE_BARS):
+        start = bar_time(b)
+        chord, root = CHORDS[b % 4], ROOTS[b % 4]
+        cta = b >= 14
+        build = b == 13  # the bar before the call to action drops its kick for a lift
+        add(start, pad(chord, BAR + 0.35), target=tonal)
+        # Plucked arpeggio in eighths, up and back down the chord.
+        tones = [m + 12 for m in chord] + [chord[0] + 24]
+        for k, i in enumerate([0, 1, 2, 3, 2, 1, 2, 1]):
+            add(start + k * BEAT / 2, pluck(hz(tones[i])), -0.35 if k % 2 else 0.35, 0.5 if k % 2 else 0.65, target=tonal)
+        # Bass: a pop bounce on the root.
+        for beat, length, octave in [(0, 0.9, 0), (1.5, 0.45, 0), (2, 0.9, 0), (3.5, 0.45, 12)]:
+            add(start + beat * BEAT, bass(hz(root + octave), length * BEAT), 0, 0.9)
+        # Drums
+        for beat in range(4):
+            if not (build and beat >= 2):
+                add(start + beat * BEAT, kick(), 0, 0.9)
+                d = np.arange(int(0.3 * SR)) / SR
+                a = int((start + beat * BEAT) * SR)
+                duck[a : a + len(d)] = np.maximum(duck[a : a + len(d)], 0.4 * np.exp(-d / 0.11)[: len(duck) - a])
+            if beat in (1, 3):
+                add(start + beat * BEAT, clap(), 0.05, 0.55)
+            add(start + (beat + 0.5) * BEAT, hat(0.09 if cta else 0.03), 0.3, 1.3 if cta else 1.0)
+            for s in (0.25, 0.75):
+                add(start + (beat + s) * BEAT, hat(0.015), -0.35, 0.5)
+        if b in (9, 13):  # clap roll into the map wipe and into the call to action
+            for k in range(4):
+                add(start + (3 + k / 4) * BEAT, clap(), 0.05, 0.25 + 0.1 * k)
+        if build:
+            n = int(BAR * SR)
+            add(start, svf_bandpass(rng.standard_normal(n) * 0.5, 400 * 15 ** np.linspace(0, 1, n), 1.5) * np.linspace(0, 1, n) ** 2 * 0.55, 0)
+        # Bell melody from the map scene on, louder for the call to action.
+        if b >= 10:
+            for beat, note in MELODY[b % 4]:
+                add(start + beat * BEAT, bell(hz(note)), 0.15, 0.45 if cta else 0.25, target=tonal)
+
+    # The ending: one big C chord on the downbeat at 38.2s that rings out.
+    add(END, kick(), 0, 1.0)
+    add(END, pad(CHORDS[0], DURATION - END + 0.4) * np.linspace(1, 0, int((DURATION - END + 0.4) * SR))[:, None], target=tonal)
+    for k, m in enumerate([48, 55, 60, 64, 67, 72, 76, 79]):
+        add(END + 0.012 * k, pluck(hz(m), 1.8), -0.4 + 0.1 * k, 0.45, target=tonal)
+    add(END, bell(hz(84), 1.8), 0, 0.4, target=tonal)
+    add(END, bass(hz(36), DURATION - END), 0, 1.0)
+    n = int(1.8 * SR)
+    add(END, np.diff(rng.standard_normal(n + 1)) * env(n, 0.001, 0.5) * 0.07, 0)
+
+    track += tonal * (1 - duck)[:, None]
+    # Gentle room, then fade out the last half second.
+    n = int(0.8 * SR)
+    ir = rng.standard_normal((n, 2)) * np.exp(-np.arange(n) / (0.18 * SR))[:, None]
+    ir /= np.abs(ir).sum(axis=0) / 4
+    wet = np.stack([fftconvolve(track[:, ch], ir[:, ch])[: len(track)] for ch in range(2)], axis=1)
+    track = track + 0.15 * wet
+    fade = int(0.6 * SR)
+    track[-fade:] *= np.linspace(1, 0, fade)[:, None]
+    return (track / np.abs(track).max() * 0.9).astype(np.float32)
+
+
+# ---------------------------------------------------------------- mix
+
+
+def main() -> None:
+    picture = HERE / "promo-picture.mp4"
+    out = HERE / "brightsmile-promo-9x16.mp4"
+    print("Voiceover")
+    sf.write(HERE / "voiceover.wav", voiceover(), SR, subtype="PCM_24")
+    print("Sound effects")
+    sf.write(HERE / "sfx.wav", sfx(), SR, subtype="PCM_24")
+    print("Music")
+    sf.write(HERE / "music.wav", music(), SR, subtype="PCM_24")
+    # Voice: clean the low end, add presence, even it out. Effects and music sit under it and duck while she speaks;
+    # the music rides higher in the gaps between lines and for the ending.
+    graph = (
+        "[1:a]highpass=f=90,equalizer=f=3500:t=q:w=1.2:g=2.5,"
+        "acompressor=threshold=-20dB:ratio=3:attack=5:release=120:makeup=2,aformat=channel_layouts=stereo,asplit=3[vo][key1][key2];"
+        "[2:a]volume=-3dB[fx];"
+        "[fx][key1]sidechaincompress=threshold=0.05:ratio=3:attack=10:release=250[fxd];"
+        "[3:a]volume=-13dB[mu];"
+        "[mu][key2]sidechaincompress=threshold=0.02:ratio=4:attack=20:release=400[mud];"
+        "[vo][fxd][mud]amix=inputs=3:duration=first:normalize=0,"
+        "loudnorm=I=-14:TP=-1.5:LRA=9,aresample=48000[a]"
+    )
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-i", str(picture), "-i", str(HERE / "voiceover.wav"), "-i", str(HERE / "sfx.wav"),
+         "-i", str(HERE / "music.wav"),
+         "-filter_complex", graph, "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+         "-t", str(DURATION), "-movflags", "+faststart", str(out)],
+        check=True,
+    )
+    print(out)
+
+
+if __name__ == "__main__":
+    main()

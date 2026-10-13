@@ -1,0 +1,4 @@
+models
+*.wav
+__pycache__
+still-*.png
