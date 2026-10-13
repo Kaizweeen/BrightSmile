@@ -138,7 +138,7 @@ export function VisitPanel({ visitId, branch, staff, onClose, onMove }: Props) {
                 </Button>
               )}
               {v.status === "completed" && can(staff, "billing.issue", { branchId: v.branchId }) && (
-                <Link href={`/${branch}/billing/new?appointment=${v.id}`} className={buttonVariants()}>
+                <Link href={`/${v.branchCode}/billing/new?appointment=${v.id}`} className={buttonVariants()}>
                   Take payment
                 </Link>
               )}
