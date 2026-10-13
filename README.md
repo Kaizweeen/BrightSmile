@@ -1,76 +1,200 @@
 # DentaSync
 
-Appointments, chairs, and dental charts for a dental practice with three branches in the Philippines.
+**Bright Smile Dental Clinic management system.**
 
-- Spec: `docs/superpowers/specs/2026-09-29-dentasync-part-1-scheduling-design.md`
-- Online booking spec, which overrides part 1 on visit lengths: `docs/superpowers/specs/2026-09-29-dentasync-online-booking-design.md`
-- Plans: `docs/superpowers/plans/`
+DentaSync is a full-stack web app that runs a dental clinic with three branches in Makati, Philippines. It handles scheduling, dental charts, online booking, patient QR forms, billing with official receipts, and supplies. It also keeps a privacy audit log to support the Data Privacy Act (RA 10173).
 
-## Run it
-## Run it
-## Run it
-## Run it
+Live site: <https://www.brightsmile.pro>
 
-1. `npm install`
-2. Copy `.env.example` to `.env.local` and set `BETTER_AUTH_SECRET` and `SETUP_TOKEN`.
-3. `npm run seed` fills `.data/dev` with 3 branches, staff, 40 patients, two weeks of visits, and chart entries, exams, and notes on past visits, and prints the sign-in usernames and password once. Run it while the dev server is stopped. To start over, delete `.data/dev` and run it again.
-4. `npm run dev`, then open http://localhost:3700. The database migrates itself. The development data turns online booking on: try it at http://localhost:3700/book. Without the seed, open `/setup` to create the owner.
+## Why we built it
+
+Paper and spreadsheet scheduling across three branches leads to double bookings and lost records. DentaSync puts scheduling, patient charts, billing and supplies in one place. The database itself enforces the important rules, so they hold even if two people work at the same moment.
+
+## Features
+
+### For patients (no login needed)
+- Public landing page with the clinic's services in English and Tagalog
+- Online booking: choose a branch, a service and a time, then enter details (`/book`)
+- QR welcome page and patient information form (`/welcome/{branch}`)
+- Privacy notice and consent
+- Anti-spam protection: honeypot field and per-connection rate limits
+
+### For front desk and managers
+- Chair calendar with day and week views and a branch switcher
+- Confirm online booking requests, check patients in, and book walk-ins
+- No double booking of a dentist, chair or patient, including chair cleaning (turnover) time
+- Warnings for overtime or outside clinic hours, with a "Book anyway" option
+- Patient list and patient forms turned into charts
+- Billing: cash (change computed) or QR payment (confirmed by staff), printable receipts, voiding, and end-of-day reconcile
+- Supplies with reorder levels, with every change audited
+
+### For dentists
+- "My Day" schedule
+- PDA dental chart (FDI numbering, 5 surfaces per tooth, full PDA legend)
+- Exams (periodontal, occlusion, appliances, TMD, X-rays), treatment notes and visit history
+- Records are never edited or deleted, only voided with a reason
+
+### For the owner
+- All-branches overview
+- Staff approval by QR join request, password reset links, and per-person visits
+- Settings for the practice, branches, chairs, procedures, schedules, time off and billing
+- Access log for sign-ins, patient record views and changes
+
+## Visit lifecycle
+
+```
+Requested → Confirmed → Checked-In → In-Treatment → Completed
+                                   ↘ No-Show / Cancelled
+```
+
+A database trigger enforces the allowed changes. Completed and Cancelled are final.
+
+## Roles
+
+| Role | What they can do |
+|---|---|
+| **Owner** | Everything, across all branches, including Settings and the access log |
+| **Manager / Front desk** | Book, confirm, check in, bill, close the day, and approve staff for their branches. Can read charts but never write them |
+| **Dentist** | Own calendar and "My Day", treat and complete own visits, write charts, exams and notes |
+| **Patient** | No login. Public booking page and patient form only |
+
+Every permission is decided by one function, `can(user, action, target)`, checked on the server for every request.
+
+## Tech stack
+
+| Area | Technology |
+|---|---|
+| Language | TypeScript (front end and back end) |
+| Framework | Next.js 16 (App Router), full stack |
+| UI | React 19, Tailwind CSS 4, shadcn/ui, Lucide icons, light and dark mode |
+| Client data | TanStack Query 5 (caching, 30 second auto-refresh) |
+| Validation | Zod 4 on every input |
+| Database | PostgreSQL 17. PGlite (Postgres in WASM) for development and tests, Supabase (Singapore) in production |
+| ORM | Drizzle ORM and drizzle-kit migrations, plus hand-written SQL for constraints and triggers |
+| Auth | Better Auth: username login, Postgres sessions, rate-limited sign-in |
+| QR codes | `qrcode` (SVG) |
+| Testing | Vitest (unit, database and API tests) and Playwright (end-to-end) |
+| Hosting | Vercel (Singapore) and Supabase |
+
+DentaSync has its own REST API at `/api/v1/...` and uses no third-party APIs (no SMS, email or payment gateway).
+
+## Security and privacy
+
+- Audit log of sign-ins, every patient record view, and every change
+- Server-side permission check on every request
+- Row-level security on every table
+- Content Security Policy with a per-request nonce, HSTS, frame-deny and nosniff
+- Hashed passwords, 12-hour httpOnly sessions, and cross-origin writes refused
+- Patient data stored in Singapore, nightly encrypted backups, and no patient details in logs
+
+## Getting started
+
+You need Node.js 20 or newer. No database install is needed for development, because the app uses PGlite.
+
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Create your environment file
+cp .env.example .env.local
+# Open .env.local and set BETTER_AUTH_SECRET and SETUP_TOKEN
+# (32+ random characters). To generate one:
+# node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+
+# 3. (Optional) Fill the dev database with sample data
+npm run seed
+
+# 4. Start the dev server
+npm run dev
+```
+
+Then open <http://localhost:3700>. The database migrates itself on first run.
+
+- `npm run seed` creates 3 branches, staff, 40 patients, two weeks of visits, and sample charts, exams and notes. It prints the sign-in usernames and password once. Run it while the dev server is stopped.
+- Without the seed, open `/setup` to create the owner account.
+- Try online booking at <http://localhost:3700/book>.
 
 ## Scripts
 
 | Script | What it does |
 |---|---|
 | `npm run dev` | Dev server on port 3700 |
-| `npm run seed` | Development data (PGlite only) |
-| `npm test` | Unit and database tests (PGlite, no network) |
-| `npm run test:e2e` | The end-to-end run, below |
-| `npm run lint` | ESLint |
-| `npm run typecheck` | TypeScript |
 | `npm run build` | Production build |
-| `npm run db:migrate` | Applies `drizzle/` to the production Postgres, asking for its address (or reading `DATABASE_URL`) |
+| `npm run start` | Start the production build |
+| `npm run seed` | Sample development data (PGlite only) |
+| `npm test` | Unit and database tests (PGlite, no network) |
+| `npm run test:e2e` | End-to-end test of a full visit (Playwright) |
+| `npm run lint` | ESLint |
+| `npm run typecheck` | TypeScript check |
+| `npm run db:generate` | Generate a new migration from schema changes |
+| `npm run db:migrate` | Apply migrations to the production Postgres |
 
-## The end-to-end run
+## Project structure
 
-`npm run test:e2e` starts its own dev server on port 3701 with a fresh database in `.data/e2e` and walks one visit through setup, a QR join, approval, booking, check-in, start of treatment, charting a tooth, the exam, a note, and completion. After the visit, the owner turns online booking on, a patient books at `/book` (checking that `?branch=` picks the branch, that the Service list follows the branch, and meeting a "just taken" refusal first), and the front desk confirms the request from Online requests. Last, the owner turns patient forms on and online booking off, a patient opens the branch's welcome page from its patient poster and sends the form, and the front desk makes a chart from it.
+```
+src/
+  app/          Pages and API routes (Next.js App Router)
+  components/   UI components (shadcn/ui and app components)
+  db/           Database schema and connection (Drizzle)
+  lib/          Shared logic: permissions, scheduling, billing, validation
+  server/       Service functions used by both pages and the API
+drizzle/        SQL migrations (tables, rules, row-level security, billing)
+scripts/        Seed, migrate and end-to-end server scripts
+tests/          Vitest and Playwright tests
+docs/           Design specs and the deployment guide
+```
 
-- Stop `npm run dev` first; both would share `.next`.
-- Playwright needs a browser once: `npx playwright install chromium`. Or use an installed Chrome or Edge: `$env:PLAYWRIGHT_CHANNEL = "chrome"` in PowerShell, `PLAYWRIGHT_CHANNEL=chrome` elsewhere.
-- The visit is booked for the next quarter hour and must end the same day, so run it before 23:00 Manila time.
+## Main pages
 
-## Going live
+| Page | URL |
+|---|---|
+| Landing page | `/` |
+| Online booking | `/book` |
+| Patient QR welcome page | `/welcome/{branch}` |
+| Staff login | `/login` |
+| Calendar | `/{branch}/calendar` |
+| My Day (dentist) | `/{branch}/my-day` |
+| Patients | `/{branch}/patients` |
+| Billing | `/{branch}/billing` |
+| Supplies | `/{branch}/supplies` |
+| Staff | `/{branch}/staff` |
+| Settings | `/{branch}/settings` |
+| All-branches overview (owner) | `/all` |
 
-Spec section 16 holds the decisions. The steps:
+`{branch}` is the branch code.
 
-1. **Database: Supabase.** Create a Supabase project in Southeast Asia (Singapore) and keep its database password in a password manager. Then, in the project:
-   - Turn off the Data API (the Enable Data API switch on its page in the dashboard). DentaSync never uses that web API. Every table has row level security, so it would find nothing anyway, but off is safer.
-   - Turn on Enforce SSL (Database settings, SSL Configuration).
-   - Open Connect and copy two addresses, each with the password filled in: the session pooler (port 5432), for migrations and backups, and the transaction pooler (port 6543), for the app. Use them as shown, without adding `sslmode`: DentaSync checks Supabase's certificate itself (`src/db/ssl.ts`).
+## Testing
 
-   From a trusted computer, apply the migrations: run `npm run db:migrate` and paste the session pooler address when it asks (asked for, the password never lands in a command line or the shell's history). It prints "The database is up to date." or the database's reason for refusing. Run it again after any release that adds a file under `drizzle/`, before that release goes out.
+```bash
+npm test            # unit, database and API tests
+npm run test:e2e    # one full visit, from setup to receipt
+```
 
-   Online booking's release is the exception to "migrate first, then release". Its second migration (0004) drops the old procedure length columns, which the running release still reads, and it cannot be undone. From the moment `db:migrate` finishes until the new release is live, the calendar, My day, the visit panel, patient visit lists, bookings, and moves all fail, not only the Services pages. So: check that the branch's Vercel preview build passed; take a fresh backup just before (step 4's `pg_dump`); run `npm run db:migrate` outside clinic hours; and merge right after. Later releases add before they drop.
+The end-to-end run needs a browser once: `npx playwright install chromium`. Stop `npm run dev` before running it.
 
-   Supabase Free holds 500 MB (years of a 3-branch practice's records), keeps no backups of its own (step 4 makes them), and pauses a project after a week without use. Daily use keeps it awake; after a longer closure, the owner clicks Resume project in the dashboard and the data is all there.
-2. **App: Vercel.** Vercel's free Hobby plan is for personal, non-commercial use only, so a practice's app belongs on Pro ($20 a month per member). Import the GitHub repository as a new project and add no variables yet: that first deployment builds but will not start. `vercel.json` runs the server in Singapore, next to the database. Then open Settings, Environment Variables, and add four, each for Production only (untick Preview and Development, so preview builds of unmerged branches never reach the practice's data):
-   - `DATABASE_URL`: the transaction pooler address.
-   - `BETTER_AUTH_SECRET` and `SETUP_TOKEN`: each 32 or more random characters, the setup code kept private. `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"` prints one.
-   - `APP_URL`: the site's https origin with no trailing slash, the project's `.vercel.app` address or the practice's own domain. Settle it before printing the QR posters, which carry it.
+## Deployment and documentation
 
-   Then redeploy. The server refuses to start if any is missing or if `DATABASE_URL` points at PGlite. The sign-in, join, and booking limits count per visitor, by the address in a header the host sets and never takes from the visitor: `x-real-ip` on Vercel (found on its own there). On any other host, set `CLIENT_IP_HEADER` to that host's header (Netlify's `x-nf-client-connection-ip` is also found on its own).
-3. **First run.** Open `/setup` with the setup code to create the practice and the owner. If the owner sees patients, open Staff, edit their own row, and tick "I see patients" before booking or charting their visits. In Settings, set the standard visit length and chair cleaning time (Practice), add the real branches, hours, and chairs, and the services, each offered online or not and limited to certain dentists if needed (for example Braces and Retainers to the orthodontist); then each dentist's weekly schedule; and print each branch's QR poster for its staff room. To take online bookings, paste the privacy notice (reviewed by a lawyer; it should say that the booking page and the patient form each store a scrambled code (a keyed hash) of the internet address a request comes from, never the address itself, and use it to limit each connection to five bookings and five forms an hour; it should also say that this holds for DentaSync's database only, because Vercel, which hosts the site, sees every visitor's internet address and keeps it in its own request logs for as long as its plan keeps logs; and the lawyer should say who may agree for a child, since the form has no guardian field). Just before switching online booking on, add its rate-limit rule: in Vercel, Firewall, Configure, New Rule: If Request Path starts with `/api/v1/portal/`, Then Rate Limit, Fixed Window, 60 seconds, 100 requests, keyed by IP, Default (429) action, then Review Changes and Publish. Every plan allows at least one rate-limit rule; Hobby allows one per project. 100 a minute is generous on purpose: Philippine mobile networks put many patients behind one shared address. Then switch online booking on. Patients book at `APP_URL/book`; their requests come in as Requested, marked Online, and the front desk confirms them from Online requests on the branch calendar. To take patient forms, make sure the notice also covers the patient form (what it asks, why, and that a form waits for the front desk and is deleted once handled, or, once 30 days have passed, the next time forms are listed or sent), make sure the Vercel Firewall rate-limit rule above is in place (it covers `/api/v1/portal/`, where the form is sent too, so it is needed before switching forms on even if online booking stays off), tick Take patient forms, and print each branch's patient poster (Settings, Branches, Print patient poster) for where patients wait. Its QR opens APP_URL/welcome/{branch code}, with Book a visit and Fill in my patient form; the forms wait under Patient forms on that branch's Patients page, for the owner and the branch's managers. Patients on the clinic's own Wi-Fi share one connection, so a busy waiting room can reach five forms in an hour; the page then tells them to ask at the front desk.
-4. **Backups.** Supabase Free keeps no backups (its paid plans keep daily ones), so these nightly files are the practice's real backups. Each dump is encrypted to the owner's public key: the computer that runs the job holds no decryption key, only the database address (give it a read-only database role for the dumps), and only the owner can decrypt.
-   - Once, on the owner's computer: make a key pair (`gpg --full-generate-key`), keep the private key there and on an offline copy, and export the public key (`gpg --export --armor OWNER_KEY_ID > owner.pub`).
-   - On a trusted computer that stays on at night: install the pg_dump of the server's Postgres major version (`select version();` in Supabase's SQL editor shows it) and import the public key (`gpg --import owner.pub`). Download Supabase's certificate (Database settings, SSL Configuration), and set `BACKUP_DATABASE_URL` to the session pooler address with `?sslmode=verify-full&sslrootcert=` and the downloaded file's full path added (for example `C:/backups/prod-ca-2021.crt`), so pg_dump checks that it is talking to Supabase.
-   - Schedule this every night, with Windows Task Scheduler running Git Bash, or with cron elsewhere, and keep the files away from the database host:
+- Full setup, testing and go-live steps (Supabase, Vercel, backups): [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- Design specs and plans: [docs/superpowers/](docs/superpowers/)
+- Product notes: [PRODUCT.md](PRODUCT.md)
 
-   ```bash
-   pg_dump --format=custom "$BACKUP_DATABASE_URL" | gpg --encrypt --recipient OWNER_KEY_ID --output "dentasync-$(date +%F).dump.gpg"
-   ```
+## Out of scope for now
 
-   Before going live, restore one backup into a scratch database on the owner's computer (`gpg --decrypt dentasync-DATE.dump.gpg | pg_restore --dbname "$SCRATCH_DATABASE_URL"`) and note how long it took.
+SMS and email reminders, patient accounts, analytics, payment gateway, VAT and discounts, full lot-based inventory with expiry dates, and two-factor sign-in.
 
-   The nightly encrypted dumps keep copies of everything, forms that were deleted included, for as long as the files are kept, so delete dump files older than a set period (for example 30 days: add `find BACKUP_FOLDER -name 'dentasync-*.dump.gpg' -mtime +30 -delete` to the nightly job, with the folder the dumps are written to) and have the privacy notice say how long backups keep copies.
-5. **Before go-live.** The practice's real branch names, addresses, phones, hours, and chair labels; the service list (which are offered online, and to which dentists) and the standard visit length and chair cleaning time; the dentists' check of the PDA legend, surfaces, and exam items; the privacy notice and consent form, reviewed by a lawyer, saying the data is kept in Singapore (RA 10173) and what step 3 asks of the notice for online booking and patient forms; and the printed QR posters. Two checks for online booking and patient forms:
-   - No branch is coded `all`, `api`, `book`, `join`, `login`, `poster`, `reset`, `setup`, `waiting`, `welcome`, or `clinic`, since the app's own pages would hide it. In Supabase's SQL editor, `select code from branches where code in ('all', 'api', 'book', 'join', 'login', 'poster', 'reset', 'setup', 'waiting', 'welcome', 'clinic');` returns nothing.
-   - Every other address the site answers at (the bare domain, any old `.vercel.app` address) redirects to `APP_URL` (Vercel, Settings, Domains), because bookings, like every other write, are refused from any origin but `APP_URL`'s.
-6. **After go-live.** The owner reads the access log in Settings. When someone leaves, disable them on the Staff page: it signs them out at once and lists their upcoming visits to move. After the first real booking, check its row: in Supabase's SQL editor, `select details->>'client' from audit_log where action = 'appointment.requested_online' order by id desc limit 1;` shows a 22-character code, not `unknown` (`unknown` means the host gave no visitor address, so every visitor would share one limit of five bookings an hour: see `CLIENT_IP_HEADER` in step 2). If spam arrives, switch online booking off in Settings, then cancel the fake requests from Online requests; the rate-limit rule from step 3 can be tightened. After the first real patient form, check its row the same way: `select details->>'client' from audit_log where action = 'patient.form_received' order by id desc limit 1;` shows a 22-character code, not `unknown` (`unknown` would make every visitor share one limit of five forms an hour). If fake forms arrive, switch Take patient forms off in Settings, then discard the fake forms from Patient forms. For many from one connection, find its code in the access log (Settings does not show codes: in Supabase's SQL editor, `select a.details->>'client', count(*) from audit_log a join patient_forms f on f.id::text = a.entity_id where a.action = 'patient.form_received' group by 1 order by 2 desc limit 5;` lists the connections with the most forms still waiting, so the clinic's own Wi-Fi, with its months of handled forms, does not top the list) and, in Supabase's SQL editor, `delete from patient_forms where id::text in (select entity_id from audit_log where action = 'patient.form_received' and details->>'client' = 'THE_CODE');` (replace THE_CODE). The rate-limit rule can be tightened.
+## Team
+
+<!-- Replace with your names and roles -->
+| Name | Role |
+|---|---|
+| Member 1 | |
+| Member 2 | |
+| Member 3 | |
+| Member 4 | |
+| Member 5 | |
+| Member 6 | |
+| Member 7 | |
+
+## License
+
+<!-- Add a license if your team or school requires one -->
