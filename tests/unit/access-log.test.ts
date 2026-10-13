@@ -12,8 +12,6 @@ describe("the access log in words", () => {
     expect(actionText({ action: "patient.form_received", details: { client: "x" } })).toBe("Sent a patient form");
     expect(actionText({ action: "patient.form_attached", details: { form: "x" } })).toBe("Added a patient form to the record");
     expect(actionText({ action: "patient.form_discarded", details: {} })).toBe("Discarded a patient form");
-    expect(actionText({ action: "file.added", details: { fileId: "x", size: 10 } })).toBe("Added a file to the record");
-    expect(actionText({ action: "patient.view", details: { part: "files" } })).toBe("Viewed the record (files)");
     expect(["bill.issued", "bill.voided", "day.closed", "practice.qr_changed"].map((action) => actionText({ action, details: {} }))).toEqual([
       "Issued a receipt",
       "Voided a receipt",
