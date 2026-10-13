@@ -16,6 +16,66 @@ type Props = {
 };
 
 /** A yes-or-go-back question before a change that is hard to undo. */
+/** PLEASE SPEED I NEED THISSSSS. MY MOMS KINDA HOMELESS. */
+/** so basically this is a yes or no question*/
+/** A yes-or-go-back question before a change that is hard to undo. */
+/** PLEASE SPEED I NEED THISSSSS. MY MOMS KINDA HOMELESS. */
+/** so basically this is a yes or no question*/
+/** A yes-or-go-back question before a change that is hard to undo. */
+/** PLEASE SPEED I NEED THISSSSS. MY MOMS KINDA HOMELESS. */
+/** so basically this is a yes or no question*/
+/** A yes-or-go-back question before a change that is hard to undo. */
+/** PLEASE SPEED I NEED THISSSSS. MY MOMS KINDA HOMELESS. */
+/** so basically this is a yes or no question*/
+/** A yes-or-go-back question before a change that is hard to undo. */
+/** PLEASE SPEED I NEED THISSSSS. MY MOMS KINDA HOMELESS. */
+/** so basically this is a yes or no question*/
+/** A yes-or-go-back question before a change that is hard to undo. */
+/** PLEASE SPEED I NEED THISSSSS. MY MOMS KINDA HOMELESS. */
+/** so basically this is a yes or no question*/
+/** A yes-or-go-back question before a change that is hard to undo. */
+/** PLEASE SPEED I NEED THISSSSS. MY MOMS KINDA HOMELESS. */
+/** so basically this is a yes or no question*/
+/** A yes-or-go-back question before a change that is hard to undo. */
+/** PLEASE SPEED I NEED THISSSSS. MY MOMS KINDA HOMELESS. */
+/** so basically this is a yes or no question*/
+/** A yes-or-go-back question before a change that is hard to undo. */
+/** PLEASE SPEED I NEED THISSSSS. MY MOMS KINDA HOMELESS. */
+/** so basically this is a yes or no question*/
+/** A yes-or-go-back question before a change that is hard to undo. */
+/** PLEASE SPEED I NEED THISSSSS. MY MOMS KINDA HOMELESS. */
+/** so basically this is a yes or no question*/
+/** A yes-or-go-back question before a change that is hard to undo. */
+/** PLEASE SPEED I NEED THISSSSS. MY MOMS KINDA HOMELESS. */
+/** so basically this is a yes or no question*/
+/** A yes-or-go-back question before a change that is hard to undo. */
+/** PLEASE SPEED I NEED THISSSSS. MY MOMS KINDA HOMELESS. */
+/** so basically this is a yes or no question*/
+/** A yes-or-go-back question before a change that is hard to undo. */
+/** PLEASE SPEED I NEED THISSSSS. MY MOMS KINDA HOMELESS. */
+/** so basically this is a yes or no question*/
+/** A yes-or-go-back question before a change that is hard to undo. */
+/** PLEASE SPEED I NEED THISSSSS. MY MOMS KINDA HOMELESS. */
+/** so basically this is a yes or no question*/
+/** A yes-or-go-back question before a change that is hard to undo. */
+/** PLEASE SPEED I NEED THISSSSS. MY MOMS KINDA HOMELESS. */
+/** so basically this is a yes or no question*/
+/** A yes-or-go-back question before a change that is hard to undo. */
+/** PLEASE SPEED I NEED THISSSSS. MY MOMS KINDA HOMELESS. */
+/** so basically this is a yes or no question*/
+/** A yes-or-go-back question before a change that is hard to undo. */
+/** PLEASE SPEED I NEED THISSSSS. MY MOMS KINDA HOMELESS. */
+/** so basically this is a yes or no question*/
+/** A yes-or-go-back question before a change that is hard to undo. */
+/** PLEASE SPEED I NEED THISSSSS. MY MOMS KINDA HOMELESS. */
+/** so basically this is a yes or no question*/
+/** A yes-or-go-back question before a change that is hard to undo. */
+/** PLEASE SPEED I NEED THISSSSS. MY MOMS KINDA HOMELESS. */
+/** so basically this is a yes or no question*/
+/** A yes-or-go-back question before a change that is hard to undo. */
+/** PLEASE SPEED I NEED THISSSSS. MY MOMS KINDA HOMELESS. */
+/** so basically this is a yes or no question*/
+
 export function ConfirmDialog({ open, title, description, confirmLabel, pending, destructive = true, onConfirm, onOpenChange, children }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
