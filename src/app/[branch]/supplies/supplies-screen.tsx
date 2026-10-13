@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { PlusIcon, TriangleAlert } from "lucide-react";
+import { PlusIcon, TriangleAlert, XIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { FormAlert } from "@/components/form-alert";
@@ -11,15 +11,24 @@ import { StateBadge } from "@/components/state-badge";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, errorMessage, fieldErrors } from "@/lib/fetcher";
 
-type Supply = { id: string; name: string; unit: string; quantity: number; reorderLevel: number; active: boolean };
+type Usage = { procedureId: string; quantity: number };
+type Supply = { id: string; name: string; unit: string; quantity: number; reorderLevel: number; active: boolean; usage: Usage[] };
+type Service = { id: string; name: string; active: boolean };
 
-/** Dental supplies in stock at one branch. Managers add items and record stock in or out; everyone here can look. */
+/**
+ * Dental supplies in stock at one branch. Managers add items, record stock in or out, and set how much each service
+ * uses, which completing a visit takes out; everyone here can look.
+ */
 export function SuppliesScreen({ branch, canEdit }: { branch: string; canEdit: boolean }) {
   const queryKey = ["supplies", branch];
   const supplies = useQuery({ queryKey, queryFn: () => api<Supply[]>(`/supplies?branch=${encodeURIComponent(branch)}`) });
+  const services = useQuery({ queryKey: ["procedures"], queryFn: () => api<Service[]>("/procedures") });
+  const serviceName = (id: string) => services.data?.find((p) => p.id === id)?.name ?? "A service";
   const [dialog, setDialog] = useState<{ supply: Supply | null; mode: "edit" | "adjust" } | null>(null);
   if (supplies.isPending) return <LoadingRows rows={3} label="Loading supplies..." />;
   if (supplies.isError) return <FormAlert message={errorMessage(supplies.error)} />;
@@ -71,7 +80,14 @@ export function SuppliesScreen({ branch, canEdit }: { branch: string; canEdit: b
             )}
             {supplies.data.map((s) => (
               <TableRow key={s.id} className={s.active ? undefined : "text-muted-foreground"}>
-                <TableCell className="font-medium">{s.name}</TableCell>
+                <TableCell>
+                  <div className="font-medium">{s.name}</div>
+                  {s.usage.length > 0 && (
+                    <div className="text-xs text-muted-foreground">
+                      Per visit: {s.usage.map((u) => `${serviceName(u.procedureId)} ${u.quantity}`).join(", ")}
+                    </div>
+                  )}
+                </TableCell>
                 <TableCell className="text-right tabular-nums">
                   {s.quantity} {s.unit}
                 </TableCell>
@@ -96,7 +112,7 @@ export function SuppliesScreen({ branch, canEdit }: { branch: string; canEdit: b
           </TableBody>
         </Table>
       </div>
-      {dialog?.mode === "edit" && <EditDialog branch={branch} supply={dialog.supply} onClose={close} queryKey={queryKey} />}
+      {dialog?.mode === "edit" && <EditDialog branch={branch} supply={dialog.supply} services={services.data ?? []} onClose={close} queryKey={queryKey} />}
       {dialog?.mode === "adjust" && dialog.supply && <AdjustDialog supply={dialog.supply} onClose={close} queryKey={queryKey} />}
     </div>
   );
@@ -123,7 +139,7 @@ function useSave(body: () => Promise<unknown>, { onClose, queryKey }: DialogProp
   return { save, errors };
 }
 
-function EditDialog({ branch, supply, ...props }: { branch: string; supply: Supply | null } & DialogProps) {
+function EditDialog({ branch, supply, services, ...props }: { branch: string; supply: Supply | null; services: Service[] } & DialogProps) {
   const [form, setForm] = useState({
     name: supply?.name ?? "",
     unit: supply?.unit ?? "pcs",
@@ -131,14 +147,24 @@ function EditDialog({ branch, supply, ...props }: { branch: string; supply: Supp
     reorderLevel: String(supply?.reorderLevel ?? 0),
     active: supply?.active ?? true,
   });
+  const [usage, setUsage] = useState(() => (supply?.usage ?? []).map((u) => ({ procedureId: u.procedureId, quantity: String(u.quantity) })));
+  const usageBody = () => usage.filter((u) => u.procedureId).map((u) => ({ procedureId: u.procedureId, quantity: Number(u.quantity) }));
   const { save, errors } = useSave(
     () =>
       supply
-        ? api(`/supplies/${supply.id}`, { method: "PATCH", body: { name: form.name, unit: form.unit, reorderLevel: Number(form.reorderLevel), active: form.active } })
-        : api("/supplies", { method: "POST", body: { branch, name: form.name, unit: form.unit, quantity: Number(form.quantity), reorderLevel: Number(form.reorderLevel) } }),
+        ? api(`/supplies/${supply.id}`, {
+            method: "PATCH",
+            body: { name: form.name, unit: form.unit, reorderLevel: Number(form.reorderLevel), active: form.active, usage: usageBody() },
+          })
+        : api("/supplies", {
+            method: "POST",
+            body: { branch, name: form.name, unit: form.unit, quantity: Number(form.quantity), reorderLevel: Number(form.reorderLevel), usage: usageBody() },
+          }),
     props,
     `Saved ${form.name}.`,
   );
+  // Errors on one row arrive as "usage.0.quantity"; show the first one under the list.
+  const usageError = Object.entries(errors).find(([key]) => key === "usage" || key.startsWith("usage."))?.[1];
   return (
     <Dialog open onOpenChange={(open) => !open && props.onClose()}>
       <DialogContent>
@@ -168,6 +194,45 @@ function EditDialog({ branch, supply, ...props }: { branch: string; supply: Supp
             hint="Shown as low when the count falls to this or below."
             error={errors.reorderLevel}
           />
+          <fieldset className="grid gap-2">
+            <legend className="text-sm font-medium">Used per visit</legend>
+            <p className="text-sm text-muted-foreground">Completing a visit with one of these services takes this many {form.unit || "units"} out of stock.</p>
+            {usage.map((row, i) => {
+              const set = (next: Partial<typeof row>) => setUsage(usage.map((u, j) => (j === i ? { ...u, ...next } : u)));
+              // Retired services stay listed only where they are already chosen.
+              const options = services.filter((p) => (p.active || p.id === row.procedureId) && !usage.some((u, j) => j !== i && u.procedureId === p.id));
+              return (
+                <div key={i} className="flex items-center gap-2">
+                  <NativeSelect className="flex-1" aria-label="Service" value={row.procedureId} onChange={(e) => set({ procedureId: e.target.value })}>
+                    <option value="">Pick a service</option>
+                    {options.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                  <Input
+                    className="w-20"
+                    aria-label={`How many ${form.unit || "units"}`}
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={1000}
+                    value={row.quantity}
+                    onChange={(e) => set({ quantity: e.target.value })}
+                  />
+                  <Button type="button" variant="ghost" size="icon" aria-label="Remove" onClick={() => setUsage(usage.filter((_, j) => j !== i))}>
+                    <XIcon aria-hidden />
+                  </Button>
+                </div>
+              );
+            })}
+            {usageError && <p className="text-sm text-destructive">{usageError}</p>}
+            <Button type="button" variant="outline" className="justify-self-start" onClick={() => setUsage([...usage, { procedureId: "", quantity: "1" }])}>
+              <PlusIcon aria-hidden data-icon="inline-start" />
+              Add a service
+            </Button>
+          </fieldset>
           {supply && (
             <label className="flex min-h-11 items-center gap-3">
               <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} className="size-4 accent-primary" />

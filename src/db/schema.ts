@@ -733,3 +733,21 @@ export const supplies = pgTable(
     uniqueIndex("supplies_branch_name").on(t.branchId, sql`lower(${t.name})`),
   ],
 ).enableRLS();
+
+/**
+ * How much of a supply one service uses. Supplies belong to a branch, so each branch sets its own amounts; completing a
+ * visit takes them out of that branch's stock.
+ */
+export const procedureSupplies = pgTable(
+  "procedure_supplies",
+  {
+    procedureId: uuid("procedure_id")
+      .notNull()
+      .references(() => procedures.id, { onDelete: "cascade" }),
+    supplyId: uuid("supply_id")
+      .notNull()
+      .references(() => supplies.id, { onDelete: "cascade" }),
+    quantity: integer("quantity").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.procedureId, t.supplyId] }), check("procedure_supplies_quantity", sql`${t.quantity} between 1 and 1000`), index("procedure_supplies_supply").on(t.supplyId)],
+).enableRLS();

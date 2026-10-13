@@ -13,6 +13,7 @@ import { requireBranch } from "./branches";
 import { ApiError, forbidden, notFound, pgCode } from "./errors";
 import { requireCan } from "./guard";
 import { practiceSettings } from "./practice";
+import { takeSuppliesForVisit, type SupplyShortage } from "./supplies";
 import type { Staff } from "./session";
 
 const instant = z.iso.datetime({ offset: true });
@@ -290,9 +291,12 @@ export async function moveAppointment(actor: Staff, id: string, input: z.infer<t
   }
 }
 
-/** Spec 8.6. The database trigger enforces the allowed pairs too, and stamps the time of each change. */
-export async function transitionAppointment(actor: Staff, id: string, input: z.infer<typeof transitionSchema>): Promise<void> {
-  await db.transaction(async (tx) => {
+/**
+ * Spec 8.6. The database trigger enforces the allowed pairs too, and stamps the time of each change. Completing a visit
+ * takes its services' supplies out of the branch's stock and returns any that ran short.
+ */
+export async function transitionAppointment(actor: Staff, id: string, input: z.infer<typeof transitionSchema>): Promise<{ shortages: SupplyShortage[] }> {
+  return db.transaction(async (tx) => {
     const [visit] = await tx.select().from(appointments).where(eq(appointments.id, id)).for("update");
     if (!visit) throw notFound("That visit");
     requireCan(actor, actionFor(input.to), { branchId: visit.branchId, dentistId: visit.dentistId });
@@ -317,6 +321,7 @@ export async function transitionAppointment(actor: Staff, id: string, input: z.i
       },
       tx,
     );
+    return { shortages: input.to === "completed" ? await takeSuppliesForVisit(tx, actor, visit) : [] };
   });
 }
 

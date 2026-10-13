@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { api, errorMessage } from "@/lib/fetcher";
 import { actionFor, actionLabel, changeProblem, NEXT, type Status } from "@/lib/lifecycle";
 import { can, type Subject } from "@/lib/permissions";
+import { shortageMessage, type Shortage } from "@/lib/shortages";
 import { formatDateTime, formatTime } from "@/lib/time";
 import { chairName, type VisitDetailJson } from "@/lib/visits";
 
@@ -35,9 +36,11 @@ export function VisitPanel({ visitId, branch, staff, onClose, onMove }: Props) {
     enabled: visitId !== null,
   });
   const change = useMutation({
-    mutationFn: (body: { to: Status; reason?: string }) => api(`/appointments/${visitId}/transitions`, { method: "POST", body }),
-    onSuccess: async () => {
+    mutationFn: (body: { to: Status; reason?: string }) => api<{ shortages?: Shortage[] }>(`/appointments/${visitId}/transitions`, { method: "POST", body }),
+    onSuccess: async (result) => {
       toast.success("Saved.");
+      const short = shortageMessage(result.shortages);
+      if (short) toast.warning(short);
       setCancelling(false);
       setReason("");
       await client.invalidateQueries({ queryKey: ["appointments"] });
