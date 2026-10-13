@@ -100,11 +100,11 @@ function SidebarContent({ practice, branch, branches, nav, user, onNavigate }: O
         <span className="truncate">{practice}</span>
       </Link>
 
-      <div className="grid gap-1.5">
+      <div className="grid grid-cols-1 gap-1.5">
         <p className="px-2 text-[11px] font-semibold tracking-wider text-sidebar-muted uppercase">Branch</p>
         {/* A menu of links rather than a select, so arrowing through the branches never leaves the page (WCAG 3.2.2). */}
         <DropdownMenu>
-          <DropdownMenuTrigger className="flex h-11 w-full cursor-pointer items-center gap-2 rounded-lg border border-sidebar-border bg-sidebar-accent px-2.5 text-left text-sm font-medium text-sidebar-foreground outline-none transition-colors hover:bg-white/20 focus-visible:ring-3 focus-visible:ring-white/80 lg:h-10">
+          <DropdownMenuTrigger className="flex h-11 w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg border border-sidebar-border bg-sidebar-accent px-2.5 text-left text-sm font-medium text-sidebar-foreground outline-none transition-colors hover:bg-white/20 focus-visible:ring-3 focus-visible:ring-white/80 lg:h-10">
             <Building2 aria-hidden className="size-4 shrink-0 text-sidebar-muted" />
             <span className="min-w-0 flex-1 truncate">
               <span className="sr-only">Branch: </span>
