@@ -4,7 +4,6 @@ import {
   bigint,
   boolean,
   check,
-  customType,
   date,
   foreignKey,
   index,
@@ -550,41 +549,6 @@ export const exams = pgTable(
   (t) => [
     check("exams_findings", sql`jsonb_typeof(${t.findings}) = 'object' and octet_length(${t.findings}::text) <= 4000`),
     index("exams_patient").on(t.patientId),
-  ],
-).enableRLS();
-
-/** Raw bytes: a Buffer from node-postgres, a Uint8Array from PGlite. */
-const bytea = customType<{ data: Uint8Array; driverData: Uint8Array }>({ dataType: () => "bytea" });
-
-/**
- * A file on a patient's record: an X-ray, a photo, a signed form. The bytes live in the row, at most 4 MB. The
- * categories and types match src/lib/files.ts, which checks each upload by its bytes, never its name.
- */
-export const patientFiles = pgTable(
-  "patient_files",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    patientId: uuid("patient_id")
-      .notNull()
-      .references(() => patients.id),
-    name: text("name").notNull(),
-    contentType: text("content_type").notNull(),
-    size: integer("size").notNull(),
-    category: text("category").notNull(),
-    description: text("description").notNull().default(""),
-    data: bytea("data").notNull(),
-    uploadedBy: uuid("uploaded_by")
-      .notNull()
-      .references(() => users.id),
-    createdAt: createdAt(),
-  },
-  (t) => [
-    check("patient_files_name", sql`char_length(${t.name}) between 1 and 120`),
-    check("patient_files_content_type", sql`${t.contentType} in ('application/pdf', 'image/jpeg', 'image/png', 'image/webp')`),
-    check("patient_files_size", sql`${t.size} between 1 and 4194304 and ${t.size} = octet_length(${t.data})`),
-    check("patient_files_category", sql`${t.category} in ('xray', 'photo', 'consent', 'id', 'lab', 'referral', 'other')`),
-    check("patient_files_description", sql`char_length(${t.description}) <= 200`),
-    index("patient_files_patient").on(t.patientId, t.createdAt),
   ],
 ).enableRLS();
 

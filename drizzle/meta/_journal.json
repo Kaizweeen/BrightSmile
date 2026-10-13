@@ -68,15 +68,8 @@
     {
       "idx": 9,
       "version": "7",
-      "when": 1791851347580,
-      "tag": "0009_patient_files",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1791852132400,
-      "tag": "0010_procedure_supplies",
+      "when": 1791852710115,
+      "tag": "0009_procedure_supplies",
       "breakpoints": true
     }
   ]

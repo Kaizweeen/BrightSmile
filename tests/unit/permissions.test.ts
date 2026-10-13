@@ -72,16 +72,6 @@ describe("patients and clinical records", () => {
   });
 });
 
-describe("patient files", () => {
-  it("lets everyone add files, and the uploader, the owner, or a manager remove one", () => {
-    for (const s of [owner, manager, dentist]) expect(can(s, "files.add")).toBe(true);
-    expect(can(dentist, "files.remove", { userId: "dr" })).toBe(true);
-    expect(can(dentist, "files.remove", { userId: "someone-else" })).toBe(false);
-    expect(can(manager, "files.remove", { userId: "someone-else" })).toBe(true);
-    expect(can(owner, "files.remove", { userId: "someone-else" })).toBe(true);
-  });
-});
-
 describe("schedules", () => {
   const drTarget = { dentistId: "dr", branchIds: [DT, WS] };
 

@@ -37,19 +37,6 @@ export async function api<T = unknown>(path: string, init: { method?: Method; bo
   return data as T;
 }
 
-/** Sends a file as a multipart form to a route that takes uploads. The browser sets the boundary and the Origin. */
-export async function upload<T = unknown>(path: string, form: FormData): Promise<T> {
-  const res = await fetch(`/api/v1${path}`, { method: "POST", body: form });
-  const data: unknown = await res.json().catch(() => null);
-  if (!res.ok) {
-    const body = (data as { error?: ErrorBody } | null)?.error;
-    // A host refuses an oversized body itself, before DentaSync sees it, with no JSON.
-    const fallback = res.status === 413 ? "The file is too big. Keep it under 4 MB." : "Something went wrong. Try again.";
-    throw new RequestError(res.status, body ?? { code: "server_error", message: fallback });
-  }
-  return data as T;
-}
-
 /** The message to show for a failed call. fetch reports a dropped connection as a TypeError ("Failed to fetch"). */
 export function errorMessage(error: unknown): string {
   return error instanceof TypeError
