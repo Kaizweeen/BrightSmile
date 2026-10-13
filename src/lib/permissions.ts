@@ -13,6 +13,8 @@ export type Action =
   | "patient.editAlerts"
   | "clinical.read"
   | "clinical.write"
+  | "files.add"
+  | "files.remove"
   | "schedule.view"
   | "schedule.edit"
   | "staff.view"
@@ -67,6 +69,11 @@ export function can(s: Subject, action: Action, t: Target = {}): boolean {
       return owner || manager;
     case "clinical.write":
       return owner ? s.seesPatients : dentist && (t.dentistId == null || own);
+    case "files.add":
+      return true;
+    case "files.remove":
+      // The uploader takes back their own mistake; the owner and managers tidy any record.
+      return owner || manager || t.userId === s.id;
     case "schedule.view":
       return owner || (manager && sharesBranch) || (dentist && own);
     case "schedule.edit":

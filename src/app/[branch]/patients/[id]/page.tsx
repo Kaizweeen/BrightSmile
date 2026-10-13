@@ -9,7 +9,7 @@ import { PatientScreen, type PatientJson } from "./patient-screen";
 
 export const metadata: Metadata = { title: "Patient" };
 
-const TABS = ["details", "visits", "chart", "notes"];
+const TABS = ["details", "visits", "chart", "notes", "files"];
 
 /** `?tab=` opens a tab directly, such as My day's "Open chart". */
 export default async function PatientPage({

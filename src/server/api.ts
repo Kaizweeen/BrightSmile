@@ -47,24 +47,32 @@ export function toResponse(error: unknown): NextResponse {
   return errorBody(500, "server_error", `Something went wrong. Reference: ${requestId}`, { requestId });
 }
 
-/** Writes must come from DentaSync's own pages, as JSON (spec section 11). */
-function refuseForeignWrite(req: NextRequest): NextResponse | null {
+/**
+ * Writes must come from DentaSync's own pages, as JSON (spec section 11). A route that takes a file may also take a
+ * multipart form; the Origin check is what keeps other sites out, since a browser sends any form cross-site.
+ */
+function refuseForeignWrite(req: NextRequest, opts: RouteOptions = {}): NextResponse | null {
   if (req.method === "GET" || req.method === "HEAD") return null;
   if (req.headers.get("origin") !== new URL(appUrl()).origin) {
     return errorBody(403, "bad_origin", "This request did not come from DentaSync.");
   }
-  if (!req.headers.get("content-type")?.startsWith("application/json")) {
+  const type = req.headers.get("content-type") ?? "";
+  if (opts.upload && type.startsWith("multipart/form-data")) return null;
+  if (!type.startsWith("application/json")) {
     return errorBody(415, "not_json", "Send the request as JSON.");
   }
   return null;
 }
 
+type RouteOptions = { upload?: boolean };
+
 /** A route for approved staff: checks the write, the session, and the account, and maps every error. */
 export function staffRoute<P extends Params = Params>(
   handler: (req: NextRequest, staff: Staff, params: P) => Promise<Response>,
+  opts: RouteOptions = {},
 ) {
   return async (req: NextRequest, ctx: { params: Promise<P> }): Promise<Response> => {
-    const refused = refuseForeignWrite(req);
+    const refused = refuseForeignWrite(req, opts);
     if (refused) return refused;
     try {
       const staff = await staffFromHeaders(req.headers);
